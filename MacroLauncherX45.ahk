@@ -4221,7 +4221,7 @@ ReadStatsFromCSV() {
                 layerCount[layer]++
                 
                 ; Process degradation assignments
-                if (degradation_assignments != "" && degradation_assignments != "\"\"") {
+                if (degradation_assignments != "" && degradation_assignments != '""') {
                     assignments := StrSplit(degradation_assignments, ",")
                     for assignment in assignments {
                         assignment := Trim(assignment)
