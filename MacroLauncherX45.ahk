@@ -2690,85 +2690,48 @@ CreateJsonProfilesTab(statsGui, tabs, timeFilter) {
 CreateCombinedOverviewTab(statsGui, tabs, timeFilter) {
     tabs.UseTab(3)
     
-    filteredExecutions := FilterExecutionsByTime(timeFilter)
+    ; Use CSV data instead of macroExecutionLog
+    csvStats := ReadStatsFromCSV(false) ; Get all-time stats for persistence
     
     ; Build combined overview with better formatting
     content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
     content .= "║                          📊 COMBINED USAGE OVERVIEW                          ║`n"
     content .= "║                              (" . timeFilter . ")                                    ║`n"
     content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
-    content .= "📄 TOTAL EXECUTIONS: " . filteredExecutions.Length . " operations`n`n"
+    content .= "📄 TOTAL EXECUTIONS: " . csvStats["total_executions"] . " operations`n`n"
     
-    ; Separate counts
-    macroCount := 0
-    jsonCount := 0
-    totalBoxes := 0
-    
-    for execution in filteredExecutions {
-        if (execution.category = "macro") {
-            macroCount++
-            totalBoxes += execution.boundingBoxCount
-        } else if (execution.category = "json_profile") {
-            jsonCount++
-        }
-    }
+    ; Use CSV stats data
+    totalBoxes := csvStats["total_boxes"]
+    macroCount := csvStats["total_executions"] ; Simplified - could separate macro vs JSON later
+    jsonCount := 0 ; Would need to enhance CSV parsing to separate these
     
     content .= "┌──────────────────────────────────────────────────────────────────────────────┐`n"
     content .= "│                        📊 EXECUTION TYPE BREAKDOWN                          │`n"
     content .= "└──────────────────────────────────────────────────────────────────────────────┘`n"
     content .= "🎬 Recorded Macros: " . macroCount . " executions (" . totalBoxes . " total boxes)`n"
-    content .= "📋 JSON Profiles: " . jsonCount . " executions`n`n"
+    content .= "📋 JSON Profiles: " . jsonCount . " executions`n"
+    content .= "📊 Most Used Button: " . csvStats["most_used_button"] . "`n"
+    content .= "🔄 Most Active Layer: " . csvStats["most_active_layer"] . "`n"
+    content .= "⏱️ Average Execution Time: " . csvStats["average_execution_time"] . "ms`n"
+    content .= "📈 Boxes per Hour: " . csvStats["boxes_per_hour"] . "`n"
+    content .= "🚀 Executions per Hour: " . csvStats["executions_per_hour"] . "`n`n"
     
-    if (filteredExecutions.Length > 0) {
-        ; Calculate average execution time
-        totalTime := 0
-        for execution in filteredExecutions {
-            totalTime += execution.executionTime
-        }
-        avgTime := Round(totalTime / filteredExecutions.Length)
-        content .= "⚡ Average Execution Time: " . avgTime . "ms`n"
+    ; Add degradation breakdown from CSV
+    if (csvStats["degradation_breakdown"].Count > 0) {
+        content .= "┌──────────────────────────────────────────────────────────────────────────────┐`n"
+        content .= "│                         🎯 DEGRADATION BREAKDOWN                            │`n"
+        content .= "└──────────────────────────────────────────────────────────────────────────────┘`n"
         
-        ; Most used button
-        buttonCounts := Map()
-        layerCounts := Map()
-        for execution in filteredExecutions {
-            if (!buttonCounts.Has(execution.button)) {
-                buttonCounts[execution.button] := 0
-            }
-            buttonCounts[execution.button]++
-            
-            if (!layerCounts.Has(execution.layer)) {
-                layerCounts[execution.layer] := 0
-            }
-            layerCounts[execution.layer]++
+        for degradation, count in csvStats["degradation_breakdown"] {
+            content .= "• " . StrTitle(degradation) . ": " . count . " boxes`n"
         }
-        
-        maxCount := 0
-        mostUsedButton := ""
-        for button, count in buttonCounts {
-            if (count > maxCount) {
-                maxCount := count
-                mostUsedButton := button
-            }
-        }
-        
-        maxLayerCount := 0
-        mostUsedLayer := 0
-        for layer, count in layerCounts {
-            if (count > maxLayerCount) {
-                maxLayerCount := count
-                mostUsedLayer := layer
-            }
-        }
-        
-        content .= "🏆 Most Used Button: " . mostUsedButton . " (" . maxCount . " executions)`n"
-        content .= "📊 Most Active Layer: Layer " . mostUsedLayer . " (" . maxLayerCount . " executions)`n"
-        
-        ; Efficiency metrics
-        if (macroCount > 0) {
-            avgBoxesPerMacro := Round(totalBoxes / macroCount, 1)
-            content .= "📦 Average Boxes per Macro: " . avgBoxesPerMacro . " boxes`n"
-        }
+        content .= "`n"
+    }
+    
+    ; Add efficiency metrics from CSV data
+    if (totalBoxes > 0 && macroCount > 0) {
+        avgBoxesPerMacro := Round(totalBoxes / macroCount, 1)
+        content .= "📦 Average Boxes per Macro: " . avgBoxesPerMacro . " boxes`n"
     }
     
     editCombined := statsGui.Add("Edit", "x30 y120 w840 h400 ReadOnly VScroll", content)
@@ -4145,7 +4108,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     AppendToCSV(timestamp, executionType, macroKey, layer, execution_time_ms, bbox_count, degradation_assignments, severity_level, canvas_mode)
 }
 
-ReadStatsFromCSV() {
+ReadStatsFromCSV(filterBySession := false) {
     global masterStatsCSV, sessionId, totalActiveTime
     
     stats := Map()
@@ -4189,8 +4152,8 @@ ReadStatsFromCSV() {
                 continue ; Skip malformed rows
             }
             
-            ; Only process current session data
-            if (fields[2] = sessionId) {
+            ; Process data based on filter setting
+            if (!filterBySession || fields[2] = sessionId) {
                 stats["total_executions"]++
                 
                 ; Parse fields
@@ -4204,7 +4167,14 @@ ReadStatsFromCSV() {
                 ; Accumulate data
                 executionTimes.Push(execution_time)
                 totalBoxes += bbox_count
-                sessionActiveTime := session_time ; Latest session time
+                
+                ; For session-specific stats, use latest session time
+                ; For all-time stats, sum up total execution times as proxy
+                if (filterBySession) {
+                    sessionActiveTime := session_time
+                } else {
+                    sessionActiveTime += execution_time ; Approximate total active time
+                }
                 
                 ; Count buttons
                 if (!buttonCount.Has(button_key)) {
