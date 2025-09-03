@@ -1887,63 +1887,111 @@ RestoreNormalUI() {
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
 ShowStats() {
-    global macroExecutionLog, degradationTypes, degradationColors, annotationMode
-    global applicationStartTime, totalActiveTime, lastActiveTime, breakMode
+    global applicationStartTime, totalActiveTime, lastActiveTime, breakMode, sessionId
     
-    statsGui := Gui("+Resize", "📊 Comprehensive Analytics")
+    statsGui := Gui("+Resize", "📊 MacroMaster Analytics")
     statsGui.SetFont("s10")
     
     ; Header
-    statsGui.Add("Text", "x20 y20 w860 h30 Center", "COMPREHENSIVE DEGRADATION & USAGE ANALYTICS")
-    statsGui.SetFont("s14 Bold")
+    statsGui.Add("Text", "x20 y20 w800 h30 Center", "📊 MACROMASTER PERSISTENT ANALYTICS")
+    statsGui.SetFont("s12 Bold")
     
-    ; Timeline filter controls
+    ; Get persistent CSV data
+    allTimeStats := ReadStatsFromCSV(false)  ; All sessions
+    currentSessionStats := ReadStatsFromCSV(true)  ; Current session only
+    
+    ; Create content sections
+    CreateStatsContent(statsGui, allTimeStats, currentSessionStats)
+    
+    ; Control buttons
+    btnRefresh := statsGui.Add("Button", "x20 y520 w100 h30", "🔄 Refresh")
+    btnRefresh.OnEvent("Click", (*) => RefreshStats(statsGui))
+    
+    btnExportCSV := statsGui.Add("Button", "x130 y520 w120 h30", "📊 Export CSV")
+    btnExportCSV.OnEvent("Click", (*) => ExportDegradationData())
+    
+    btnClose := statsGui.Add("Button", "x720 y520 w80 h30", "Close")
+    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
+    
+    ; Quick reference
+    statsGui.Add("Text", "x20 y560 w800 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
+    
+    statsGui.Show("w840 h620")
+}
+
+CreateStatsContent(statsGui, allTimeStats, currentSessionStats) {
+    global sessionId, totalActiveTime, breakMode, lastActiveTime
+    
     statsGui.SetFont("s9")
-    statsGui.Add("Text", "x20 y60 w100 h20", "Timeline Filter:")
     
-    timelineCombo := statsGui.Add("ComboBox", "x120 y58 w120 h200", ["All Time", "Last 1 Hour", "Last 4 Hours", "Last 1 Day", "Last 1 Week"])
-    timelineCombo.Text := "All Time"
+    ; ===== TIMING SECTION =====
+    statsGui.Add("Text", "x20 y60 w800 h20", "⏱️ TIMING & SESSION INFO")
+    statsGui.SetFont("s9 Bold")
     
-    btnResetStats := statsGui.Add("Button", "x250 y57 w100 h25", "Reset Stats")
-    btnResetStats.OnEvent("Click", (*) => ResetStatsData(statsGui, timelineCombo.Text))
-    
-    ; Time tracking display with proper formatting
+    ; Calculate current active time
     currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
     timeDisplay := FormatActiveTime(currentActiveTime)
     
-    statsGui.Add("Text", "x370 y60 w200 h20", "Active Time: " . timeDisplay)
+    ; Session info
+    statsGui.Add("Text", "x30 y85 w200 h20", "Current Session: " . sessionId)
+    statsGui.Add("Text", "x250 y85 w200 h20", "Active Time: " . timeDisplay)
+    statsGui.Add("Text", "x450 y85 w200 h20", "Break Mode: " . (breakMode ? "🔴 ACTIVE" : "✅ OFF"))
     
-    ; Create tabbed interface
-    tabs := statsGui.Add("Tab3", "x20 y90 w860 h450", ["📦 Recorded Macros", "📋 JSON Profiles", "📊 Combined Overview"])
+    ; ===== ALL-TIME STATS SECTION =====
+    statsGui.Add("Text", "x20 y120 w800 h20", "📊 ALL-TIME PERSISTENT STATS")
+    statsGui.SetFont("s9 Bold")
     
-    ; Store references for updates
-    statsGui.timelineCombo := timelineCombo
-    statsGui.tabs := tabs
+    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
+    content .= "║                          📈 PERSISTENT USAGE OVERVIEW                        ║`n"
+    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     
-    ; Setup tab content
-    CreateRecordedMacrosTab(statsGui, tabs, "All Time")
-    CreateJsonProfilesTab(statsGui, tabs, "All Time")
-    CreateCombinedOverviewTab(statsGui, tabs, "All Time")
+    ; Main stats
+    content .= "📊 EXECUTION SUMMARY:`n"
+    content .= "  • Total Executions: " . allTimeStats["total_executions"] . " operations`n"
+    content .= "  • Total Boxes Drawn: " . allTimeStats["total_boxes"] . " boxes`n"
+    content .= "  • Most Used Button: " . allTimeStats["most_used_button"] . "`n"
+    content .= "  • Most Active Layer: " . allTimeStats["most_active_layer"] . "`n`n"
     
-    ; Timeline combo event handler
-    timelineCombo.OnEvent("Change", (*) => RefreshAllTabs(statsGui, timelineCombo.Text))
+    ; Performance metrics
+    content .= "⚡ PERFORMANCE METRICS:`n"
+    content .= "  • Average Execution Time: " . allTimeStats["average_execution_time"] . "ms`n"
+    content .= "  • Boxes per Hour: " . allTimeStats["boxes_per_hour"] . "`n"
+    content .= "  • Executions per Hour: " . allTimeStats["executions_per_hour"] . "`n`n"
     
-    ; Export and control buttons
-    statsGui.Add("Text", "x20 y560 w860 h20", "📤 Export & Controls:")
+    ; Degradation breakdown
+    if (allTimeStats["degradation_breakdown"].Count > 0) {
+        content .= "🎯 DEGRADATION BREAKDOWN:`n"
+        for degradation, count in allTimeStats["degradation_breakdown"] {
+            content .= "  • " . StrTitle(degradation) . ": " . count . " boxes`n"
+        }
+        content .= "`n"
+    } else {
+        content .= "🎯 DEGRADATION BREAKDOWN: No data yet - execute some macros!`n`n"
+    }
     
-    btnExportCSV := statsGui.Add("Button", "x20 y590 w120 h30", "📊 Export CSV")
-    btnExportCSV.OnEvent("Click", (*) => ExportDegradationData())
+    ; Current session stats
+    content .= "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
+    content .= "║                            🔄 CURRENT SESSION                                ║`n"
+    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     
-    btnExportAll := statsGui.Add("Button", "x150 y590 w130 h30", "📄 Export All Data")
-    btnExportAll.OnEvent("Click", (*) => ExportAllHistoricalData())
+    content .= "📊 THIS SESSION STATS:`n"
+    content .= "  • Session Executions: " . currentSessionStats["total_executions"] . " operations`n"
+    content .= "  • Session Boxes: " . currentSessionStats["total_boxes"] . " boxes`n"
+    if (currentSessionStats["total_executions"] > 0) {
+        content .= "  • Session Avg Time: " . currentSessionStats["average_execution_time"] . "ms`n"
+    }
+    content .= "`n"
     
-    ; Quick reference
-    statsGui.Add("Text", "x20 y640 w860 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
-    
-    btnClose := statsGui.Add("Button", "x800 y690 w80 h30", "Close")
-    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
-    
-    statsGui.Show("w900 h730")
+    ; Create scrollable text area
+    statsGui.SetFont("s8")
+    editStats := statsGui.Add("Edit", "x30 y145 w780 h360 ReadOnly VScroll", content)
+    statsGui.editStats := editStats
+}
+
+RefreshStats(statsGui) {
+    ; Close and reopen stats to refresh data
+    statsGui.Destroy()
+    ShowStats()
 }
 
 ShowSettings() {
