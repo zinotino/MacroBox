@@ -215,6 +215,30 @@ global degradationColors := Map(
 
 global severityLevels := ["high", "medium", "low"]
 
+; ===== HOTKEY PROFILE SYSTEM =====
+global hotkeyProfileActive := false
+global capsLockPressed := false
+global wasdHotkeyMap := Map()
+
+; Initialize WASD hotkey mappings
+InitializeWASDHotkeys() {
+    global wasdHotkeyMap
+    
+    ; Default WASD mappings to numpad equivalents
+    wasdHotkeyMap["w"] := "Num8"    ; Up
+    wasdHotkeyMap["a"] := "Num4"    ; Left  
+    wasdHotkeyMap["s"] := "Num5"    ; Down/Center
+    wasdHotkeyMap["d"] := "Num6"    ; Right
+    wasdHotkeyMap["q"] := "Num7"    ; Up-Left
+    wasdHotkeyMap["e"] := "Num9"    ; Up-Right
+    wasdHotkeyMap["z"] := "Num1"    ; Down-Left
+    wasdHotkeyMap["c"] := "Num3"    ; Down-Right
+    wasdHotkeyMap["x"] := "Num2"    ; Down
+    wasdHotkeyMap["f"] := "Num0"    ; Special/Space
+    wasdHotkeyMap["r"] := "NumDot"  ; Dot
+    wasdHotkeyMap["t"] := "NumMult" ; Multiply
+}
+
 ; Helper function to get degradation type ID by name
 GetDegradationTypeByName(degradationName) {
     global degradationTypes
@@ -230,6 +254,80 @@ GetDegradationTypeByName(degradationName) {
     return 1
 }
 
+; ===== HOTKEY PROFILE FUNCTIONS =====
+ToggleHotkeyProfile() {
+    global hotkeyProfileActive
+    
+    hotkeyProfileActive := !hotkeyProfileActive
+    
+    if (hotkeyProfileActive) {
+        SetupWASDHotkeys()
+        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED - CapsLock+WASD enabled")
+    } else {
+        DisableWASDHotkeys()
+        UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED - Numpad mode restored")
+    }
+}
+
+SetupWASDHotkeys() {
+    global wasdHotkeyMap
+    
+    try {
+        ; Setup CapsLock as modifier
+        Hotkey("CapsLock", (*) => CapsLockDown(), "On")
+        Hotkey("CapsLock Up", (*) => CapsLockUp(), "On")
+        
+        ; Setup WASD keys with CapsLock modifier
+        for wasdKey, buttonName in wasdHotkeyMap {
+            hotkeyCombo := "CapsLock & " . wasdKey
+            Hotkey(hotkeyCombo, (*) => ExecuteWASDMacro(buttonName), "On")
+        }
+        
+    } catch Error as e {
+        UpdateStatus("⚠️ WASD hotkey setup failed: " . e.Message)
+    }
+}
+
+DisableWASDHotkeys() {
+    global wasdHotkeyMap
+    
+    try {
+        ; Disable CapsLock modifier
+        Hotkey("CapsLock", "Off")
+        Hotkey("CapsLock Up", "Off")
+        
+        ; Disable WASD combinations
+        for wasdKey, buttonName in wasdHotkeyMap {
+            hotkeyCombo := "CapsLock & " . wasdKey
+            Hotkey(hotkeyCombo, "Off")
+        }
+        
+    } catch Error as e {
+        UpdateStatus("⚠️ WASD hotkey disable failed: " . e.Message)
+    }
+}
+
+CapsLockDown() {
+    global capsLockPressed
+    capsLockPressed := true
+}
+
+CapsLockUp() {
+    global capsLockPressed
+    capsLockPressed := false
+}
+
+ExecuteWASDMacro(buttonName) {
+    global hotkeyProfileActive
+    
+    if (!hotkeyProfileActive) {
+        return
+    }
+    
+    UpdateStatus("🎹 WASD: CapsLock+" . buttonName . " → " . buttonName)
+    SafeExecuteMacroByKey(buttonName)
+}
+
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
@@ -241,6 +339,7 @@ Main() {
         LoadExecutionData()  ; Load persistent stats from JSON
         InitializeJsonAnnotations()
         InitializeVisualizationSystem()
+        InitializeWASDHotkeys()  ; Initialize WASD hotkey mappings
         
         ; Setup UI and interactions
         InitializeGui()
@@ -812,6 +911,9 @@ SetupHotkeys() {
         ; Break mode toggle
         Hotkey("^b", (*) => ToggleBreakMode())  ; Ctrl+B for break mode
         
+        ; Hotkey profile toggle
+        Hotkey("^h", (*) => ToggleHotkeyProfile())  ; Ctrl+H for hotkey profile toggle
+        
         ; Layer navigation
         Hotkey("NumpadDiv", (*) => SwitchLayer("prev"))
         Hotkey("NumpadSub", (*) => SwitchLayer("next"))
@@ -1376,6 +1478,14 @@ CreateToolbar() {
     mainGui.btnBreakMode := btnBreakMode
     x += Round(75 * scaleFactor)
     
+    ; Settings/Config button
+    btnSettings := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(70 * scaleFactor) . " h" . btnHeight, "⚙️ Config")
+    btnSettings.OnEvent("Click", (*) => ShowConfigMenu())
+    btnSettings.SetFont("s8 bold")
+    btnSettings.Opt("+Background0x2196F3")
+    mainGui.btnSettings := btnSettings
+    x += Round(75 * scaleFactor)
+    
     ; Clear button
     btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(55 * scaleFactor) . " h" . btnHeight, "🗑️ Clear")
     btnClear.OnEvent("Click", (*) => ShowClearDialog())
@@ -1902,6 +2012,105 @@ RestoreNormalUI() {
         }
     } catch {
     }
+}
+
+; ===== CONFIGURATION MENU =====
+ShowConfigMenu() {
+    global hotkeyProfileActive, wasdHotkeyMap
+    
+    configGui := Gui("+Resize", "⚙️ MacroMaster Configuration")
+    configGui.SetFont("s10")
+    
+    ; Header
+    configGui.Add("Text", "x20 y20 w660 h30 Center", "MACROMASTER CONFIGURATION")
+    configGui.SetFont("s14 Bold")
+    
+    ; Create tabbed interface
+    tabs := configGui.Add("Tab3", "x20 y60 w660 h400", ["🎹 Hotkey Profiles", "⚙️ General Settings", "📊 Performance"])
+    
+    ; === TAB 1: HOTKEY PROFILES ===
+    tabs.UseTab(1)
+    
+    ; Hotkey Profile Section
+    configGui.Add("Text", "x40 y100 w600 h20", "WASD-Oriented Hotkey Profile:")
+    
+    ; Profile status
+    statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+WASD enabled" : "🔴 INACTIVE - Numpad mode active"
+    configGui.Add("Text", "x40 y130 w400 h20", "Status: " . statusText)
+    
+    ; Toggle button
+    btnToggleProfile := configGui.Add("Button", "x40 y160 w150 h30", hotkeyProfileActive ? "Disable Profile" : "Enable Profile")
+    btnToggleProfile.OnEvent("Click", (*) => ToggleProfileInConfig(configGui, btnToggleProfile))
+    
+    ; WASD Mapping display
+    configGui.Add("Text", "x40 y210 w600 h20", "Current WASD Mappings:")
+    configGui.SetFont("s9")
+    
+    y := 240
+    col1X := 60
+    col2X := 200
+    col3X := 340
+    col4X := 480
+    
+    ; Header row
+    configGui.Add("Text", "x" . col1X . " y" . y . " w100 h20 +Border Center", "WASD Key")
+    configGui.Add("Text", "x" . col2X . " y" . y . " w100 h20 +Border Center", "→ Numpad")
+    configGui.Add("Text", "x" . col3X . " y" . y . " w100 h20 +Border Center", "WASD Key")
+    configGui.Add("Text", "x" . col4X . " y" . y . " w100 h20 +Border Center", "→ Numpad")
+    y += 25
+    
+    ; Mapping rows
+    keys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
+    for i, key in keys {
+        if (Mod(i-1, 2) = 0) {
+            ; Left column
+            xPos := col1X
+            xPosArrow := col2X
+        } else {
+            ; Right column
+            xPos := col3X
+            xPosArrow := col4X
+            y += 25
+        }
+        
+        configGui.Add("Text", "x" . xPos . " y" . y . " w100 h20 +Border Center", "CapsLock+" . StrUpper(key))
+        configGui.Add("Text", "x" . xPosArrow . " y" . y . " w100 h20 +Border Center", wasdHotkeyMap[key])
+    }
+    
+    ; Instructions
+    configGui.SetFont("s10")
+    configGui.Add("Text", "x40 y410 w600 h40", "Instructions: Enable the profile to use CapsLock+WASD instead of Numpad keys. Toggle with Ctrl+H hotkey.")
+    
+    ; === TAB 2: GENERAL SETTINGS ===
+    tabs.UseTab(2)
+    configGui.Add("Text", "x40 y100 w600 h20", "General application settings will be added here in future updates.")
+    
+    ; === TAB 3: PERFORMANCE ===
+    tabs.UseTab(3)
+    configGui.Add("Text", "x40 y100 w600 h20", "Performance monitoring and optimization settings will be added here.")
+    
+    ; Control buttons
+    configGui.Add("Text", "x20 y480 w660 h20", "💡 Tip: Use Ctrl+H to quickly toggle hotkey profile on/off")
+    
+    btnClose := configGui.Add("Button", "x580 y510 w80 h30", "Close")
+    btnClose.OnEvent("Click", (*) => configGui.Destroy())
+    
+    configGui.Show("w700 h570")
+}
+
+ToggleProfileInConfig(configGui, btnToggle) {
+    global hotkeyProfileActive
+    
+    ; Toggle the profile
+    ToggleHotkeyProfile()
+    
+    ; Update button text and GUI
+    btnToggle.Text := hotkeyProfileActive ? "Disable Profile" : "Enable Profile"
+    
+    ; Close and reopen config to refresh status display
+    configGui.Destroy()
+    Sleep(100)
+    ShowConfigMenu()
 }
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
