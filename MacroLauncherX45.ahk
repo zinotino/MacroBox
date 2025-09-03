@@ -215,6 +215,21 @@ global degradationColors := Map(
 
 global severityLevels := ["high", "medium", "low"]
 
+; Helper function to get degradation type ID by name
+GetDegradationTypeByName(degradationName) {
+    global degradationTypes
+    
+    ; Search for the name in the degradationTypes map
+    for id, name in degradationTypes {
+        if (name = degradationName) {
+            return id
+        }
+    }
+    
+    ; Default to smudge if not found
+    return 1
+}
+
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
@@ -2533,7 +2548,7 @@ CreateRecordedMacrosTab(statsGui, tabs, timeFilter) {
     
     ; Filter only recorded macro executions
     for execution in filteredExecutions {
-        if (execution.category = "macro" && execution.HasOwnProp("detailedBoxes")) {
+        if (execution.category = "macro") {
             macroExecutions.Push(execution)
         }
     }
@@ -2555,9 +2570,31 @@ CreateRecordedMacrosTab(statsGui, tabs, timeFilter) {
         totalBoxes := 0
         for execution in macroExecutions {
             totalBoxes += execution.boundingBoxCount
-            for box in execution.detailedBoxes {
-                if (degradationCounts.Has(box.degradationName)) {
-                    degradationCounts[box.degradationName]++
+            
+            ; Count degradations from perBoxSummary if detailedBoxes not available
+            if (execution.HasOwnProp("detailedBoxes") && execution.detailedBoxes.Length > 0) {
+                for box in execution.detailedBoxes {
+                    if (degradationCounts.Has(box.degradationName)) {
+                        degradationCounts[box.degradationName]++
+                    }
+                }
+            } else if (execution.perBoxSummary && execution.perBoxSummary != "" && execution.perBoxSummary != "JSON: Rain (High)") {
+                ; Parse perBoxSummary directly for degradation counts
+                try {
+                    summaryParts := StrSplit(execution.perBoxSummary, ", ")
+                    if (summaryParts) {
+                        for index, part in summaryParts {
+                            if (part && RegExMatch(part, "(\d+)x(.+)", &degradMatch)) {
+                                count := Integer(degradMatch[1])
+                                degradationName := degradMatch[2]
+                                if (degradationCounts.Has(degradationName)) {
+                                    degradationCounts[degradationName] += count
+                                }
+                            }
+                        }
+                    }
+                } catch as e {
+                    ; Skip if parsing fails
                 }
             }
         }
@@ -3176,7 +3213,7 @@ LoadExecutionData() {
             pos := 1
             while (pos := RegExMatch(jsonArray, 's)"id":\s*(\d+).*?"timestamp":\s*"([^"]*)".*?"button":\s*"([^"]*)".*?"layer":\s*(\d+).*?"mode":\s*"([^"]*)".*?"boundingBoxCount":\s*(\d+).*?"executionTime":\s*(\d+).*?"category":\s*"([^"]*)".*?"severity":\s*"([^"]*)".*?"perBoxSummary":\s*"([^"]*)"', &match, pos)) {
                 
-                ; Create execution record
+                ; Create execution record with minimum required properties
                 execution := {
                     id: Integer(match[1]),
                     timestamp: match[2],
@@ -3187,7 +3224,12 @@ LoadExecutionData() {
                     executionTime: Integer(match[7]),
                     category: match[8],
                     severity: match[9],
-                    perBoxSummary: match[10]
+                    perBoxSummary: match[10],
+                    degradationSummary: match[10],  ; Add degradationSummary as alias
+                    boundingBoxes: [],              ; Initialize empty arrays
+                    detailedBoxes: [],
+                    taggedBoxes: 0,
+                    untaggedBoxes: Integer(match[6])  ; Default all boxes to untagged
                 }
                 
                 macroExecutionLog.Push(execution)
