@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git commit:*)",
       "Bash(git tag:*)",
-      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahk)"
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahk)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

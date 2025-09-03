@@ -792,6 +792,9 @@ SetupHotkeys() {
         Hotkey("F11", (*) => ShowRecordingDebug())
         Hotkey("F12", (*) => ShowOfflineStatsScreen())
         
+        ; Break mode toggle
+        Hotkey("^b", (*) => ToggleBreakMode())  ; Ctrl+B for break mode
+        
         ; Layer navigation
         Hotkey("NumpadDiv", (*) => SwitchLayer("prev"))
         Hotkey("NumpadSub", (*) => SwitchLayer("next"))
@@ -4282,6 +4285,29 @@ ReadStatsFromCSV() {
     }
     
     return stats
+}
+
+; ===== BREAK MODE TOGGLE =====
+ToggleBreakMode() {
+    global breakModeActive, statusBar
+    
+    ; Toggle the break mode state
+    breakModeActive := !breakModeActive
+    
+    ; Update status display
+    if (breakModeActive) {
+        UpdateStatus("🛑 BREAK MODE ACTIVE - Tracking paused")
+        ; Update status bar if available
+        if (statusBar) {
+            statusBar.SetText("BREAK MODE ACTIVE", 3)
+        }
+    } else {
+        UpdateStatus("✅ ACTIVE - Tracking resumed") 
+        ; Update status bar if available
+        if (statusBar) {
+            statusBar.SetText("ACTIVE", 3)
+        }
+    }
 }
 
 UpdateActiveTime() {
