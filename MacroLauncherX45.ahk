@@ -1896,96 +1896,167 @@ ShowStats() {
     statsGui.Add("Text", "x20 y20 w800 h30 Center", "📊 MACROMASTER PERSISTENT ANALYTICS")
     statsGui.SetFont("s12 Bold")
     
+    ; Timing section
+    CreateTimingSection(statsGui)
+    
+    ; Create tabbed interface
+    tabs := statsGui.Add("Tab3", "x20 y120 w800 h400", ["📊 All-Time Stats", "🔄 Current Session", "⏱️ Timing Metrics"])
+    
     ; Get persistent CSV data
     allTimeStats := ReadStatsFromCSV(false)  ; All sessions
     currentSessionStats := ReadStatsFromCSV(true)  ; Current session only
     
-    ; Create content sections
-    CreateStatsContent(statsGui, allTimeStats, currentSessionStats)
+    ; Create tab content
+    CreateAllTimeStatsTab(statsGui, tabs, allTimeStats)
+    CreateCurrentSessionTab(statsGui, tabs, currentSessionStats)
+    CreateTimingMetricsTab(statsGui, tabs, allTimeStats, currentSessionStats)
     
     ; Control buttons
-    btnRefresh := statsGui.Add("Button", "x20 y520 w100 h30", "🔄 Refresh")
+    btnRefresh := statsGui.Add("Button", "x20 y540 w100 h30", "🔄 Refresh")
     btnRefresh.OnEvent("Click", (*) => RefreshStats(statsGui))
     
-    btnExportCSV := statsGui.Add("Button", "x130 y520 w120 h30", "📊 Export CSV")
+    btnExportCSV := statsGui.Add("Button", "x130 y540 w120 h30", "📊 Export CSV")
     btnExportCSV.OnEvent("Click", (*) => ExportDegradationData())
     
-    btnClose := statsGui.Add("Button", "x720 y520 w80 h30", "Close")
+    btnClose := statsGui.Add("Button", "x720 y540 w80 h30", "Close")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
     
     ; Quick reference
-    statsGui.Add("Text", "x20 y560 w800 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
+    statsGui.Add("Text", "x20 y580 w800 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
     
-    statsGui.Show("w840 h620")
+    statsGui.Show("w840 h650")
 }
 
-CreateStatsContent(statsGui, allTimeStats, currentSessionStats) {
+CreateTimingSection(statsGui) {
     global sessionId, totalActiveTime, breakMode, lastActiveTime
-    
-    statsGui.SetFont("s9")
-    
-    ; ===== TIMING SECTION =====
-    statsGui.Add("Text", "x20 y60 w800 h20", "⏱️ TIMING & SESSION INFO")
-    statsGui.SetFont("s9 Bold")
     
     ; Calculate current active time
     currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
     timeDisplay := FormatActiveTime(currentActiveTime)
     
-    ; Session info
-    statsGui.Add("Text", "x30 y85 w200 h20", "Current Session: " . sessionId)
-    statsGui.Add("Text", "x250 y85 w200 h20", "Active Time: " . timeDisplay)
-    statsGui.Add("Text", "x450 y85 w200 h20", "Break Mode: " . (breakMode ? "🔴 ACTIVE" : "✅ OFF"))
-    
-    ; ===== ALL-TIME STATS SECTION =====
-    statsGui.Add("Text", "x20 y120 w800 h20", "📊 ALL-TIME PERSISTENT STATS")
-    statsGui.SetFont("s9 Bold")
+    ; Session info header
+    statsGui.SetFont("s9")
+    statsGui.Add("Text", "x30 y60 w200 h20", "Session: " . sessionId)
+    statsGui.Add("Text", "x250 y60 w200 h20", "Active Time: " . timeDisplay)
+    statsGui.Add("Text", "x450 y60 w200 h20", "Break Mode: " . (breakMode ? "🔴 ACTIVE" : "✅ OFF"))
+}
+
+CreateAllTimeStatsTab(statsGui, tabs, allTimeStats) {
+    tabs.UseTab(1)
     
     content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                          📈 PERSISTENT USAGE OVERVIEW                        ║`n"
+    content .= "║                          📈 ALL-TIME PERSISTENT STATS                        ║`n"
     content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     
-    ; Main stats
     content .= "📊 EXECUTION SUMMARY:`n"
     content .= "  • Total Executions: " . allTimeStats["total_executions"] . " operations`n"
     content .= "  • Total Boxes Drawn: " . allTimeStats["total_boxes"] . " boxes`n"
     content .= "  • Most Used Button: " . allTimeStats["most_used_button"] . "`n"
     content .= "  • Most Active Layer: " . allTimeStats["most_active_layer"] . "`n`n"
     
-    ; Performance metrics
     content .= "⚡ PERFORMANCE METRICS:`n"
     content .= "  • Average Execution Time: " . allTimeStats["average_execution_time"] . "ms`n"
     content .= "  • Boxes per Hour: " . allTimeStats["boxes_per_hour"] . "`n"
     content .= "  • Executions per Hour: " . allTimeStats["executions_per_hour"] . "`n`n"
     
-    ; Degradation breakdown
     if (allTimeStats["degradation_breakdown"].Count > 0) {
         content .= "🎯 DEGRADATION BREAKDOWN:`n"
         for degradation, count in allTimeStats["degradation_breakdown"] {
             content .= "  • " . StrTitle(degradation) . ": " . count . " boxes`n"
         }
-        content .= "`n"
     } else {
-        content .= "🎯 DEGRADATION BREAKDOWN: No data yet - execute some macros!`n`n"
+        content .= "🎯 DEGRADATION BREAKDOWN: No data yet - execute some macros!`n"
     }
     
-    ; Current session stats
-    content .= "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                            🔄 CURRENT SESSION                                ║`n"
+    editAllTime := statsGui.Add("Edit", "x30 y150 w760 h350 ReadOnly VScroll", content)
+    statsGui.editAllTime := editAllTime
+}
+
+CreateCurrentSessionTab(statsGui, tabs, currentSessionStats) {
+    tabs.UseTab(2)
+    
+    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
+    content .= "║                            🔄 CURRENT SESSION STATS                          ║`n"
     content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     
-    content .= "📊 THIS SESSION STATS:`n"
+    content .= "📊 THIS SESSION:`n"
     content .= "  • Session Executions: " . currentSessionStats["total_executions"] . " operations`n"
     content .= "  • Session Boxes: " . currentSessionStats["total_boxes"] . " boxes`n"
+    
     if (currentSessionStats["total_executions"] > 0) {
         content .= "  • Session Avg Time: " . currentSessionStats["average_execution_time"] . "ms`n"
+        content .= "  • Session Boxes/Hour: " . currentSessionStats["boxes_per_hour"] . "`n"
+        content .= "  • Session Executions/Hour: " . currentSessionStats["executions_per_hour"] . "`n`n"
+        
+        if (currentSessionStats["degradation_breakdown"].Count > 0) {
+            content .= "🎯 SESSION DEGRADATIONS:`n"
+            for degradation, count in currentSessionStats["degradation_breakdown"] {
+                content .= "  • " . StrTitle(degradation) . ": " . count . " boxes`n"
+            }
+        }
+    } else {
+        content .= "`nNo executions in this session yet.`n"
+        content .= "Execute some macros to see session-specific stats!"
     }
-    content .= "`n"
     
-    ; Create scrollable text area
-    statsGui.SetFont("s8")
-    editStats := statsGui.Add("Edit", "x30 y145 w780 h360 ReadOnly VScroll", content)
-    statsGui.editStats := editStats
+    editSession := statsGui.Add("Edit", "x30 y150 w760 h350 ReadOnly VScroll", content)
+    statsGui.editSession := editSession
+}
+
+CreateTimingMetricsTab(statsGui, tabs, allTimeStats, currentSessionStats) {
+    tabs.UseTab(3)
+    
+    global sessionId, applicationStartTime, totalActiveTime, breakMode
+    
+    ; Calculate timing metrics
+    appUptime := (A_TickCount - applicationStartTime) / 1000 ; seconds
+    uptimeFormatted := FormatActiveTime(A_TickCount - applicationStartTime)
+    activeTimeFormatted := FormatActiveTime(totalActiveTime)
+    
+    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
+    content .= "║                             ⏱️ TIMING METRICS                                ║`n"
+    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
+    
+    content .= "🕐 APPLICATION TIMING:`n"
+    content .= "  • App Uptime: " . uptimeFormatted . "`n"
+    content .= "  • Active Working Time: " . activeTimeFormatted . "`n"
+    content .= "  • Break Mode Status: " . (breakMode ? "🔴 ACTIVE" : "✅ INACTIVE") . "`n"
+    content .= "  • Current Session ID: " . sessionId . "`n`n"
+    
+    ; Efficiency calculations
+    if (appUptime > 0 && allTimeStats["total_executions"] > 0) {
+        execPerMinute := Round(allTimeStats["total_executions"] / (appUptime / 60), 2)
+        boxesPerMinute := Round(allTimeStats["total_boxes"] / (appUptime / 60), 2)
+        
+        content .= "📈 EFFICIENCY METRICS:`n"
+        content .= "  • Executions per Minute: " . execPerMinute . "`n"
+        content .= "  • Boxes per Minute: " . boxesPerMinute . "`n"
+        content .= "  • Average Execution Duration: " . allTimeStats["average_execution_time"] . "ms`n"
+        
+        if (allTimeStats["total_boxes"] > 0) {
+            avgBoxTime := Round(allTimeStats["average_execution_time"] / allTimeStats["total_boxes"] * allTimeStats["total_executions"], 1)
+            content .= "  • Average Time per Box: ~" . avgBoxTime . "ms`n"
+        }
+        content .= "`n"
+    }
+    
+    ; Session comparison
+    if (currentSessionStats["total_executions"] > 0 && allTimeStats["total_executions"] > currentSessionStats["total_executions"]) {
+        content .= "🔄 SESSION vs ALL-TIME COMPARISON:`n"
+        sessionPerc := Round((currentSessionStats["total_executions"] / allTimeStats["total_executions"]) * 100, 1)
+        content .= "  • This session represents " . sessionPerc . "% of total executions`n"
+        
+        if (currentSessionStats["average_execution_time"] > 0 && allTimeStats["average_execution_time"] > 0) {
+            if (currentSessionStats["average_execution_time"] > allTimeStats["average_execution_time"]) {
+                content .= "  • This session is running " . Round(((currentSessionStats["average_execution_time"] / allTimeStats["average_execution_time"]) - 1) * 100, 1) . "% slower than average`n"
+            } else {
+                content .= "  • This session is running " . Round((1 - (currentSessionStats["average_execution_time"] / allTimeStats["average_execution_time"])) * 100, 1) . "% faster than average`n"
+            }
+        }
+    }
+    
+    editTiming := statsGui.Add("Edit", "x30 y150 w760 h350 ReadOnly VScroll", content)
+    statsGui.editTiming := editTiming
 }
 
 RefreshStats(statsGui) {
@@ -4102,10 +4173,8 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         return
     }
     
-    ; Skip if currently recording or playback is active (avoid double-tracking)
-    if (recording || playback) {
-        return
-    }
+    ; Note: We DO want to track completed executions, so removed playback check
+    ; Only skip if recording to avoid tracking during macro recording
     
     ; Calculate execution_time_ms
     execution_time_ms := A_TickCount - executionStartTime
