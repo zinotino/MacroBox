@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit:*)",
+      "Bash(git tag:*)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahk)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
