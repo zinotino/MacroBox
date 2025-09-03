@@ -94,7 +94,6 @@ global sessionId := ""
 global masterStatsCSV := A_ScriptDir . "\data\master_stats.csv"
 global currentUsername := EnvGet("USERNAME")
 global sessionStartTime := 0
-global breakModeActive := false
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -312,7 +311,6 @@ InitializeVariables() {
     now := FormatTime(A_Now, "yyyyMMdd_HHmmss")
     sessionId := "sess_" . now
     sessionStartTime := A_TickCount
-    breakModeActive := false
 }
 
 InitializeDirectories() {
@@ -4056,7 +4054,7 @@ InitializeCSVFile() {
 }
 
 AppendToCSV(timestamp, execution_type, button_key, layer, execution_time_ms, bbox_count, degradation_assignments, severity_level, canvas_mode) {
-    global masterStatsCSV, sessionId, currentUsername, breakModeActive, totalActiveTime
+    global masterStatsCSV, sessionId, currentUsername, breakMode, totalActiveTime
     
     try {
         ; Calculate session_active_time_ms using existing totalTime variable
@@ -4075,7 +4073,7 @@ AppendToCSV(timestamp, execution_type, button_key, layer, execution_time_ms, bbo
                 . severity_level . ","
                 . canvas_mode . ","
                 . session_active_time_ms . ","
-                . breakModeActive . "`n"
+                . breakMode . "`n"
         
         ; Append to CSV file
         FileAppend(csvRow, masterStatsCSV, "UTF-8")
@@ -4086,10 +4084,10 @@ AppendToCSV(timestamp, execution_type, button_key, layer, execution_time_ms, bbo
 }
 
 RecordExecutionStats(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
-    global breakModeActive, recording, playback, currentLayer, canvasType
+    global breakMode, recording, playback, currentLayer, canvasType
     
-    ; Skip if breakModeActive is true (don't track during break) - return early
-    if (breakModeActive) {
+    ; Skip if breakMode is true (don't track during break) - return early
+    if (breakMode) {
         return
     }
     
@@ -4287,28 +4285,6 @@ ReadStatsFromCSV() {
     return stats
 }
 
-; ===== BREAK MODE TOGGLE =====
-ToggleBreakMode() {
-    global breakModeActive, statusBar
-    
-    ; Toggle the break mode state
-    breakModeActive := !breakModeActive
-    
-    ; Update status display
-    if (breakModeActive) {
-        UpdateStatus("🛑 BREAK MODE ACTIVE - Tracking paused")
-        ; Update status bar if available
-        if (statusBar) {
-            statusBar.SetText("BREAK MODE ACTIVE", 3)
-        }
-    } else {
-        UpdateStatus("✅ ACTIVE - Tracking resumed") 
-        ; Update status bar if available
-        if (statusBar) {
-            statusBar.SetText("ACTIVE", 3)
-        }
-    }
-}
 
 UpdateActiveTime() {
     global breakMode, totalActiveTime, lastActiveTime
