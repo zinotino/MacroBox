@@ -223,6 +223,7 @@ Main() {
         InitializeVariables()
         InitializeCSVFile()
         InitializeStatsSystem()
+        LoadExecutionData()  ; Load persistent stats from JSON
         InitializeJsonAnnotations()
         InitializeVisualizationSystem()
         
@@ -311,6 +312,9 @@ InitializeVariables() {
     now := FormatTime(A_Now, "yyyyMMdd_HHmmss")
     sessionId := "sess_" . now
     sessionStartTime := A_TickCount
+    
+    ; Debug: Verify sessionId is set
+    ; MsgBox("SessionId initialized: " . sessionId)
 }
 
 InitializeDirectories() {
@@ -1903,8 +1907,8 @@ ShowStats() {
     
     statsGui.Add("Text", "x370 y60 w200 h20", "Active Time: " . timeDisplay)
     
-    ; Create tabbed interface with Timing Metrics added
-    tabs := statsGui.Add("Tab3", "x20 y90 w860 h450", ["📦 Recorded Macros", "📋 JSON Profiles", "📊 Combined Overview", "⏱️ Timing Metrics"])
+    ; Create tabbed interface - removed redundant Combined Overview
+    tabs := statsGui.Add("Tab3", "x20 y90 w860 h500", ["📦 Recorded Macros", "📋 JSON Profiles", "⏱️ Timing Metrics"])
     
     ; Store references for updates
     statsGui.tabs := tabs
@@ -1912,29 +1916,28 @@ ShowStats() {
     ; Setup tab content - using original working functions
     CreateRecordedMacrosTab(statsGui, tabs, "All Time")
     CreateJsonProfilesTab(statsGui, tabs, "All Time")
-    CreateCombinedOverviewTab(statsGui, tabs, "All Time")
     CreateTimingMetricsTabOriginal(statsGui, tabs)
     
     ; Export and control buttons
-    statsGui.Add("Text", "x20 y560 w860 h20", "📤 Export & Controls:")
+    statsGui.Add("Text", "x20 y610 w860 h20", "📤 Export & Controls:")
     
-    btnExportCSV := statsGui.Add("Button", "x20 y590 w120 h30", "📊 Export CSV")
+    btnExportCSV := statsGui.Add("Button", "x20 y640 w120 h30", "📊 Export CSV")
     btnExportCSV.OnEvent("Click", (*) => ExportDegradationData())
     
-    btnExportAll := statsGui.Add("Button", "x150 y590 w130 h30", "📄 Export All Data")
+    btnExportAll := statsGui.Add("Button", "x150 y640 w130 h30", "📄 Export All Data")
     btnExportAll.OnEvent("Click", (*) => ExportAllHistoricalData())
     
-    ; Quick reference
-    statsGui.Add("Text", "x20 y640 w860 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
-    
-    btnClose := statsGui.Add("Button", "x800 y690 w80 h30", "Close")
+    btnClose := statsGui.Add("Button", "x800 y640 w80 h30", "Close")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
     
-    statsGui.Show("w900 h730")
+    ; Quick reference
+    statsGui.Add("Text", "x20 y680 w860 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
+    
+    statsGui.Show("w900 h750")
 }
 
 CreateTimingMetricsTabOriginal(statsGui, tabs) {
-    tabs.UseTab(4)
+    tabs.UseTab(3)
     
     global applicationStartTime, totalActiveTime, breakMode, sessionId, macroExecutionLog
     
@@ -1999,7 +2002,7 @@ CreateTimingMetricsTabOriginal(statsGui, tabs) {
         content .= "  • Execute some macros to see timing metrics!`n"
     }
     
-    editTiming := statsGui.Add("Edit", "x30 y120 w800 h400 ReadOnly VScroll", content)
+    editTiming := statsGui.Add("Edit", "x30 y120 w800 h450 ReadOnly VScroll", content)
     statsGui.editTiming := editTiming
 }
 
@@ -3144,6 +3147,62 @@ SaveExecutionData() {
         
     } catch Error as e {
         UpdateStatus("⚠️ Failed to save execution data: " . e.Message . " (Path: " . workDir . ")")
+    }
+}
+
+LoadExecutionData() {
+    global workDir, macroExecutionLog
+    
+    try {
+        logFile := workDir . "\macro_execution_log.json"
+        
+        if (!FileExist(logFile)) {
+            macroExecutionLog := [] ; Initialize empty if no file
+            return
+        }
+        
+        ; Read and parse JSON file
+        jsonContent := FileRead(logFile, "UTF-8")
+        
+        ; Clear existing log
+        macroExecutionLog := []
+        
+        ; Parse JSON manually (since we have simple format)
+        ; Look for execution records in the JSON
+        if (RegExMatch(jsonContent, 's)\[(.*)\]', &matches)) {
+            jsonArray := matches[1]
+            
+            ; Extract each execution object
+            pos := 1
+            while (pos := RegExMatch(jsonArray, 's)"id":\s*(\d+).*?"timestamp":\s*"([^"]*)".*?"button":\s*"([^"]*)".*?"layer":\s*(\d+).*?"mode":\s*"([^"]*)".*?"boundingBoxCount":\s*(\d+).*?"executionTime":\s*(\d+).*?"category":\s*"([^"]*)".*?"severity":\s*"([^"]*)".*?"perBoxSummary":\s*"([^"]*)"', &match, pos)) {
+                
+                ; Create execution record
+                execution := {
+                    id: Integer(match[1]),
+                    timestamp: match[2],
+                    button: match[3],
+                    layer: Integer(match[4]),
+                    mode: match[5],
+                    boundingBoxCount: Integer(match[6]),
+                    executionTime: Integer(match[7]),
+                    category: match[8],
+                    severity: match[9],
+                    perBoxSummary: match[10]
+                }
+                
+                macroExecutionLog.Push(execution)
+                pos += StrLen(match[0])
+            }
+        }
+        
+        ; Update status with loaded count
+        if (macroExecutionLog.Length > 0) {
+            UpdateStatus("📊 Loaded " . macroExecutionLog.Length . " execution records from persistent storage")
+        }
+        
+    } catch as e {
+        ; Silently handle errors - don't break the application
+        macroExecutionLog := [] ; Ensure it's initialized
     }
 }
 
