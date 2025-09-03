@@ -980,6 +980,9 @@ SetupHotkeys() {
         ; Hotkey profile toggle
         Hotkey("^h", (*) => ToggleHotkeyProfile())  ; Ctrl+H for hotkey profile toggle
         
+        ; Configuration menu access
+        Hotkey("^k", (*) => ShowConfigMenu())  ; Ctrl+K for configuration menu
+        
         ; Layer navigation
         Hotkey("NumpadDiv", (*) => SwitchLayer("prev"))
         Hotkey("NumpadSub", (*) => SwitchLayer("next"))
@@ -1544,13 +1547,6 @@ CreateToolbar() {
     mainGui.btnBreakMode := btnBreakMode
     x += Round(75 * scaleFactor)
     
-    ; Settings/Config button
-    btnSettings := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(70 * scaleFactor) . " h" . btnHeight, "⚙️ Config")
-    btnSettings.OnEvent("Click", (*) => ShowConfigMenu())
-    btnSettings.SetFont("s8 bold")
-    btnSettings.Opt("+Background0x2196F3")
-    mainGui.btnSettings := btnSettings
-    x += Round(75 * scaleFactor)
     
     ; Clear button
     btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(55 * scaleFactor) . " h" . btnHeight, "🗑️ Clear")
@@ -1682,7 +1678,7 @@ HandleButtonClick(buttonName, *) {
 }
 
 HandleContextMenu(buttonName, *) {
-    UpdateStatus("🖱️ Right-click: " . buttonName)
+    UpdateStatus("🖱️ Right-click: " . buttonName . " | ⚙️ Configuration menu available")
     ShowContextMenu(buttonName)
 }
 
@@ -1957,6 +1953,15 @@ ShowContextMenu(buttonName, *) {
     
     contextMenu.Add("🖼️ Add Thumbnail", (*) => AddThumbnail(buttonName))
     contextMenu.Add("🗑️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
+    contextMenu.Add()
+    
+    ; Configuration submenu
+    configMenu := Menu()
+    configMenu.Add("🎹 Hotkey Profiles", (*) => ShowConfigMenu())
+    configMenu.Add("📊 Statistics", (*) => ShowStats())
+    configMenu.Add("🗃️ Data Export", (*) => ShowOfflineStatsScreen())
+    
+    contextMenu.Add("⚙️ Configuration", configMenu)
     
     contextMenu.Show()
 }
@@ -2187,7 +2192,7 @@ ShowConfigMenu() {
     configGui.Add("Text", "x40 y100 w600 h20", "Performance monitoring and optimization settings will be added here.")
     
     ; Control buttons
-    configGui.Add("Text", "x20 y480 w660 h20", "💡 Tip: Use Ctrl+H to quickly toggle hotkey profile on/off")
+    configGui.Add("Text", "x20 y480 w660 h20", "💡 Access: Right-click any button → ⚙️ Configuration | Hotkeys: Ctrl+K (config), Ctrl+H (toggle profile)")
     
     btnClose := configGui.Add("Button", "x580 y510 w80 h30", "Close")
     btnClose.OnEvent("Click", (*) => configGui.Destroy())
