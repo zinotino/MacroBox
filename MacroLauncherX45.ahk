@@ -981,7 +981,7 @@ SetupHotkeys() {
         Hotkey("^h", (*) => ToggleHotkeyProfile())  ; Ctrl+H for hotkey profile toggle
         
         ; Configuration menu access
-        Hotkey("^k", (*) => ShowConfigMenu())  ; Ctrl+K for configuration menu
+        Hotkey("^k", (*) => ShowSettings())  ; Ctrl+K for configuration menu
         
         ; Layer navigation
         Hotkey("NumpadDiv", (*) => SwitchLayer("prev"))
@@ -1957,7 +1957,7 @@ ShowContextMenu(buttonName, *) {
     
     ; Configuration submenu
     configMenu := Menu()
-    configMenu.Add("🎹 Hotkey Profiles", (*) => ShowConfigMenu())
+    configMenu.Add("⚙️ Settings & Profiles", (*) => ShowSettings())
     configMenu.Add("📊 Statistics", (*) => ShowStats())
     configMenu.Add("🗃️ Data Export", (*) => ShowOfflineStatsScreen())
     
@@ -2459,7 +2459,7 @@ ShowSettings() {
     settingsGui.SetFont("s12 Bold")
     
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h400", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs"])
+    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h400", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
     
     ; TAB 1: Configuration Management
     tabs.UseTab(1)
@@ -2609,11 +2609,204 @@ ShowSettings() {
     
     settingsGui.Add("Text", "x40 y255 w400 h40", "🌐 Share packs with other users by sending the ZIP files. Recipients can import them via 'Import New Pack' to add macros to their collection.")
     
+    ; TAB 4: Hotkey Profiles
+    tabs.UseTab(4)
+    global hotkeyProfileActive, wasdHotkeyMap
+    
+    settingsGui.Add("Text", "x40 y95 w400 h20", "🎹 WASD-Oriented Hotkey Profile System:")
+    
+    ; Profile status and toggle
+    statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+WASD enabled" : "🔴 INACTIVE - Numpad mode active"
+    settingsGui.Add("Text", "x40 y120 w300 h20", "Status: " . statusText)
+    
+    btnToggleProfile := settingsGui.Add("Button", "x350 y118 w90 h22", hotkeyProfileActive ? "Disable" : "Enable")
+    btnToggleProfile.OnEvent("Click", (*) => ToggleHotkeyProfileInSettings(btnToggleProfile, settingsGui))
+    
+    ; WASD mapping configuration (compact version)
+    settingsGui.Add("Text", "x40 y155 w400 h20", "Customize WASD → Numpad Mappings:")
+    
+    ; Store dropdown references
+    settingsGui.hotkeyDropdowns := Map()
+    numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+    
+    ; Create compact mapping interface
+    y := 180
+    keys := ["w", "a", "s", "d", "q", "e"]  ; Show only main keys due to space constraints
+    
+    for i, key in keys {
+        if (Mod(i-1, 3) = 0) {
+            ; Start new row every 3 items
+            if (i > 1) y += 25
+            x := 40
+        } else {
+            x += 140
+        }
+        
+        ; Key label and dropdown
+        settingsGui.Add("Text", "x" . x . " y" . y . " w30 h20", "🅰️" . StrUpper(key) . ":")
+        dropdown := settingsGui.Add("DropDownList", "x" . (x+35) . " y" . (y-2) . " w70 h22 Choose1", numpadOptions)
+        
+        ; Set current selection
+        currentMapping := wasdHotkeyMap[key]
+        for j, option in numpadOptions {
+            if (option = currentMapping) {
+                dropdown.Choose(j)
+                break
+            }
+        }
+        
+        settingsGui.hotkeyDropdowns[key] := dropdown
+    }
+    
+    ; Control buttons
+    y += 35
+    btnSaveMappings := settingsGui.Add("Button", "x40 y" . y . " w80 h25", "💾 Save")
+    btnSaveMappings.OnEvent("Click", (*) => SaveWASDMappingsInSettings(settingsGui))
+    
+    btnResetMappings := settingsGui.Add("Button", "x130 y" . y . " w80 h25", "🔄 Reset")
+    btnResetMappings.OnEvent("Click", (*) => ResetWASDMappingsInSettings(settingsGui))
+    
+    btnApplyMappings := settingsGui.Add("Button", "x220 y" . y . " w80 h25", "🧪 Apply")
+    btnApplyMappings.OnEvent("Click", (*) => ApplyWASDMappingsInSettings(settingsGui))
+    
+    ; Instructions
+    y += 35
+    settingsGui.Add("Text", "x40 y" . y . " w400 h40", "💡 Enable profile to use CapsLock+WASD instead of numpad. Customize mappings above and Save. Use Ctrl+H to toggle quickly, Ctrl+K to access settings.")
+    
     ; Close button
     btnClose := settingsGui.Add("Button", "x420 y470 w60 h25", "Close")
     btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
     
     settingsGui.Show("w500 h510")
+}
+
+; Hotkey profile functions for settings interface
+ToggleHotkeyProfileInSettings(btnToggle, settingsGui) {
+    global hotkeyProfileActive
+    
+    ; Toggle the profile
+    ToggleHotkeyProfile()
+    
+    ; Update button text
+    btnToggle.Text := hotkeyProfileActive ? "Disable" : "Enable"
+    
+    ; Refresh settings to update status text
+    settingsGui.Destroy()
+    ShowSettings()
+}
+
+SaveWASDMappingsInSettings(settingsGui) {
+    global wasdHotkeyMap, hotkeyProfileActive
+    
+    try {
+        ; Get mappings from dropdowns (only the visible ones)
+        newMappings := Map()
+        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+        keys := ["w", "a", "s", "d", "q", "e"]  ; Match the keys shown
+        
+        ; Update only the keys that are shown in settings
+        for key in keys {
+            if (settingsGui.hotkeyDropdowns.Has(key)) {
+                dropdown := settingsGui.hotkeyDropdowns[key]
+                selectedIndex := dropdown.Value
+                newMappings[key] := numpadOptions[selectedIndex]
+            }
+        }
+        
+        ; Preserve existing mappings for keys not shown
+        allKeys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
+        for key in allKeys {
+            if (!newMappings.Has(key)) {
+                newMappings[key] := wasdHotkeyMap[key]  ; Keep existing
+            }
+        }
+        
+        ; Validate no duplicate assignments
+        usedMappings := Map()
+        for key, mapping in newMappings {
+            if (usedMappings.Has(mapping)) {
+                MsgBox("Error: " . mapping . " is assigned to multiple keys.", "Duplicate Mapping", "Icon!")
+                return
+            }
+            usedMappings[mapping] := key
+        }
+        
+        ; Apply changes
+        wasActive := hotkeyProfileActive
+        if (hotkeyProfileActive) {
+            DisableWASDHotkeys()
+        }
+        
+        wasdHotkeyMap := newMappings
+        SaveWASDMappingsToFile()
+        
+        if (wasActive) {
+            SetupWASDHotkeys()
+        }
+        
+        UpdateStatus("💾 WASD mappings saved successfully")
+        MsgBox("WASD mappings saved!", "Settings Saved", "Icon!")
+        
+    } catch Error as e {
+        UpdateStatus("❌ Failed to save WASD mappings: " . e.Message)
+        MsgBox("Failed to save: " . e.Message, "Save Error", "Icon!")
+    }
+}
+
+ResetWASDMappingsInSettings(settingsGui) {
+    if (MsgBox("Reset WASD mappings to defaults?", "Reset Mappings", "YesNo Icon?") = "Yes") {
+        InitializeWASDHotkeys()
+        UpdateStatus("🔄 WASD mappings reset to defaults")
+        
+        ; Refresh settings to update dropdowns
+        settingsGui.Destroy()
+        ShowSettings()
+    }
+}
+
+ApplyWASDMappingsInSettings(settingsGui) {
+    ; Same logic as SaveWASDMappingsInSettings but without saving to file
+    global wasdHotkeyMap, hotkeyProfileActive
+    
+    try {
+        newMappings := Map()
+        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+        keys := ["w", "a", "s", "d", "q", "e"]
+        
+        for key in keys {
+            if (settingsGui.hotkeyDropdowns.Has(key)) {
+                dropdown := settingsGui.hotkeyDropdowns[key]
+                selectedIndex := dropdown.Value
+                newMappings[key] := numpadOptions[selectedIndex]
+            }
+        }
+        
+        ; Preserve existing mappings for keys not shown
+        allKeys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
+        for key in allKeys {
+            if (!newMappings.Has(key)) {
+                newMappings[key] := wasdHotkeyMap[key]
+            }
+        }
+        
+        ; Apply without saving
+        wasActive := hotkeyProfileActive
+        if (hotkeyProfileActive) {
+            DisableWASDHotkeys()
+        }
+        
+        wasdHotkeyMap := newMappings
+        
+        if (wasActive) {
+            SetupWASDHotkeys()
+        }
+        
+        UpdateStatus("🧪 WASD mappings applied for testing")
+        MsgBox("Mappings applied! Use Ctrl+H to toggle and test.", "Test Applied", "Icon!")
+        
+    } catch Error as e {
+        UpdateStatus("❌ Failed to apply WASD mappings: " . e.Message)
+    }
 }
 
 ; Aspect ratio specific calibration functions
