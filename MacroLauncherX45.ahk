@@ -3955,48 +3955,9 @@ Join(array, delimiter) {
     return result
 }
 
-; SaveExecutionData()  ; DISABLED - CSV only approach {
-    global workDir, macroExecutionLog
-    
-    try {
-        ; Ensure directory exists
-        if !DirExist(workDir) {
-            DirCreate(workDir)
-        }
-        
-        logFile := workDir . "\macro_execution_log.json"
-        
-        ; Simple JSON-like format since we have a placeholder JSON class
-        jsonContent := "[\n"
-        for i, execution in macroExecutionLog {
-            if (i > 1) {
-                jsonContent .= ",\n"
-            }
-            jsonContent .= "  {\n"
-            jsonContent .= '    "id": ' . execution.id . ",\n"
-            jsonContent .= '    "timestamp": "' . execution.timestamp . '",\n'
-            jsonContent .= '    "button": "' . execution.button . '",\n'
-            jsonContent .= '    "layer": ' . execution.layer . ",\n"
-            jsonContent .= '    "mode": "' . execution.mode . '",\n'
-            jsonContent .= '    "boundingBoxCount": ' . execution.boundingBoxCount . ",\n"
-            jsonContent .= '    "executionTime": ' . execution.executionTime . ",\n"
-            jsonContent .= '    "category": "' . execution.category . '",\n'
-            jsonContent .= '    "severity": "' . execution.severity . '",\n'
-            jsonContent .= '    "perBoxSummary": "' . (execution.HasOwnProp("perBoxSummary") ? execution.perBoxSummary : "") . '"\n'
-            jsonContent .= "  }"
-        }
-        jsonContent .= "\n]"
-        
-        ; Delete existing file if it exists
-        if FileExist(logFile) {
-            FileDelete(logFile)
-        }
-        
-        FileAppend(jsonContent, logFile)
-        
-    } catch Error as e {
-        UpdateStatus("⚠️ Failed to save execution data: " . e.Message . " (Path: " . workDir . ")")
-    }
+SaveExecutionData() {
+    ; DISABLED - CSV only approach - function kept for compatibility
+    return
 }
 
 LoadExecutionData() {
