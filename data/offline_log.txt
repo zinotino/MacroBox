@@ -17,3 +17,6 @@
 2025-09-03 08:27:58 - Offline storage initialized
 2025-09-03 08:30:15 - Offline storage initialized
 2025-09-03 08:33:43 - Offline storage initialized
+2025-09-03 20:07:49 - Offline storage initialized
+2025-09-03 20:12:49 - Daily stats reset for Wednesday, September 3, 2025
+2025-09-03 20:16:42 - Offline storage initialized

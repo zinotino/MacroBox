@@ -344,10 +344,31 @@ SetupWASDHotkeys() {
         Hotkey("CapsLock Up", (*) => CapsLockUp(), "On")
         
         ; Setup WASD keys with CapsLock modifier
-        for wasdKey, buttonName in wasdHotkeyMap {
-            hotkeyCombo := "CapsLock & " . wasdKey
-            Hotkey(hotkeyCombo, (*) => ExecuteWASDMacro(buttonName), "On")
-        }
+        ; Handle each key individually to avoid closure issues
+        if (wasdHotkeyMap.Has("w"))
+            Hotkey("CapsLock & w", (*) => ExecuteWASDMacro(wasdHotkeyMap["w"]), "On")
+        if (wasdHotkeyMap.Has("a"))
+            Hotkey("CapsLock & a", (*) => ExecuteWASDMacro(wasdHotkeyMap["a"]), "On")
+        if (wasdHotkeyMap.Has("s"))
+            Hotkey("CapsLock & s", (*) => ExecuteWASDMacro(wasdHotkeyMap["s"]), "On")
+        if (wasdHotkeyMap.Has("d"))
+            Hotkey("CapsLock & d", (*) => ExecuteWASDMacro(wasdHotkeyMap["d"]), "On")
+        if (wasdHotkeyMap.Has("q"))
+            Hotkey("CapsLock & q", (*) => ExecuteWASDMacro(wasdHotkeyMap["q"]), "On")
+        if (wasdHotkeyMap.Has("e"))
+            Hotkey("CapsLock & e", (*) => ExecuteWASDMacro(wasdHotkeyMap["e"]), "On")
+        if (wasdHotkeyMap.Has("z"))
+            Hotkey("CapsLock & z", (*) => ExecuteWASDMacro(wasdHotkeyMap["z"]), "On")
+        if (wasdHotkeyMap.Has("c"))
+            Hotkey("CapsLock & c", (*) => ExecuteWASDMacro(wasdHotkeyMap["c"]), "On")
+        if (wasdHotkeyMap.Has("x"))
+            Hotkey("CapsLock & x", (*) => ExecuteWASDMacro(wasdHotkeyMap["x"]), "On")
+        if (wasdHotkeyMap.Has("f"))
+            Hotkey("CapsLock & f", (*) => ExecuteWASDMacro(wasdHotkeyMap["f"]), "On")
+        if (wasdHotkeyMap.Has("r"))
+            Hotkey("CapsLock & r", (*) => ExecuteWASDMacro(wasdHotkeyMap["r"]), "On")
+        if (wasdHotkeyMap.Has("t"))
+            Hotkey("CapsLock & t", (*) => ExecuteWASDMacro(wasdHotkeyMap["t"]), "On")
         
     } catch Error as e {
         UpdateStatus("⚠️ WASD hotkey setup failed: " . e.Message)
@@ -393,6 +414,7 @@ ExecuteWASDMacro(buttonName) {
     UpdateStatus("🎹 WASD: CapsLock+" . buttonName . " → " . buttonName)
     SafeExecuteMacroByKey(buttonName)
 }
+
 
 ; ===== MAIN INITIALIZATION =====
 Main() {
