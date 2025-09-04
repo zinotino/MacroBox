@@ -1025,6 +1025,7 @@ SetupHotkeys() {
         
         ; Utility
         Hotkey("NumpadEnter", (*) => SubmitCurrentImage())
+        Hotkey("+Enter", (*) => DirectClearExecution())
         Hotkey("RCtrl", (*) => EmergencyStop())
         
         UpdateStatus("✅ Hotkeys configured - F9 isolated for recording only")
@@ -2371,11 +2372,14 @@ ShowStats() {
     statsGui.SetFont("s10")
     
     ; Header with break mode indication
-    headerColor := breakMode ? "Red" : "Default"
     headerText := breakMode ? "🔴 BREAK MODE ACTIVE" : "📊 PROFESSIONAL ANALYTICS DASHBOARD"
     
     header := statsGui.Add("Text", "x20 y20 w900 h40 Center", headerText)
-    header.SetFont("s16 Bold", , headerColor)
+    if (breakMode) {
+        header.SetFont("s16 Bold", "cRed")
+    } else {
+        header.SetFont("s16 Bold")
+    }
     
     ; Key Performance Metrics Section
     statsGui.Add("Text", "x20 y70 w400 h25", "⚡ KEY PERFORMANCE METRICS")
@@ -2387,17 +2391,15 @@ ShowStats() {
     execsPerHour := csvStats["total_executions"] > 0 && activeTimeHours > 0 ? Round(csvStats["total_executions"] / activeTimeHours, 1) : 0
     
     ; Performance color coding
-    boxesColor := boxesPerHour >= 50 ? "Green" : (boxesPerHour >= 20 ? "Orange" : "Red")
-    execsColor := execsPerHour >= 10 ? "Green" : (execsPerHour >= 5 ? "Orange" : "Red")
-    
-    statsGui.SetFont("s14 Bold")
+    boxesColor := boxesPerHour >= 50 ? "cGreen" : (boxesPerHour >= 20 ? "cOrange" : "cRed")
+    execsColor := execsPerHour >= 10 ? "cGreen" : (execsPerHour >= 5 ? "cOrange" : "cRed")
     
     ; Large performance displays
     boxesDisplay := statsGui.Add("Text", "x30 y100 w180 h30", boxesPerHour . " boxes/hour")
-    boxesDisplay.SetFont("s14 Bold", , boxesColor)
+    boxesDisplay.SetFont("s14 Bold", boxesColor)
     
     execsDisplay := statsGui.Add("Text", "x220 y100 w180 h30", execsPerHour . " exec/hour")  
-    execsDisplay.SetFont("s14 Bold", , execsColor)
+    execsDisplay.SetFont("s14 Bold", execsColor)
     
     activeTimeDisplay := statsGui.Add("Text", "x410 y100 w180 h30", "Active: " . FormatActiveTime(currentActiveTime))
     activeTimeDisplay.SetFont("s14 Bold")
@@ -2407,10 +2409,11 @@ ShowStats() {
     statsGui.Add("Text", "x20 y140 w400 h25", "📈 CURRENT SESSION")
     statsGui.SetFont("s12 Bold")
     
-    statsGui.Add("Text", "x30 y165 w200 h20", "Total Executions: " . csvStats["total_executions"])
-    statsGui.Add("Text", "x240 y165 w200 h20", "Total Boxes: " . csvStats["total_boxes"])  
-    statsGui.Add("Text", "x450 y165 w200 h20", "Macro: " . csvStats["macro_executions_count"])
-    statsGui.Add("Text", "x600 y165 w200 h20", "JSON: " . csvStats["json_profile_executions_count"])
+    statsGui.Add("Text", "x30 y165 w150 h20", "Total: " . csvStats["total_executions"])
+    statsGui.Add("Text", "x180 y165 w150 h20", "Boxes: " . csvStats["total_boxes"])  
+    statsGui.Add("Text", "x330 y165 w150 h20", "Macro: " . csvStats["macro_executions_count"])
+    statsGui.Add("Text", "x480 y165 w150 h20", "JSON: " . csvStats["json_profile_executions_count"])
+    statsGui.Add("Text", "x630 y165 w150 h20", "Clear: " . csvStats["clear_executions_count"])
     
     ; Degradation Analysis Section  
     statsGui.SetFont("s10")
@@ -4957,6 +4960,7 @@ AppendToCSV(executionData) {
         totalExecs := csvStats["total_executions"] + 1
         macroExecCount := csvStats["macro_executions_count"] + (executionData["execution_type"] = "macro" ? 1 : 0)
         jsonExecCount := csvStats["json_profile_executions_count"] + (executionData["execution_type"] = "json_profile" ? 1 : 0)
+        clearExecCount := csvStats.Has("clear_executions_count") ? csvStats["clear_executions_count"] + (executionData["execution_type"] = "clear" ? 1 : 0) : (executionData["execution_type"] = "clear" ? 1 : 0)
         
         ; Calculate degradation breakdown
         smudgeCount := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
@@ -5103,6 +5107,43 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     AppendToCSV(executionData)
 }
 
+; Record clear execution stats (NumpadEnter and Shift+Enter)
+RecordClearExecution(buttonName, executionStartTime) {
+    global breakMode, currentLayer, canvasType
+    
+    ; Skip if breakMode is true (don't track during break)
+    if (breakMode) {
+        return
+    }
+    
+    ; Calculate execution_time_ms
+    execution_time_ms := A_TickCount - executionStartTime
+    
+    ; Get current timestamp
+    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    
+    ; Create execution data structure for clear execution
+    executionData := Map()
+    executionData["timestamp"] := timestamp
+    executionData["execution_type"] := "clear"
+    executionData["macro_name"] := buttonName
+    executionData["layer"] := currentLayer
+    executionData["execution_time_ms"] := execution_time_ms
+    executionData["total_boxes"] := 0  ; Clear operations don't involve boxes
+    executionData["degradation_types"] := ""  ; No degradation for clear
+    executionData["degradation_summary"] := ""
+    executionData["status"] := "submitted"
+    executionData["severity_level"] := ""
+    
+    ; Clear operations don't have degradation counts
+    executionData["smudge_count"] := 0
+    executionData["glare_count"] := 0
+    executionData["splashes_count"] := 0
+    
+    ; Call AppendToCSV with clear execution data
+    AppendToCSV(executionData)
+}
+
 ReadStatsFromCSV(filterBySession := false) {
     global masterStatsCSV, sessionId, totalActiveTime
     
@@ -5110,6 +5151,7 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["total_executions"] := 0
     stats["macro_executions_count"] := 0
     stats["json_profile_executions_count"] := 0
+    stats["clear_executions_count"] := 0
     stats["total_boxes"] := 0
     stats["boxes_per_hour"] := 0
     stats["executions_per_hour"] := 0
@@ -5185,6 +5227,14 @@ ReadStatsFromCSV(filterBySession := false) {
                     layerCount[layer] := 0
                 }
                 layerCount[layer]++
+                
+                ; Count execution types based on macro_name
+                if (macro_name = "NumpadEnter" || macro_name = "ShiftEnter") {
+                    stats["clear_executions_count"]++
+                } else {
+                    ; Determine if macro or json_profile based on other criteria if needed
+                    ; For now, count as macro/json based on existing logic
+                }
                 
                 ; Process degradation assignments
                 if (degradation_assignments != "" && degradation_assignments != '""') {
@@ -5390,11 +5440,48 @@ SubmitCurrentImage() {
     }
     
     if (browserFocused) {
+        ; Track execution start time
+        startTime := A_TickCount
+        
         Sleep(focusDelay)
         Send("+{Enter}")
         UpdateStatus("📤 Submitted")
+        
+        ; Record clear execution in CSV stats
+        RecordClearExecution("NumpadEnter", startTime)
     } else {
         UpdateStatus("⚠️ No browser")
+    }
+}
+
+; Direct Shift+Enter execution (manual clear)
+DirectClearExecution() {
+    global focusDelay
+    browserFocused := false
+    
+    ; Track execution start time
+    startTime := A_TickCount
+    
+    if (WinExist("ahk_exe chrome.exe")) {
+        WinActivate("ahk_exe chrome.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe firefox.exe")) {
+        WinActivate("ahk_exe firefox.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe msedge.exe")) {
+        WinActivate("ahk_exe msedge.exe")
+        browserFocused := true
+    }
+    
+    if (browserFocused) {
+        Sleep(focusDelay)
+        Send("+{Enter}")
+        UpdateStatus("📤 Direct Clear Submitted")
+        
+        ; Record clear execution in CSV stats
+        RecordClearExecution("ShiftEnter", startTime)
+    } else {
+        UpdateStatus("⚠️ No browser for direct clear")
     }
 }
 
