@@ -3169,11 +3169,6 @@ BuildJsonAnnotation(mode, categoryId, severity) {
 FormatActiveTime(timeMs) {
     totalMinutes := Floor(timeMs / 60000)
     
-    ; Ensure minimum display of 1m to prevent 0m
-    if (totalMinutes <= 0) {
-        return "1m"
-    }
-    
     if (totalMinutes < 60) {
         return totalMinutes . "m"
     } else if (totalMinutes < 1440) {  ; Less than 24 hours
@@ -4811,9 +4806,9 @@ InitializeCSVFile() {
             DirCreate(dataDir)
         }
         
-        ; Create CSV with exact 31-column header if file doesn't exist
+        ; Create CSV with header if file doesn't exist
         if (!FileExist(masterStatsCSV)) {
-            header := "timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,boxes_per_hour,executions_per_hour`n"
+            header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,bbox_count,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
         }
     } catch as e {
@@ -4822,60 +4817,27 @@ InitializeCSVFile() {
     }
 }
 
-AppendToCSV(executionData) {
-    global masterStatsCSV, sessionId, currentUsername, applicationStartTime, totalActiveTime, breakMode
-    global macroExecutionLog
+AppendToCSV(timestamp, execution_type, button_key, layer, execution_time_ms, bbox_count, degradation_assignments, severity_level, canvas_mode) {
+    global masterStatsCSV, sessionId, currentUsername, breakMode, totalActiveTime
     
     try {
-        ; Calculate cumulative statistics
-        csvStats := ReadStatsFromCSV(false)
-        totalExecs := csvStats["total_executions"] + 1
-        macroExecCount := csvStats["macro_executions_count"] + (executionData["execution_type"] = "macro" ? 1 : 0)
-        jsonExecCount := csvStats["json_profile_executions_count"] + (executionData["execution_type"] = "json_profile" ? 1 : 0)
+        ; Calculate session_active_time_ms using existing totalTime variable
+        session_active_time_ms := totalActiveTime
         
-        ; Calculate degradation breakdown
-        smudgeCount := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
-        glareCount := executionData.Has("glare_count") ? executionData["glare_count"] : 0  
-        splashesCount := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
-        
-        ; Calculate rates per hour
-        activeTimeHours := totalActiveTime > 0 ? totalActiveTime / 3600000 : 0.001
-        boxesPerHour := activeTimeHours > 0 ? Round(executionData["total_boxes"] / activeTimeHours, 1) : 0
-        execsPerHour := activeTimeHours > 0 ? Round(totalExecs / activeTimeHours, 1) : 0
-        
-        ; Build complete 31-column CSV row
-        csvRow := executionData["timestamp"] . ","
+        ; Build CSV row
+        csvRow := timestamp . ","
                 . sessionId . ","
                 . currentUsername . ","
-                . executionData["macro_name"] . ","
-                . executionData["layer"] . ","
-                . executionData["execution_time_ms"] . ","
-                . executionData["total_boxes"] . ","
-                . executionData["degradation_types"] . ","
-                . executionData["degradation_summary"] . ","
-                . executionData["status"] . ","
-                . applicationStartTime . ","
-                . totalActiveTime . ","
-                . (breakMode ? "1" : "0") . ","
-                . "" . ","  ; break_start_time
-                . totalExecs . ","
-                . macroExecCount . ","
-                . jsonExecCount . ","
-                . executionData["execution_time_ms"] . ","  ; average_execution_time_ms
-                . executionData["macro_name"] . ","  ; most_used_button
-                . executionData["layer"] . ","  ; most_active_layer
-                . executionData["total_boxes"] . ","  ; recorded_total_boxes
-                . smudgeCount . ","
-                . glareCount . ","
-                . splashesCount . ","
-                . "1" . ","  ; macro_usage_execution_count
-                . executionData["total_boxes"] . ","  ; macro_usage_total_boxes
-                . executionData["execution_time_ms"] . ","  ; macro_usage_average_time_ms
-                . executionData["timestamp"] . ","  ; macro_usage_last_used
-                . executionData.Has("severity_level") ? executionData["severity_level"] : "" . ","  ; json_severity_breakdown_by_level
-                . executionData["degradation_types"] . ","  ; json_degradation_type_breakdown
-                . boxesPerHour . ","
-                . execsPerHour . "`n"
+                . execution_type . ","
+                . button_key . ","
+                . layer . ","
+                . execution_time_ms . ","
+                . bbox_count . ","
+                . degradation_assignments . ","
+                . severity_level . ","
+                . canvas_mode . ","
+                . session_active_time_ms . ","
+                . breakMode . "`n"
         
         ; Append to CSV file
         FileAppend(csvRow, masterStatsCSV, "UTF-8")
@@ -4941,41 +4903,8 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         }
     }
     
-    ; Create execution data structure for 31-column CSV
-    executionData := Map()
-    executionData["timestamp"] := timestamp
-    executionData["execution_type"] := executionType
-    executionData["macro_name"] := macroKey
-    executionData["layer"] := layer
-    executionData["execution_time_ms"] := execution_time_ms
-    executionData["total_boxes"] := bbox_count
-    executionData["degradation_types"] := degradation_assignments
-    executionData["degradation_summary"] := degradation_assignments  ; simplified for now
-    executionData["status"] := "completed"
-    executionData["severity_level"] := severity_level
-    
-    ; Add degradation counts (mapping 1=smudge, 2=glare, 3=splashes, etc.)
-    executionData["smudge_count"] := 0
-    executionData["glare_count"] := 0
-    executionData["splashes_count"] := 0
-    
-    ; Parse degradation assignments to count each type
-    if (degradation_assignments != "") {
-        degradationTypes := StrSplit(degradation_assignments, ",")
-        for degradationType in degradationTypes {
-            degradationType := Trim(degradationType)
-            if (degradationType = "smudge") {
-                executionData["smudge_count"]++
-            } else if (degradationType = "glare") {
-                executionData["glare_count"]++  
-            } else if (degradationType = "splashes") {
-                executionData["splashes_count"]++
-            }
-        }
-    }
-    
-    ; Call updated AppendToCSV with data structure
-    AppendToCSV(executionData)
+    ; Call AppendToCSV with all data
+    AppendToCSV(timestamp, executionType, macroKey, layer, execution_time_ms, bbox_count, degradation_assignments, severity_level, canvas_mode)
 }
 
 ReadStatsFromCSV(filterBySession := false) {
@@ -4983,8 +4912,6 @@ ReadStatsFromCSV(filterBySession := false) {
     
     stats := Map()
     stats["total_executions"] := 0
-    stats["macro_executions_count"] := 0
-    stats["json_profile_executions_count"] := 0
     stats["total_boxes"] := 0
     stats["boxes_per_hour"] := 0
     stats["executions_per_hour"] := 0
@@ -5005,7 +4932,7 @@ ReadStatsFromCSV(filterBySession := false) {
             return stats ; No data rows
         }
         
-        ; Process data rows (skip header) - Updated for 31-column format
+        ; Process data rows (skip header)
         executionTimes := []
         buttonCount := Map()
         layerCount := Map()
@@ -5020,26 +4947,25 @@ ReadStatsFromCSV(filterBySession := false) {
             }
             
             fields := StrSplit(lines[lineIndex], ",")
-            if (fields.Length < 31) {
-                continue ; Skip malformed rows - now expecting 31 columns
+            if (fields.Length < 13) {
+                continue ; Skip malformed rows
             }
             
             ; Process data based on filter setting
             if (!filterBySession || fields[2] = sessionId) {
                 stats["total_executions"]++
                 
-                ; Parse fields from 31-column format
-                ; timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,boxes_per_hour,executions_per_hour
-                macro_name := fields[4]               ; macro_name
-                layer := Integer(fields[5])           ; layer  
-                execution_time := Integer(fields[6])  ; execution_time_ms
-                total_boxes := Integer(fields[7])     ; total_boxes
-                degradation_assignments := fields[8]  ; degradation_types
-                session_time := Integer(fields[12])   ; total_active_time_ms
+                ; Parse fields
+                execution_time := Integer(fields[7])
+                bbox_count := Integer(fields[8])
+                degradation_assignments := fields[9]
+                button_key := fields[5]
+                layer := Integer(fields[6])
+                session_time := Integer(fields[12])
                 
                 ; Accumulate data
                 executionTimes.Push(execution_time)
-                totalBoxes += total_boxes
+                totalBoxes += bbox_count
                 
                 ; For session-specific stats, use latest session time
                 ; For all-time stats, sum up total execution times as proxy
@@ -5050,10 +4976,10 @@ ReadStatsFromCSV(filterBySession := false) {
                 }
                 
                 ; Count buttons
-                if (!buttonCount.Has(macro_name)) {
-                    buttonCount[macro_name] := 0
+                if (!buttonCount.Has(button_key)) {
+                    buttonCount[button_key] := 0
                 }
-                buttonCount[macro_name]++
+                buttonCount[button_key]++
                 
                 ; Count layers
                 if (!layerCount.Has(layer)) {
@@ -5134,9 +5060,6 @@ UpdateActiveTime() {
     
     if (!breakMode && lastActiveTime > 0) {
         totalActiveTime += A_TickCount - lastActiveTime
-        lastActiveTime := A_TickCount
-    } else if (breakMode) {
-        ; During break mode, don't accumulate active time but keep lastActiveTime updated
         lastActiveTime := A_TickCount
     }
 }

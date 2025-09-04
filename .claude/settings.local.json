@@ -6,7 +6,8 @@
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahk)",
       "Bash(git add:*)",
       "Bash(grep:*)",
-      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /validate MacroLauncherX45.ahk)"
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /validate MacroLauncherX45.ahk)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" MacroLauncherX45.ahk)"
     ],
     "deny": [],
     "ask": []
