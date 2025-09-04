@@ -2443,7 +2443,7 @@ ShowStats() {
     btnRefresh.OnEvent("Click", (*) => RefreshStatsDisplay(statsGui))
     
     btnResetDaily := statsGui.Add("Button", "x140 y555 w120 h30", "📅 Reset Daily")
-    btnResetDaily.OnEvent("Click", (*) => ResetDailyStats(statsGui))
+    btnResetDaily.OnEvent("Click", (*) => ResetDailyStatsDisplay(statsGui))
     
     btnExportCSV := statsGui.Add("Button", "x270 y555 w120 h30", "📊 Export CSV")
     btnExportCSV.OnEvent("Click", (*) => ExportCSVData())
@@ -2523,8 +2523,8 @@ RefreshStatsDisplay(statsGui) {
     ShowStats()
 }
 
-; Reset daily stats function
-ResetDailyStats(statsGui) {
+; Reset daily stats display function
+ResetDailyStatsDisplay(statsGui) {
     result := MsgBox("Reset daily statistics display?`n`nThis will reset timing displays but preserve all CSV data.", "Reset Daily Stats", "YesNo Icon!")
     
     if (result = "Yes") {
