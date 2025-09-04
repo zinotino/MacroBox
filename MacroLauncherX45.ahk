@@ -424,7 +424,7 @@ Main() {
         InitializeVariables()
         InitializeCSVFile()
         InitializeStatsSystem()
-        LoadExecutionData()  ; Load persistent stats from JSON
+        ; LoadExecutionData()  ; DISABLED - CSV only approach
         InitializeJsonAnnotations()
         InitializeVisualizationSystem()
         InitializeWASDHotkeys()  ; Initialize WASD hotkey mappings
@@ -2356,49 +2356,213 @@ ApplyWASDMappings(configGui) {
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
 ShowStats() {
-    global macroExecutionLog, degradationTypes, degradationColors, annotationMode
-    global applicationStartTime, totalActiveTime, lastActiveTime, breakMode
+    global applicationStartTime, totalActiveTime, lastActiveTime, breakMode, sessionId
+    global degradationTypes, degradationColors
     
-    statsGui := Gui("+Resize", "📊 Comprehensive Analytics")
+    ; Get comprehensive stats from CSV
+    csvStats := ReadStatsFromCSV(false) ; Get all-time stats
+    sessionStats := ReadStatsFromCSV(true) ; Get session stats
+    
+    ; Calculate current active time
+    currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
+    
+    ; Create professional stats GUI
+    statsGui := Gui("+Resize", "📊 MacroMaster Professional Analytics")
     statsGui.SetFont("s10")
     
-    ; Header
-    statsGui.Add("Text", "x20 y20 w860 h30 Center", "COMPREHENSIVE DEGRADATION & USAGE ANALYTICS")
+    ; Header with break mode indication
+    headerColor := breakMode ? "Red" : "Default"
+    headerText := breakMode ? "🔴 BREAK MODE ACTIVE" : "📊 PROFESSIONAL ANALYTICS DASHBOARD"
+    
+    header := statsGui.Add("Text", "x20 y20 w900 h40 Center", headerText)
+    header.SetFont("s16 Bold", , headerColor)
+    
+    ; Key Performance Metrics Section
+    statsGui.Add("Text", "x20 y70 w400 h25", "⚡ KEY PERFORMANCE METRICS")
+    statsGui.SetFont("s12 Bold")
+    
+    ; Calculate performance metrics
+    activeTimeHours := currentActiveTime > 0 ? currentActiveTime / 3600000 : 0.001
+    boxesPerHour := csvStats["total_boxes"] > 0 && activeTimeHours > 0 ? Round(csvStats["total_boxes"] / activeTimeHours, 1) : 0
+    execsPerHour := csvStats["total_executions"] > 0 && activeTimeHours > 0 ? Round(csvStats["total_executions"] / activeTimeHours, 1) : 0
+    
+    ; Performance color coding
+    boxesColor := boxesPerHour >= 50 ? "Green" : (boxesPerHour >= 20 ? "Orange" : "Red")
+    execsColor := execsPerHour >= 10 ? "Green" : (execsPerHour >= 5 ? "Orange" : "Red")
+    
     statsGui.SetFont("s14 Bold")
     
-    ; Time tracking display with proper formatting
-    currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
-    timeDisplay := FormatActiveTime(currentActiveTime)
+    ; Large performance displays
+    boxesDisplay := statsGui.Add("Text", "x30 y100 w180 h30", boxesPerHour . " boxes/hour")
+    boxesDisplay.SetFont("s14 Bold", , boxesColor)
     
-    statsGui.Add("Text", "x370 y60 w200 h20", "Active Time: " . timeDisplay)
+    execsDisplay := statsGui.Add("Text", "x220 y100 w180 h30", execsPerHour . " exec/hour")  
+    execsDisplay.SetFont("s14 Bold", , execsColor)
     
-    ; Create tabbed interface - removed redundant Combined Overview
-    tabs := statsGui.Add("Tab3", "x20 y90 w860 h500", ["📦 Recorded Macros", "📋 JSON Profiles", "⏱️ Timing Metrics"])
+    activeTimeDisplay := statsGui.Add("Text", "x410 y100 w180 h30", "Active: " . FormatActiveTime(currentActiveTime))
+    activeTimeDisplay.SetFont("s14 Bold")
     
-    ; Store references for updates
-    statsGui.tabs := tabs
+    ; Session Information
+    statsGui.SetFont("s10")
+    statsGui.Add("Text", "x20 y140 w400 h25", "📈 CURRENT SESSION")
+    statsGui.SetFont("s12 Bold")
     
-    ; Setup tab content - using original working functions
-    CreateRecordedMacrosTab(statsGui, tabs, "All Time")
-    CreateJsonProfilesTab(statsGui, tabs, "All Time")
-    CreateTimingMetricsTabOriginal(statsGui, tabs)
+    statsGui.Add("Text", "x30 y165 w200 h20", "Total Executions: " . csvStats["total_executions"])
+    statsGui.Add("Text", "x240 y165 w200 h20", "Total Boxes: " . csvStats["total_boxes"])  
+    statsGui.Add("Text", "x450 y165 w200 h20", "Macro: " . csvStats["macro_executions_count"])
+    statsGui.Add("Text", "x600 y165 w200 h20", "JSON: " . csvStats["json_profile_executions_count"])
     
-    ; Export and control buttons
-    statsGui.Add("Text", "x20 y610 w860 h20", "📤 Export & Controls:")
+    ; Degradation Analysis Section  
+    statsGui.SetFont("s10")
+    statsGui.Add("Text", "x20 y200 w400 h25", "🎯 DEGRADATION ANALYSIS")
+    statsGui.SetFont("s12 Bold")
     
-    btnExportCSV := statsGui.Add("Button", "x20 y640 w120 h30", "📊 Export CSV")
-    btnExportCSV.OnEvent("Click", (*) => ExportDegradationData())
+    ; Create degradation breakdown display
+    CreateDegradationBreakdown(statsGui, csvStats)
     
-    btnExportAll := statsGui.Add("Button", "x150 y640 w130 h30", "📄 Export All Data")
-    btnExportAll.OnEvent("Click", (*) => ExportAllHistoricalData())
+    ; Timing Details Section
+    statsGui.SetFont("s10") 
+    statsGui.Add("Text", "x20 y420 w400 h25", "⏱️ TIMING DETAILS")
+    statsGui.SetFont("s12 Bold")
     
-    btnClose := statsGui.Add("Button", "x800 y640 w80 h30", "Close")
+    ; Application uptime
+    appUptimeMs := A_TickCount - applicationStartTime
+    uptimeDisplay := FormatActiveTime(appUptimeMs)
+    
+    statsGui.Add("Text", "x30 y445 w300 h20", "Application Uptime: " . uptimeDisplay)
+    statsGui.Add("Text", "x30 y470 w300 h20", "Active Working Time: " . FormatActiveTime(currentActiveTime))
+    
+    utilizationPct := appUptimeMs > 0 ? Round((currentActiveTime / appUptimeMs) * 100, 1) : 0
+    statsGui.Add("Text", "x30 y495 w300 h20", "Time Utilization: " . utilizationPct . "%")
+    
+    ; Session Management Controls
+    statsGui.Add("Text", "x20 y530 w400 h25", "🛠️ SESSION MANAGEMENT")
+    statsGui.SetFont("s12 Bold")
+    
+    btnRefresh := statsGui.Add("Button", "x30 y555 w100 h30", "🔄 Refresh")
+    btnRefresh.OnEvent("Click", (*) => RefreshStatsDisplay(statsGui))
+    
+    btnResetDaily := statsGui.Add("Button", "x140 y555 w120 h30", "📅 Reset Daily")
+    btnResetDaily.OnEvent("Click", (*) => ResetDailyStats(statsGui))
+    
+    btnExportCSV := statsGui.Add("Button", "x270 y555 w120 h30", "📊 Export CSV")
+    btnExportCSV.OnEvent("Click", (*) => ExportCSVData())
+    
+    btnClose := statsGui.Add("Button", "x820 y555 w80 h30", "Close")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
     
-    ; Quick reference
-    statsGui.Add("Text", "x20 y680 w860 h40", "🎯 DEGRADATION MAPPING: 1=Smudge, 2=Glare, 3=Splashes, 4=Partial Block, 5=Full Block, 6=Light Flare, 7=Rain, 8=Haze, 9=Snow")
+    ; Footer with mapping reference
+    statsGui.SetFont("s9")
+    statsGui.Add("Text", "x20 y600 w880 h40", "🎯 DEGRADATION MAPPING: 1=Smudge 2=Glare 3=Splashes 4=Partial-Block 5=Full-Block 6=Light-Flare 7=Rain 8=Haze 9=Snow | 📊 Data Source: master_stats.csv")
     
-    statsGui.Show("w900 h750")
+    statsGui.Show("w920 h650")
+}
+
+; Create professional degradation breakdown display
+CreateDegradationBreakdown(statsGui, csvStats) {
+    global degradationColors
+    
+    ; Degradation type mapping (1-9)
+    degradationMapping := Map()
+    degradationMapping[1] := "Smudge"
+    degradationMapping[2] := "Glare"  
+    degradationMapping[3] := "Splashes"
+    degradationMapping[4] := "Partial-Block"
+    degradationMapping[5] := "Full-Block"
+    degradationMapping[6] := "Light-Flare"
+    degradationMapping[7] := "Rain"
+    degradationMapping[8] := "Haze"
+    degradationMapping[9] := "Snow"
+    
+    ; Default color mapping if degradationColors not available
+    if (!IsObject(degradationColors)) {
+        degradationColors := Map()
+        degradationColors["smudge"] := "0x8B4513"
+        degradationColors["glare"] := "0xFFD700"  
+        degradationColors["splashes"] := "0x4169E1"
+        degradationColors["partial_blockage"] := "0xFF6347"
+        degradationColors["full_blockage"] := "0xFF0000"
+        degradationColors["light_flare"] := "0xFFFACD"
+        degradationColors["rain"] := "0x87CEEB"
+        degradationColors["haze"] := "0xD3D3D3"
+        degradationColors["snow"] := "0xF5F5F5"
+    }
+    
+    ; Create degradation display grid (3x3)
+    yStart := 230
+    xStart := 30
+    
+    Loop 9 {
+        degradationType := A_Index
+        degradationName := degradationMapping[degradationType]
+        
+        ; Calculate position (3 columns)
+        col := Mod(degradationType - 1, 3)
+        row := Floor((degradationType - 1) / 3)
+        
+        x := xStart + (col * 280)
+        y := yStart + (row * 60)
+        
+        ; Get count for this degradation type from CSV stats
+        count := csvStats.Has("degradation_breakdown") ? (csvStats["degradation_breakdown"].Has(degradationName) ? csvStats["degradation_breakdown"][degradationName] : 0) : 0
+        
+        ; Create display elements
+        degradationLabel := statsGui.Add("Text", "x" . x . " y" . y . " w60 h20", degradationType . ". " . degradationName)
+        countDisplay := statsGui.Add("Text", "x" . (x + 150) . " y" . y . " w50 h20", count)
+        countDisplay.SetFont("s11 Bold")
+        
+        ; Color coding based on count
+        countColor := count > 5 ? "Red" : (count > 2 ? "Orange" : "Green")
+        countDisplay.SetFont("s11 Bold", , countColor)
+    }
+}
+
+; Refresh stats display function
+RefreshStatsDisplay(statsGui) {
+    statsGui.Destroy()
+    ShowStats()
+}
+
+; Reset daily stats function
+ResetDailyStats(statsGui) {
+    result := MsgBox("Reset daily statistics display?`n`nThis will reset timing displays but preserve all CSV data.", "Reset Daily Stats", "YesNo Icon!")
+    
+    if (result = "Yes") {
+        global applicationStartTime, totalActiveTime, lastActiveTime
+        
+        ; Reset timing for display purposes only
+        applicationStartTime := A_TickCount
+        totalActiveTime := 0
+        lastActiveTime := A_TickCount
+        
+        ; Refresh display
+        RefreshStatsDisplay(statsGui)
+    }
+}
+
+; Export CSV data function
+ExportCSVData() {
+    global masterStatsCSV, workDir
+    
+    try {
+        if (!FileExist(masterStatsCSV)) {
+            MsgBox("No CSV data to export.", "Export Error", "Icon!")
+            return
+        }
+        
+        ; Create timestamped export
+        timestamp := FormatTime(A_Now, "yyyyMMdd_HHmmss")
+        exportFile := workDir . "\exported_stats_" . timestamp . ".csv"
+        
+        FileCopy(masterStatsCSV, exportFile)
+        
+        ; Open exported file
+        Run("notepad.exe " . exportFile)
+        
+        UpdateStatus("📊 Exported stats to: " . exportFile)
+    } catch Error as e {
+        MsgBox("Export failed: " . e.Message, "Export Error", "Icon!")
+    }
 }
 
 CreateTimingMetricsTabOriginal(statsGui, tabs) {
@@ -3126,7 +3290,7 @@ InitializeStatsSystem() {
     LoadStatsData()
     
     ; Initialize offline data storage system
-    InitializeOfflineStorage()
+    ; InitializeOfflineStorage()  ; DISABLED - CSV only approach
 }
 
 InitializeJsonAnnotations() {
@@ -3542,7 +3706,7 @@ ResetStatsData(statsGui, timeFilter) {
     
     if (MsgBox("Reset all statistics data? This will clear current session data but preserve historical logs.", "Confirm Reset", "YesNo Icon!") = "Yes") {
         macroExecutionLog := []
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
         RefreshAllTabs(statsGui, timeFilter)
         UpdateStatus("📊 Statistics reset - Historical data preserved")
     }
@@ -3750,7 +3914,7 @@ MacroExecutionAnalysis(buttonName, events, executionTime) {
     macroExecutionLog.Push(executionRecord)
     
     ; Save data
-    SaveExecutionData()
+    ; SaveExecutionData()  ; DISABLED - CSV only approach
     
     ; Create degradation assignments string for CSV
     degradationAssignments := ""
@@ -3791,7 +3955,7 @@ Join(array, delimiter) {
     return result
 }
 
-SaveExecutionData() {
+; SaveExecutionData()  ; DISABLED - CSV only approach {
     global workDir, macroExecutionLog
     
     try {
@@ -4240,7 +4404,7 @@ ResetStatsFromSettings(parentGui) {
         
         ; Clear stats
         macroExecutionLog := []
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
         
         UpdateStatus("📊 Statistics reset - Historical data preserved")
         
@@ -4572,7 +4736,7 @@ SaveToSlot(slotNumber) {
     
     try {
         SaveConfig()
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
         
         slotDir := workDir . "\slots\slot_" . slotNumber
         if !DirExist(slotDir) {
@@ -5146,7 +5310,7 @@ AutoSave() {
     
     if (!recording && !breakMode) {
         SaveConfig()
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
     }
 }
 
@@ -5172,7 +5336,7 @@ CleanupAndExit() {
         }
         
         savedMacros := SaveMacroState()
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
         UpdateStatus("💾 Saved " . savedMacros . " macros")
         
         SafeUninstallMouseHook()
@@ -5192,7 +5356,7 @@ CleanupAndExit() {
     } catch Error as e {
         try {
             SaveConfig()
-            SaveExecutionData()
+            ; SaveExecutionData()  ; DISABLED - CSV only approach
         } catch {
             SafeUninstallMouseHook()
             SafeUninstallKeyboardHook()
@@ -5487,7 +5651,7 @@ SaveStatsOffline() {
         
         ; Clear the execution log after successful save
         macroExecutionLog := []
-        SaveExecutionData()
+        ; SaveExecutionData()  ; DISABLED - CSV only approach
         
         UpdateStatus("💾 Data saved to offline storage")
         
