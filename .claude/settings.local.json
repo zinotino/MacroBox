@@ -8,7 +8,8 @@
       "Bash(grep:*)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /validate MacroLauncherX45.ahk)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" MacroLauncherX45.ahk)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" MacroLauncherX45.ahv)"
     ],
     "deny": [],
     "ask": []
