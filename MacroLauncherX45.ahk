@@ -117,9 +117,10 @@ global breakStartTime := 0
 ; ===== CSV STATS SYSTEM =====
 global sessionId := ""
 global masterStatsCSV := A_ScriptDir . "\data\master_stats.csv"
-global currentUsername := EnvGet("USERNAME")
+global currentUsername := A_UserName
 global dailyResetActive := false
 global sessionStartTime := 0
+global clearDegradationCount := 0
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -142,6 +143,7 @@ global mouseReleaseDelay := 65
 global betweenBoxDelay := 150
 global keyPressDelay := 12
 global focusDelay := 80
+global mouseHoverDelay := 25  ; NEW: Mouse hover delay for click accuracy
 
 ; ===== RECORDING SETTINGS =====
 global mouseMoveThreshold := 3
@@ -207,6 +209,7 @@ global mouseReleaseDelay := 65
 global betweenBoxDelay := 150
 global keyPressDelay := 12
 global focusDelay := 80
+global mouseHoverDelay := 25  ; NEW: Mouse hover delay for click accuracy
 
 ; ===== RECORDING SETTINGS =====
 global mouseMoveThreshold := 3
@@ -250,22 +253,23 @@ global wasdHotkeyMap := Map()
 InitializeWASDHotkeys() {
     global wasdHotkeyMap
     
-    ; New 4x3 grid WASD mappings to numpad equivalents
-    ; Q  W  E  R
-    ; A  S  D  F  
-    ; Z  X  C  V
-    wasdHotkeyMap["q"] := "Num7"    ; Q -> Num7
-    wasdHotkeyMap["w"] := "Num8"    ; W -> Num8
-    wasdHotkeyMap["e"] := "Num9"    ; E -> Num9
-    wasdHotkeyMap["r"] := "Num4"    ; R -> Num4 (moved from original layout)
-    wasdHotkeyMap["a"] := "Num5"    ; A -> Num5 (moved from Num4)
-    wasdHotkeyMap["s"] := "Num6"    ; S -> Num6 (moved from Num5)
-    wasdHotkeyMap["d"] := "Num1"    ; D -> Num1 (moved from Num6)
-    wasdHotkeyMap["f"] := "Num2"    ; F -> Num2 (moved from Num0)
-    wasdHotkeyMap["z"] := "Num3"    ; Z -> Num3 (moved from Num1)
-    wasdHotkeyMap["x"] := "Num0"    ; X -> Num0 (moved from Num2)
-    wasdHotkeyMap["c"] := "NumDot"  ; C -> NumDot (moved from Num3)
-    wasdHotkeyMap["v"] := "NumMult" ; V -> NumMult (new)
+    ; Enhanced 4x3 grid WASD mappings to numpad equivalents with number row
+    ; 1  2  3
+    ; Q  W  E  
+    ; A  S  D  
+    ; Z  X  C  
+    wasdHotkeyMap["1"] := "Num7"    ; 1 -> Num7
+    wasdHotkeyMap["2"] := "Num8"    ; 2 -> Num8
+    wasdHotkeyMap["3"] := "Num9"    ; 3 -> Num9
+    wasdHotkeyMap["q"] := "Num4"    ; Q -> Num4
+    wasdHotkeyMap["w"] := "Num5"    ; W -> Num5
+    wasdHotkeyMap["e"] := "Num6"    ; E -> Num6
+    wasdHotkeyMap["a"] := "Num1"    ; A -> Num1
+    wasdHotkeyMap["s"] := "Num2"    ; S -> Num2
+    wasdHotkeyMap["d"] := "Num3"    ; D -> Num3
+    wasdHotkeyMap["z"] := "Num0"    ; Z -> Num0
+    wasdHotkeyMap["x"] := "NumDot"  ; X -> NumDot
+    wasdHotkeyMap["c"] := "NumMult" ; C -> NumMult
     
     ; Try to load custom mappings from file
     LoadWASDMappingsFromFile()
@@ -278,27 +282,19 @@ InitializeWASDHotkeys() {
 UpdateButtonLabelsWithWASD() {
     global buttonCustomLabels, wasdHotkeyMap, buttonNames, wasdLabelsEnabled
     
-    if (!wasdLabelsEnabled) {
-        ; WASD mode disabled - show only numpad labels
-        for buttonName in buttonNames {
-            buttonCustomLabels[buttonName] := buttonName
-        }
-        return
-    }
-    
-    ; WASD mode enabled - show combined labels
     ; Create reverse mapping from numpad to WASD
     numpadToWASD := Map()
     for wasdKey, numpadKey in wasdHotkeyMap {
         numpadToWASD[numpadKey] := StrUpper(wasdKey)
     }
     
-    ; Update button labels to show WASD keys only (cleaner display)
+    ; Update labels to show WASD keys when mode is active
     for buttonName in buttonNames {
-        if (numpadToWASD.Has(buttonName)) {
+        if (wasdLabelsEnabled && numpadToWASD.Has(buttonName)) {
             wasdKey := numpadToWASD[buttonName]
-            buttonCustomLabels[buttonName] := wasdKey
+            buttonCustomLabels[buttonName] := buttonName . "/" . wasdKey
         } else {
+            ; Reset to default numpad name
             buttonCustomLabels[buttonName] := buttonName
         }
     }
@@ -306,8 +302,9 @@ UpdateButtonLabelsWithWASD() {
 
 ; ===== TOGGLE WASD LABELS =====
 ToggleWASDLabels() {
-    global wasdLabelsEnabled, wasdToggleBtn, wasdHotkeyMap
+    global wasdLabelsEnabled, wasdToggleBtn, wasdHotkeyMap, buttonNames
     
+    ; Toggle the state
     wasdLabelsEnabled := !wasdLabelsEnabled
     
     ; Enable/disable regular WASD hotkeys based on mode
@@ -331,13 +328,21 @@ ToggleWASDLabels() {
         }
     }
     
-    ; Update all button labels
+    ; Update grid outline color to show WASD mode state
+    UpdateGridOutlineColor()
+    
+    ; Clear any potentially conflicting labels and rebuild properly
     UpdateButtonLabelsWithWASD()
-    RefreshAllButtonAppearances()
     
-    ; Note: WASD toggle will be available in Settings → Hotkey Configuration
+    ; Force visual update of all buttons to show new labels
+    for buttonName in buttonNames {
+        UpdateButtonAppearance(buttonName)
+    }
     
-    UpdateStatus(wasdLabelsEnabled ? "🎮 WASD mode enabled - keys active" : "🎮 WASD mode disabled - keys inactive")
+    ; Save configuration immediately to persist state
+    SaveConfig()
+    
+    UpdateStatus(wasdLabelsEnabled ? "🎮 WASD mode enabled - button labels show key mappings" : "🎮 WASD mode disabled - numpad labels restored")
 }
 
 SaveWASDMappingsToFile() {
@@ -420,56 +425,52 @@ GetDegradationTypeByName(degradationName) {
 
 ; ===== HOTKEY PROFILE FUNCTIONS =====
 ToggleHotkeyProfile() {
-    global hotkeyProfileActive
+    global hotkeyProfileActive, buttonNames
     
     hotkeyProfileActive := !hotkeyProfileActive
     
     if (hotkeyProfileActive) {
         SetupWASDHotkeys()
-        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED - CapsLock+WASD enabled")
+        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED - CapsLock+123qweasdzxc enabled")
     } else {
         DisableWASDHotkeys()
         UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED - Numpad mode restored")
     }
+    
+    ; Update labels immediately when profile state changes
+    UpdateButtonLabelsWithWASD()
+    
+    ; Force visual update of all buttons to show new labels
+    for buttonName in buttonNames {
+        UpdateButtonAppearance(buttonName)
+    }
+    
+    ; Save the state for persistence
+    SaveConfig()
 }
 
 SetupWASDHotkeys() {
     global wasdHotkeyMap
     
     try {
-        ; Setup CapsLock as modifier
+        ; Setup CapsLock as modifier with improved logic
         Hotkey("CapsLock", (*) => CapsLockDown(), "On")
         Hotkey("CapsLock Up", (*) => CapsLockUp(), "On")
         
-        ; Setup WASD keys with CapsLock modifier
-        ; Handle each key individually to avoid closure issues
-        if (wasdHotkeyMap.Has("w"))
-            Hotkey("CapsLock & w", (*) => ExecuteWASDMacro(wasdHotkeyMap["w"]), "On")
-        if (wasdHotkeyMap.Has("a"))
-            Hotkey("CapsLock & a", (*) => ExecuteWASDMacro(wasdHotkeyMap["a"]), "On")
-        if (wasdHotkeyMap.Has("s"))
-            Hotkey("CapsLock & s", (*) => ExecuteWASDMacro(wasdHotkeyMap["s"]), "On")
-        if (wasdHotkeyMap.Has("d"))
-            Hotkey("CapsLock & d", (*) => ExecuteWASDMacro(wasdHotkeyMap["d"]), "On")
-        if (wasdHotkeyMap.Has("q"))
-            Hotkey("CapsLock & q", (*) => ExecuteWASDMacro(wasdHotkeyMap["q"]), "On")
-        if (wasdHotkeyMap.Has("e"))
-            Hotkey("CapsLock & e", (*) => ExecuteWASDMacro(wasdHotkeyMap["e"]), "On")
-        if (wasdHotkeyMap.Has("z"))
-            Hotkey("CapsLock & z", (*) => ExecuteWASDMacro(wasdHotkeyMap["z"]), "On")
-        if (wasdHotkeyMap.Has("c"))
-            Hotkey("CapsLock & c", (*) => ExecuteWASDMacro(wasdHotkeyMap["c"]), "On")
-        if (wasdHotkeyMap.Has("x"))
-            Hotkey("CapsLock & x", (*) => ExecuteWASDMacro(wasdHotkeyMap["x"]), "On")
-        if (wasdHotkeyMap.Has("f"))
-            Hotkey("CapsLock & f", (*) => ExecuteWASDMacro(wasdHotkeyMap["f"]), "On")
-        if (wasdHotkeyMap.Has("r"))
-            Hotkey("CapsLock & r", (*) => ExecuteWASDMacro(wasdHotkeyMap["r"]), "On")
-        if (wasdHotkeyMap.Has("v"))
-            Hotkey("CapsLock & v", (*) => ExecuteWASDMacro(wasdHotkeyMap["v"]), "On")
+        ; Setup all mapped keys with CapsLock modifier
+        ; Enhanced to include 123qweasdzxc combinations
+        for wasdKey, numpadKey in wasdHotkeyMap {
+            try {
+                hotkeyCombo := "CapsLock & " . wasdKey
+                Hotkey(hotkeyCombo, (*) => ExecuteWASDMacro(numpadKey), "On")
+            } catch Error as keyError {
+                ; Skip individual key conflicts but continue with others
+                UpdateStatus("⚠️ Skipped conflicted hotkey: CapsLock & " . wasdKey)
+            }
+        }
         
-        ; Regular WASD keys are only enabled when WASD mode is toggled on
-        ; This prevents accidental macro execution when typing
+        ; Regular standalone keys are only enabled when WASD mode is toggled on
+        ; This prevents accidental macro execution when typing normally
         
     } catch Error as e {
         UpdateStatus("⚠️ WASD hotkey setup failed: " . e.Message)
@@ -477,18 +478,28 @@ SetupWASDHotkeys() {
 }
 
 DisableWASDHotkeys() {
-    global wasdHotkeyMap
+    global wasdHotkeyMap, capsLockPressed
     
     try {
         ; Disable CapsLock modifier
         Hotkey("CapsLock", "Off")
         Hotkey("CapsLock Up", "Off")
         
-        ; Disable WASD combinations
+        ; Clear the pressed state
+        capsLockPressed := false
+        
+        ; Disable all mapped key combinations
         for wasdKey, buttonName in wasdHotkeyMap {
-            hotkeyCombo := "CapsLock & " . wasdKey
-            Hotkey(hotkeyCombo, "Off")
+            try {
+                hotkeyCombo := "CapsLock & " . wasdKey
+                Hotkey(hotkeyCombo, "Off")
+            } catch Error as keyError {
+                ; Skip individual key errors but continue with others
+            }
         }
+        
+        ; Restore normal CapsLock functionality when profile is disabled
+        SetCapsLockState("Off")
         
     } catch Error as e {
         UpdateStatus("⚠️ WASD hotkey disable failed: " . e.Message)
@@ -496,23 +507,43 @@ DisableWASDHotkeys() {
 }
 
 CapsLockDown() {
-    global capsLockPressed
-    capsLockPressed := true
+    global capsLockPressed, hotkeyProfileActive
+    
+    ; Only register CapsLock press if hotkey profile is active
+    if (hotkeyProfileActive) {
+        capsLockPressed := true
+        ; Prevent CapsLock state change in system
+        SetCapsLockState("Off")
+    }
 }
 
 CapsLockUp() {
-    global capsLockPressed
+    global capsLockPressed, hotkeyProfileActive
+    
+    ; Always clear the pressed state
     capsLockPressed := false
+    
+    ; Ensure CapsLock state remains off when using as modifier
+    if (hotkeyProfileActive) {
+        SetCapsLockState("Off")
+    }
 }
 
 ExecuteWASDMacro(buttonName) {
-    global hotkeyProfileActive
+    global hotkeyProfileActive, capsLockPressed
     
+    ; Enhanced validation to prevent mis-inputs
     if (!hotkeyProfileActive) {
         return
     }
     
-    UpdateStatus("🎹 WASD: CapsLock+" . buttonName . " → " . buttonName)
+    ; Additional check: ensure CapsLock was actually pressed as modifier
+    if (!capsLockPressed) {
+        UpdateStatus("⚠️ CapsLock modifier required for WASD hotkeys")
+        return
+    }
+    
+    UpdateStatus("🎹 WASD: CapsLock+" . RegExReplace(buttonName, "Num", "") . " → " . buttonName)
     SafeExecuteMacroByKey(buttonName)
 }
 
@@ -615,6 +646,7 @@ InitializeVariables() {
     now := FormatTime(A_Now, "yyyyMMdd_HHmmss")
     sessionId := "sess_" . now
     sessionStartTime := A_TickCount
+    clearDegradationCount := 0
     
     ; Debug: Verify sessionId is set
     ; MsgBox("SessionId initialized: " . sessionId)
@@ -1782,7 +1814,7 @@ AssignToButton(buttonName) {
 
 ; ===== MACRO PLAYBACK =====
 PlayEventsOptimized(recordedEvents) {
-    global playback, boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay
+    global playback, boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay
     
     SetMouseDelay(0)
     SetKeyDelay(5)
@@ -1794,12 +1826,14 @@ PlayEventsOptimized(recordedEvents) {
         
         if (event.type = "boundingBox") {
             MouseMove(event.left, event.top, 2)
+            Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before drawing
             Sleep(boxDrawDelay)
             
             Send("{LButton Down}")
             Sleep(mouseClickDelay)
             
             MouseMove(event.right, event.bottom, 5)
+            Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before release
             Sleep(mouseReleaseDelay)
             
             Send("{LButton Up}")
@@ -1807,12 +1841,12 @@ PlayEventsOptimized(recordedEvents) {
         }
         else if (event.type = "mouseDown") {
             MouseMove(event.x, event.y, 2)
-            Sleep(10)
+            Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
             Send("{LButton Down}")
         }
         else if (event.type = "mouseUp") {
             MouseMove(event.x, event.y, 2)
-            Sleep(10)
+            Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
             Send("{LButton Up}")
         }
         else if (event.type = "keyDown") {
@@ -1972,7 +2006,23 @@ CreateGridOutline() {
     global mainGui, gridOutline, currentLayer, layerBorderColors
     
     gridOutline := mainGui.Add("Text", "x0 y0 w100 h100 +0x1", "")
-    gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
+    UpdateGridOutlineColor()
+}
+
+; Update grid outline color based on WASD mode and current layer
+UpdateGridOutlineColor() {
+    global gridOutline, currentLayer, layerBorderColors, wasdLabelsEnabled
+    
+    if (!gridOutline)
+        return
+        
+    if (wasdLabelsEnabled) {
+        ; WASD mode active - use subtle blue accent to complement labels
+        gridOutline.Opt("+Background0x4169E1")
+    } else {
+        ; Normal mode - use layer color
+        gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
+    }
 }
 
 CreateButtonGrid() {
@@ -2063,7 +2113,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels
     
     if (!buttonGrid.Has(buttonName))
         return
@@ -2075,6 +2125,7 @@ UpdateButtonAppearance(buttonName) {
     hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
     hasAutoMode := buttonAutoSettings.Has(layerMacroName) && buttonAutoSettings[layerMacroName].enabled
     
+    ; Set label text (this will be shown or hidden based on button content)
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
     
     hasThumbnail := buttonThumbnails.Has(layerMacroName) && FileExist(buttonThumbnails[layerMacroName])
@@ -2152,9 +2203,9 @@ UpdateButtonAppearance(buttonName) {
             } else if (hasMacro) {
                 events := macroEvents[layerMacroName]
                 if (hasAutoMode) {
-                    ; Auto mode enabled - bright orange background
-                    button.Opt("+Background0xFF8C00")
-                    button.SetFont("s7 bold", "cWhite")
+                    ; Auto mode enabled - bright yellow background
+                    button.Opt("+Background0xFFFF00")
+                    button.SetFont("s7 bold", "cBlack")  ; Changed to black text for better contrast on yellow
                     button.Text := "🤖 AUTO`n" . events.Length . " events"
                 } else {
                     ; Regular macro - layer color
@@ -2165,9 +2216,30 @@ UpdateButtonAppearance(buttonName) {
             } else {
                 button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
                 button.SetFont("s8", "cGray")
-                button.Text := "L" . currentLayer
+                
+                ; Only show layer indicator when WASD labels are not active
+                if (wasdLabelsEnabled) {
+                    ; WASD mode - clear button text to let labels show cleanly
+                    button.Text := ""
+                } else {
+                    ; Normal mode - show layer indicator on button
+                    button.Text := "L" . currentLayer
+                }
             }
         }
+        
+        ; Label control - show labels on empty buttons, hide on buttons with content
+        if (hasMacro || isJsonAnnotation) {
+            ; Button has content - hide the separate label to avoid duplicates
+            buttonLabels[buttonName].Visible := false
+        } else {
+            ; Button is empty - show the label with WASD info if active
+            buttonLabels[buttonName].Visible := true
+            buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
+        }
+        
+        ; Apply yellow outline for auto mode buttons
+        ApplyYellowOutline(buttonName, hasAutoMode)
         
         if (button.Visible)
             button.Redraw()
@@ -2182,6 +2254,102 @@ UpdateButtonAppearance(buttonName) {
         button.Text := "ERROR"
     }
 }
+
+; ===== YELLOW OUTLINE SYSTEM FOR AUTO MODE =====
+ApplyYellowOutline(buttonName, hasAutoMode) {
+    global buttonGrid, buttonPictures, yellowOutlineButtons
+    
+    if (!buttonGrid.Has(buttonName))
+        return
+        
+    button := buttonGrid[buttonName]
+    picture := buttonPictures[buttonName]
+    
+    ; Determine which control is currently visible
+    activeControl := button.Visible ? button : (picture.Visible ? picture : button)
+    
+    if (hasAutoMode) {
+        ; Add bright yellow outline for auto mode
+        try {
+            ; Use a combination of approaches for maximum visibility
+            
+            ; 1. Add yellow border to the active control
+            activeControl.Opt("+Border +0x800000")  ; Thick border style
+            
+            ; 2. For better visibility, add yellow accent indicator
+            if (button.Visible) {
+                ; Modify the existing text to include yellow indicator
+                ; This works with the existing orange background and "🤖 AUTO" text
+                currentText := button.Text
+                if (!InStr(currentText, "⚡")) {
+                    ; Add yellow lightning bolt for auto mode indication
+                    button.Text := StrReplace(currentText, "🤖 AUTO", "⚡🤖 AUTO")
+                }
+            }
+            
+            ; 3. Use Windows API to set custom border color if possible
+            ; This creates a more prominent yellow outline
+            hwnd := activeControl.Hwnd
+            
+            ; Apply custom window styling for yellow border effect
+            ; Use extended window styles for better border control
+            currentExStyle := DllCall("GetWindowLong", "Ptr", hwnd, "Int", -20, "UInt")
+            newExStyle := currentExStyle | 0x200  ; WS_EX_CLIENTEDGE for raised edge
+            DllCall("SetWindowLong", "Ptr", hwnd, "Int", -20, "UInt", newExStyle)
+            
+            ; Force window to redraw with new styling
+            DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x0001 | 0x0002 | 0x0004 | 0x0020)
+            
+            ; Track this button as having yellow outline
+            yellowOutlineButtons[buttonName] := true
+            
+        } catch Error as e {
+            ; If advanced styling fails, fall back to simple text indicator
+            if (button.Visible) {
+                currentText := button.Text
+                if (!InStr(currentText, "⚡")) {
+                    button.Text := StrReplace(currentText, "🤖 AUTO", "⚡🤖 AUTO")
+                    yellowOutlineButtons[buttonName] := true
+                }
+            }
+        }
+    } else {
+        ; Remove yellow outline if it was previously applied
+        if (yellowOutlineButtons.Has(buttonName) && yellowOutlineButtons[buttonName]) {
+            try {
+                ; Remove border and styling
+                activeControl.Opt("-Border")
+                
+                ; Remove extended styling
+                hwnd := activeControl.Hwnd
+                currentExStyle := DllCall("GetWindowLong", "Ptr", hwnd, "Int", -20, "UInt")
+                newExStyle := currentExStyle & ~0x200  ; Remove WS_EX_CLIENTEDGE
+                DllCall("SetWindowLong", "Ptr", hwnd, "Int", -20, "UInt", newExStyle)
+                
+                ; Remove yellow accent from text if present
+                if (button.Visible) {
+                    currentText := button.Text
+                    button.Text := StrReplace(currentText, "⚡🤖 AUTO", "🤖 AUTO")
+                }
+                
+                ; Force redraw
+                DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x0001 | 0x0002 | 0x0004 | 0x0020)
+                
+                ; Remove from tracking
+                yellowOutlineButtons.Delete(buttonName)
+                
+            } catch Error as e {
+                ; Ignore removal errors, but still clean up text
+                if (button.Visible) {
+                    currentText := button.Text
+                    button.Text := StrReplace(currentText, "⚡🤖 AUTO", "🤖 AUTO")
+                }
+                yellowOutlineButtons.Delete(buttonName)
+            }
+        }
+    }
+}
+
 
 ; Helper function for macro text display fallback
 ShowMacroAsText(button, picture, events, debugInfo := "viz unavailable") {
@@ -2293,7 +2461,7 @@ SwitchLayer(direction) {
     
     layerIndicator.Text := "Layer " . currentLayer
     layerIndicator.Opt("+Background" . layerBorderColors[currentLayer])
-    gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
+    UpdateGridOutlineColor()  ; Use the new function that considers WASD mode
     
     gridOutline.Redraw()
     layerIndicator.Redraw()
@@ -2341,11 +2509,12 @@ ShowContextMenu(buttonName, *) {
     hasAutoSettings := buttonAutoSettings.Has(buttonKey)
     autoEnabled := hasAutoSettings && buttonAutoSettings[buttonKey].enabled
     
-    ; Enable/Disable option
+    ; Enhanced Auto Mode options
     if (autoEnabled) {
-        contextMenu.Add("✅ Auto Mode: ON", (*) => ToggleAutoEnable(buttonName))
+        contextMenu.Add("✅ Auto Mode: ON", (*) => {}) ; Status indicator only
+        contextMenu.Add("❌ Disable Auto Mode", (*) => ToggleAutoEnable(buttonName))
     } else {
-        contextMenu.Add("⚙️ Auto Mode: Enable", (*) => ToggleAutoEnable(buttonName))
+        contextMenu.Add("⚙️ Enable Auto Mode", (*) => ToggleAutoEnable(buttonName))
     }
     
     ; Settings option
@@ -2733,7 +2902,7 @@ ShowConfigMenu() {
     configGui.Add("Text", "x40 y100 w600 h20", "WASD-Oriented Hotkey Profile:")
     
     ; Profile status
-    statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+WASD enabled" : "🔴 INACTIVE - Numpad mode active"
+    statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+123qweasdzxc enabled" : "🔴 INACTIVE - Numpad mode active"
     configGui.Add("Text", "x40 y130 w400 h20", "Status: " . statusText)
     
     ; Toggle button
@@ -2763,8 +2932,8 @@ ShowConfigMenu() {
     ; Store dropdown references for later access
     configGui.dropdowns := Map()
     
-    ; Mapping rows with dropdowns
-    keys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
+    ; Mapping rows with dropdowns - Enhanced with number keys
+    keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
     for i, key in keys {
         if (Mod(i-1, 2) = 0) {
             ; Left column
@@ -2830,16 +2999,28 @@ ShowConfigMenu() {
 ToggleProfileInConfig(configGui, btnToggle) {
     global hotkeyProfileActive
     
-    ; Toggle the profile
+    ; Toggle the profile (this handles all the state management and config saving)
     ToggleHotkeyProfile()
     
-    ; Update button text and GUI
+    ; Update button text in the current GUI
     btnToggle.Text := hotkeyProfileActive ? "Disable Profile" : "Enable Profile"
     
-    ; Close and reopen config to refresh status display
-    configGui.Destroy()
-    Sleep(100)
-    ShowConfigMenu()
+    ; Update status text in the GUI if it exists
+    try {
+        ; Find and update the status text control
+        for control in configGui {
+            if (control.Type = "Text" && InStr(control.Text, "ACTIVE") || InStr(control.Text, "INACTIVE")) {
+                statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+123qweasdzxc enabled" : "🔴 INACTIVE - Numpad mode active"
+                control.Text := statusText
+                break
+            }
+        }
+    } catch {
+        ; If status update fails, it's not critical
+    }
+    
+    ; Force GUI redraw to show updated text
+    configGui.Redraw()
 }
 
 SaveWASDMappings(configGui) {
@@ -3005,14 +3186,15 @@ ShowStats() {
     statsGui.SetFont("s10")
     
     ; Calculate performance metrics using CURRENT SESSION data only (not CSV totals)
-    activeTimeHours := currentActiveTime > 0 ? currentActiveTime / 3600000 : 0.001
+    ; Require at least 5 seconds of active time for meaningful hourly rates
+    activeTimeHours := currentActiveTime > 5000 ? currentActiveTime / 3600000 : 0
     
     ; Count current session executions/boxes only (since startup)
     sessionBoxes := 0
     sessionExecutions := 0
     sessionStartTime := applicationStartTime
     
-    ; Read CSV and count only executions since this session started
+    ; Read CSV and count only executions from current session
     try {
         if (FileExist(masterStatsCSV)) {
             content := FileRead(masterStatsCSV, "UTF-8")
@@ -3022,13 +3204,12 @@ ShowStats() {
                     continue
                 }
                 cols := StrSplit(line, ",")
-                if (cols.Length >= 11) {
-                    ; Check if execution happened after current session start
-                    execAppStartTime := cols[11]
-                    if (execAppStartTime >= sessionStartTime) {
+                if (cols.Length >= 7) {
+                    ; Filter by session_id (column 2) instead of app start time
+                    if (cols.Length >= 2 && cols[2] = sessionId) {
                         sessionExecutions++
-                        if (cols.Length >= 7 && IsNumber(cols[7])) {
-                            sessionBoxes += cols[7]
+                        if (IsNumber(cols[7])) {
+                            sessionBoxes += Integer(cols[7])
                         }
                     }
                 }
@@ -3038,9 +3219,9 @@ ShowStats() {
         ; Fallback to 0 if CSV read fails
     }
     
-    ; Calculate session-only rates
-    boxesPerHour := sessionBoxes > 0 && activeTimeHours > 0 ? Round(sessionBoxes / activeTimeHours, 1) : 0
-    execsPerHour := sessionExecutions > 0 && activeTimeHours > 0 ? Round(sessionExecutions / activeTimeHours, 1) : 0
+    ; Calculate session-only rates - only if we have meaningful active time
+    boxesPerHour := (sessionBoxes > 0 && activeTimeHours > 0) ? Round(sessionBoxes / activeTimeHours, 1) : 0
+    execsPerHour := (sessionExecutions > 0 && activeTimeHours > 0) ? Round(sessionExecutions / activeTimeHours, 1) : 0
     avgExecTime := csvStats.Has("average_execution_time") ? Round(csvStats["average_execution_time"], 0) : 0
     
     ; Performance displays with color coding
@@ -3212,6 +3393,12 @@ ShowStats() {
     clearDisplay := statsGui.Add("Text", "x715 y470 w40 h20", clearCount)
     clearDisplay.SetFont("s10 Bold", "cGreen")
     
+    ; Add clear degradation count (Shift+Numpad events)
+    clearDegradCount := csvStats.Has("clear_degradation_count") ? csvStats["clear_degradation_count"] : 0
+    statsGui.Add("Text", "x770 y470 w120 h20", "Clear Degrad:")
+    clearDegradDisplay := statsGui.Add("Text", "x890 y470 w40 h20", clearDegradCount)
+    clearDegradDisplay.SetFont("s10 Bold", "cBlue")
+    
     ; All 9 proper degradation types are now displayed above with clear executions
     
     ; === SESSION MANAGEMENT ===
@@ -3253,16 +3440,17 @@ ResetDailyStatsDisplay(statsGui) {
     result := MsgBox("Reset daily statistics display?`n`nThis will reset timing displays and switch to session-only view (preserves all CSV data).", "Reset Daily Stats", "YesNo Icon!")
     
     if (result = "Yes") {
-        global applicationStartTime, totalActiveTime, lastActiveTime, sessionId, dailyResetActive
+        global applicationStartTime, totalActiveTime, lastActiveTime, sessionId, dailyResetActive, clearDegradationCount
         
         ; Reset timing for display purposes only
         applicationStartTime := A_TickCount
         totalActiveTime := 0
         lastActiveTime := A_TickCount
+        clearDegradationCount := 0
         
         ; Generate new session ID for daily reset tracking
         dailyResetActive := true
-        sessionId := FormatTime(, "yyyyMMdd_HHmmss")
+        sessionId := "sess_" . FormatTime(, "yyyyMMdd_HHmmss")
         
         ; Refresh display to show session-only stats
         RefreshStatsDisplay(statsGui)
@@ -3294,6 +3482,7 @@ ResetAllStatsFromDisplay(statsGui) {
             applicationStartTime := A_TickCount
             totalActiveTime := 0
             lastActiveTime := A_TickCount
+            clearDegradationCount := 0
             
             ; Clear legacy stats
             macroExecutionLog := []
@@ -3502,50 +3691,66 @@ ShowSettings() {
     settingsGui.Add("Text", "x40 y95 w400 h20", "⚡ Macro Execution Fine-Tuning:")
     
     ; Timing controls
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
+    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     
     ; Box drawing delays
     settingsGui.Add("Text", "x40 y125 w150 h20", "Box Draw Delay (ms):")
     boxDelayEdit := settingsGui.Add("Edit", "x190 y123 w60 h22", boxDrawDelay)
     boxDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("boxDrawDelay", boxDelayEdit))
+    settingsGui.boxDelayEdit := boxDelayEdit  ; Store reference for preset updates
     
     settingsGui.Add("Text", "x40 y155 w150 h20", "Mouse Click Delay (ms):")
     clickDelayEdit := settingsGui.Add("Edit", "x190 y153 w60 h22", mouseClickDelay)
     clickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseClickDelay", clickDelayEdit))
+    settingsGui.clickDelayEdit := clickDelayEdit
     
     settingsGui.Add("Text", "x40 y185 w150 h20", "Mouse Drag Delay (ms):")
     dragDelayEdit := settingsGui.Add("Edit", "x190 y183 w60 h22", mouseDragDelay)
     dragDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseDragDelay", dragDelayEdit))
+    settingsGui.dragDelayEdit := dragDelayEdit
     
     settingsGui.Add("Text", "x40 y215 w150 h20", "Mouse Release Delay (ms):")
     releaseDelayEdit := settingsGui.Add("Edit", "x190 y213 w60 h22", mouseReleaseDelay)
     releaseDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseReleaseDelay", releaseDelayEdit))
+    settingsGui.releaseDelayEdit := releaseDelayEdit
     
     settingsGui.Add("Text", "x270 y125 w150 h20", "Between Box Delay (ms):")
     betweenDelayEdit := settingsGui.Add("Edit", "x420 y123 w60 h22", betweenBoxDelay)
     betweenDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("betweenBoxDelay", betweenDelayEdit))
+    settingsGui.betweenDelayEdit := betweenDelayEdit
     
     settingsGui.Add("Text", "x270 y155 w150 h20", "Key Press Delay (ms):")
     keyDelayEdit := settingsGui.Add("Edit", "x420 y153 w60 h22", keyPressDelay)
     keyDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("keyPressDelay", keyDelayEdit))
+    settingsGui.keyDelayEdit := keyDelayEdit
     
     settingsGui.Add("Text", "x270 y185 w150 h20", "Focus Delay (ms):")
     focusDelayEdit := settingsGui.Add("Edit", "x420 y183 w60 h22", focusDelay)
     focusDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("focusDelay", focusDelayEdit))
+    settingsGui.focusDelayEdit := focusDelayEdit
     
-    ; Preset buttons
-    settingsGui.Add("Text", "x40 y255 w400 h20", "🎚️ Timing Presets:")
+    ; NEW: Mouse hover delay for click accuracy
+    settingsGui.Add("Text", "x270 y215 w150 h20", "Mouse Hover (ms):")
+    hoverDelayEdit := settingsGui.Add("Edit", "x420 y213 w60 h22", mouseHoverDelay)
+    hoverDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseHoverDelay", hoverDelayEdit))
+    settingsGui.hoverDelayEdit := hoverDelayEdit
     
-    btnFast := settingsGui.Add("Button", "x40 y280 w90 h25", "⚡ Fast")
+    ; Description for hover delay
+    settingsGui.Add("Text", "x40 y245 w500 h15 c0x666666", "💡 Mouse Hover: Pause time after moving to target before clicking (improves accuracy)")
+    
+    ; Preset buttons (adjusted Y position for new hover control)
+    settingsGui.Add("Text", "x40 y275 w400 h20", "🎚️ Timing Presets:")
+    
+    btnFast := settingsGui.Add("Button", "x40 y300 w90 h25", "⚡ Fast")
     btnFast.OnEvent("Click", (*) => ApplyTimingPreset("fast", settingsGui))
     
-    btnDefault := settingsGui.Add("Button", "x140 y280 w90 h25", "🎯 Default")
+    btnDefault := settingsGui.Add("Button", "x140 y300 w90 h25", "🎯 Default")
     btnDefault.OnEvent("Click", (*) => ApplyTimingPreset("default", settingsGui))
     
-    btnSafe := settingsGui.Add("Button", "x240 y280 w90 h25", "🛡️ Safe")
+    btnSafe := settingsGui.Add("Button", "x240 y300 w90 h25", "🛡️ Safe")
     btnSafe.OnEvent("Click", (*) => ApplyTimingPreset("safe", settingsGui))
     
-    btnSlow := settingsGui.Add("Button", "x340 y280 w90 h25", "🐌 Slow")
+    btnSlow := settingsGui.Add("Button", "x340 y300 w90 h25", "🐌 Slow")
     btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
     
     ; Instructions
@@ -3570,45 +3775,54 @@ ShowSettings() {
     tabs.UseTab(4)
     global hotkeyProfileActive, wasdHotkeyMap
     
-    settingsGui.Add("Text", "x40 y95 w400 h20", "🎹 WASD-Oriented Hotkey Profile System:")
+    settingsGui.Add("Text", "x40 y95 w400 h20", "🎹 Enhanced WASD Hotkey Profile System:")
     
-    ; Profile status and toggle
-    statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock+WASD enabled" : "🔴 INACTIVE - Numpad mode active"
-    settingsGui.Add("Text", "x40 y120 w300 h20", "Status: " . statusText)
+    ; Profile status with better visual indication
+    statusIcon := hotkeyProfileActive ? "🟢" : "🔴"
+    statusText := hotkeyProfileActive ? "ACTIVE - CapsLock+123qweasdzxc enabled" : "INACTIVE - Numpad mode active"
+    settingsGui.Add("Text", "x40 y120 w20 h20", statusIcon)
+    settingsGui.Add("Text", "x65 y120 w275 h20", "Status: " . statusText)
     
-    btnToggleProfile := settingsGui.Add("Button", "x350 y118 w90 h22", hotkeyProfileActive ? "Disable" : "Enable")
+    btnToggleProfile := settingsGui.Add("Button", "x350 y118 w90 h22", hotkeyProfileActive ? "🔴 Disable" : "🟢 Enable")
     btnToggleProfile.OnEvent("Click", (*) => ToggleHotkeyProfileInSettings(btnToggleProfile, settingsGui))
     
-    ; WASD mapping configuration (compact version)
-    settingsGui.Add("Text", "x40 y155 w400 h20", "Customize WASD → Numpad Mappings:")
+    ; Enhanced mapping configuration section
+    settingsGui.Add("Text", "x40 y155 w400 h20", "🔧 Customize CapsLock+Key → Numpad Mappings:")
+    
+    ; Add visual layout preview
+    settingsGui.Add("Text", "x40 y175 w400 h15 c0x666666", "Layout Preview:  [1] [2] [3]    [Q] [W] [E]    [A] [S] [D]    [Z] [X] [C]")
     
     ; Store dropdown references
     settingsGui.hotkeyDropdowns := Map()
     numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
     
-    ; Create compact mapping interface
-    y := 180
-    keys := ["w", "a", "s", "d", "q", "e"]  ; Show only main keys due to space constraints
+    ; Create enhanced mapping interface with CapsLock indication
+    y := 200
+    keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]  ; Enhanced with number keys
     
     for i, key in keys {
         if (Mod(i-1, 3) = 0) {
             ; Start new row every 3 items
-            if (i > 1) y += 25
+            if (i > 1) y += 30
             x := 40
         } else {
-            x += 140
+            x += 145
         }
         
-        ; Key label and dropdown
-        settingsGui.Add("Text", "x" . x . " y" . y . " w30 h20", "🅰️" . StrUpper(key) . ":")
-        dropdown := settingsGui.Add("DropDownList", "x" . (x+35) . " y" . (y-2) . " w70 h22 Choose1", numpadOptions)
+        ; Enhanced key label showing CapsLock combination
+        keyDisplay := "CapsLock+" . StrUpper(key)
+        settingsGui.Add("Text", "x" . x . " y" . y . " w75 h20 Center", keyDisplay)
+        settingsGui.Add("Text", "x" . (x+75) . " y" . y . " w15 h20 Center", "→")
+        dropdown := settingsGui.Add("DropDownList", "x" . (x+90) . " y" . (y-2) . " w50 h22 Choose1", numpadOptions)
         
-        ; Set current selection
-        currentMapping := wasdHotkeyMap[key]
-        for j, option in numpadOptions {
-            if (option = currentMapping) {
-                dropdown.Choose(j)
-                break
+        ; Set current selection based on mapping
+        if (wasdHotkeyMap.Has(key)) {
+            currentMapping := wasdHotkeyMap[key]
+            for j, option in numpadOptions {
+                if (option = currentMapping) {
+                    dropdown.Choose(j)
+                    break
+                }
             }
         }
         
@@ -3626,140 +3840,239 @@ ShowSettings() {
     btnApplyMappings := settingsGui.Add("Button", "x220 y" . y . " w80 h25", "🧪 Apply")
     btnApplyMappings.OnEvent("Click", (*) => ApplyWASDMappingsInSettings(settingsGui))
     
-    ; Instructions
-    y += 35
-    settingsGui.Add("Text", "x40 y" . y . " w400 h40", "💡 Enable profile to use CapsLock+WASD instead of numpad. Customize mappings above and Save. Use Ctrl+H to toggle quickly, Ctrl+K to access settings.")
+    ; Add standalone WASD labels toggle
+    y += 40
+    settingsGui.Add("Text", "x40 y" . y . " w400 h20", "🏷️ Label Display Options:")
+    y += 25
+    
+    standaloneLabelStatus := wasdLabelsEnabled ? "🟢 ON" : "🔴 OFF"
+    settingsGui.Add("Text", "x40 y" . y . " w200 h20", "Standalone WASD Labels: " . standaloneLabelStatus)
+    btnToggleStandalone := settingsGui.Add("Button", "x250 y" . (y-2) . " w120 h22", wasdLabelsEnabled ? "🔴 Disable WASD" : "🟢 Enable WASD")
+    btnToggleStandalone.OnEvent("Click", (*) => ToggleStandaloneWASDInSettings(btnToggleStandalone, settingsGui))
+    
+    ; Enhanced Instructions
+    y += 40
+    settingsGui.Add("Text", "x40 y" . y . " w400 h15 c0x0066CC", "📋 Quick Instructions:")
+    y += 20
+    settingsGui.Add("Text", "x40 y" . y . " w400 h75", "• 🟢 Enable profile to use CapsLock+123qweasdzxc combinations`n• 🏷️ Enable standalone WASD labels for direct key usage (no CapsLock)`n• 🔧 Customize mappings above → unique numpad assignments required`n• 💾 Save to persist changes permanently`n• 🧪 Apply to test temporarily without saving`n• ⌨️ Use Ctrl+H to toggle profile quickly")
+    y += 80
+    settingsGui.Add("Text", "x40 y" . y . " w400 h15 c0x666666", "ℹ️ Both modes can be active simultaneously. Access settings via Ctrl+K anytime.")
     
     ; Close button
     btnClose := settingsGui.Add("Button", "x420 y470 w60 h25", "Close")
     btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
     
-    settingsGui.Show("w500 h510")
+    settingsGui.Show("w500 h620")
 }
 
-; Hotkey profile functions for settings interface
+; Enhanced hotkey profile functions for settings interface
 ToggleHotkeyProfileInSettings(btnToggle, settingsGui) {
     global hotkeyProfileActive
     
-    ; Toggle the profile
+    ; Store current window position before refresh
+    settingsGui.GetPos(&x, &y)
+    
+    ; Toggle the profile (this already updates labels and saves config)
     ToggleHotkeyProfile()
     
-    ; Update button text
-    btnToggle.Text := hotkeyProfileActive ? "Disable" : "Enable"
+    ; Update button text with icons
+    btnToggle.Text := hotkeyProfileActive ? "🔴 Disable" : "🟢 Enable"
     
-    ; Refresh settings to update status text
+    ; Refresh settings to update status text and maintain position
     settingsGui.Destroy()
     ShowSettings()
+    
+    ; Try to restore position (may not work perfectly due to timing)
+    try {
+        WinMove(x, y, , , "⚙️ MacroMaster Settings")
+    } catch {
+        ; Position restoration failed, continue anyway
+    }
+    
+    ; Additional status update for immediate feedback
+    UpdateStatus(hotkeyProfileActive ? "🎹✅ Profile enabled - labels updated" : "🎹❌ Profile disabled - labels restored")
+}
+
+; Function to toggle standalone WASD labels in settings
+ToggleStandaloneWASDInSettings(btnToggle, settingsGui) {
+    global wasdLabelsEnabled
+    
+    ; Toggle standalone WASD labels (this handles state management and config saving)
+    ToggleWASDLabels()
+    
+    ; Update button text immediately
+    btnToggle.Text := wasdLabelsEnabled ? "🔴 Disable WASD" : "🟢 Enable WASD"
+    
+    ; Find and update the status text in the GUI
+    try {
+        for control in settingsGui {
+            if (control.Type = "Text" && InStr(control.Text, "Standalone WASD Labels:")) {
+                standaloneLabelStatus := wasdLabelsEnabled ? "🟢 ON" : "🔴 OFF"
+                control.Text := "Standalone WASD Labels: " . standaloneLabelStatus
+                break
+            }
+        }
+    } catch {
+        ; If status text update fails, it's not critical
+    }
+    
+    ; Force GUI redraw to show updated elements
+    settingsGui.Redraw()
+    
+    ; Additional status update for immediate feedback
+    UpdateStatus(wasdLabelsEnabled ? "🏷️✅ Standalone WASD labels enabled" : "🏷️❌ Standalone WASD labels disabled")
 }
 
 SaveWASDMappingsInSettings(settingsGui) {
     global wasdHotkeyMap, hotkeyProfileActive
     
     try {
-        ; Get mappings from dropdowns (only the visible ones)
+        ; Get mappings from dropdowns with enhanced validation
         newMappings := Map()
         numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
-        keys := ["w", "a", "s", "d", "q", "e"]  ; Match the keys shown
+        keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]  ; Match the keys shown
         
-        ; Update only the keys that are shown in settings
+        ; Collect all mappings with validation
         for key in keys {
             if (settingsGui.hotkeyDropdowns.Has(key)) {
                 dropdown := settingsGui.hotkeyDropdowns[key]
                 selectedIndex := dropdown.Value
-                newMappings[key] := numpadOptions[selectedIndex]
+                if (selectedIndex > 0 && selectedIndex <= numpadOptions.Length) {
+                    newMappings[key] := numpadOptions[selectedIndex]
+                } else {
+                    throw Error("Invalid selection for key '" . key . "'")
+                }
             }
         }
         
-        ; Preserve existing mappings for keys not shown
-        allKeys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
-        for key in allKeys {
-            if (!newMappings.Has(key)) {
-                newMappings[key] := wasdHotkeyMap[key]  ; Keep existing
-            }
-        }
-        
-        ; Validate no duplicate assignments
+        ; Enhanced conflict detection with detailed reporting
         usedMappings := Map()
+        conflictKeys := []
         for key, mapping in newMappings {
             if (usedMappings.Has(mapping)) {
-                MsgBox("Error: " . mapping . " is assigned to multiple keys.", "Duplicate Mapping", "Icon!")
-                return
+                conflictKeys.Push("CapsLock+" . StrUpper(key) . " & CapsLock+" . StrUpper(usedMappings[mapping]) . " → " . mapping)
             }
             usedMappings[mapping] := key
         }
         
-        ; Apply changes
+        if (conflictKeys.Length > 0) {
+            MsgBox("❌ Mapping Conflicts Detected:`n`n" . conflictKeys.Length . " conflict(s):`n• " . conflictKeys.Join("`n• ") . "`n`nPlease assign unique numpad keys to each CapsLock combination.", "Save Failed", "Icon!")
+            return
+        }
+        
+        ; Safely update mappings
         wasActive := hotkeyProfileActive
         if (hotkeyProfileActive) {
             DisableWASDHotkeys()
+            hotkeyProfileActive := false  ; Prevent interference during update
         }
         
         wasdHotkeyMap := newMappings
         SaveWASDMappingsToFile()
         
         if (wasActive) {
+            hotkeyProfileActive := true
             SetupWASDHotkeys()
         }
         
-        UpdateStatus("💾 WASD mappings saved successfully")
-        MsgBox("WASD mappings saved!", "Settings Saved", "Icon!")
+        ; Enhanced success feedback
+        UpdateStatus("💾✅ WASD mappings saved and applied successfully")
+        MsgBox("✅ WASD Mappings Saved Successfully!`n`n" . keys.Length . " key combinations updated.`nUse Ctrl+H to toggle the profile.", "Settings Saved", "Icon!")
         
     } catch Error as e {
+        ; Enhanced error reporting
         UpdateStatus("❌ Failed to save WASD mappings: " . e.Message)
-        MsgBox("Failed to save: " . e.Message, "Save Error", "Icon!")
+        MsgBox("❌ Save Failed!`n`nError: " . e.Message . "`n`nPlease check your mappings and try again.", "Save Error", "Icon!")
     }
 }
 
 ResetWASDMappingsInSettings(settingsGui) {
-    if (MsgBox("Reset WASD mappings to defaults?", "Reset Mappings", "YesNo Icon?") = "Yes") {
-        InitializeWASDHotkeys()
-        UpdateStatus("🔄 WASD mappings reset to defaults")
-        
-        ; Refresh settings to update dropdowns
-        settingsGui.Destroy()
-        ShowSettings()
+    result := MsgBox("🔄 Reset all CapsLock+Key mappings to defaults?`n`nThis will restore:`n• CapsLock+1/2/3 → Num7/8/9`n• CapsLock+Q/W/E → Num4/5/6`n• CapsLock+A/S/D → Num1/2/3`n• CapsLock+Z/X/C → Num0/NumDot/NumMult", "Reset Mappings", "YesNo Icon?")
+    
+    if (result = "Yes") {
+        try {
+            ; Store window position before refresh
+            settingsGui.GetPos(&x, &y)
+            
+            ; Reset to defaults
+            InitializeWASDHotkeys()
+            UpdateStatus("🔄✅ WASD mappings reset to defaults")
+            
+            ; Refresh settings to update dropdowns with position restore
+            settingsGui.Destroy()
+            ShowSettings()
+            
+            ; Try to restore position
+            try {
+                WinMove(x, y, , , "⚙️ MacroMaster Settings")
+            } catch {
+                ; Position restoration failed, continue anyway
+            }
+            
+            MsgBox("✅ Mappings Reset Successfully!`n`nAll CapsLock combinations have been restored to default assignments.", "Reset Complete", "Icon!")
+            
+        } catch Error as e {
+            UpdateStatus("❌ Failed to reset WASD mappings: " . e.Message)
+            MsgBox("❌ Reset Failed!`n`nError: " . e.Message, "Reset Error", "Icon!")
+        }
     }
 }
 
 ApplyWASDMappingsInSettings(settingsGui) {
-    ; Same logic as SaveWASDMappingsInSettings but without saving to file
+    ; Enhanced apply function for testing mappings without saving
     global wasdHotkeyMap, hotkeyProfileActive
     
     try {
+        ; Get mappings with validation (same as save function)
         newMappings := Map()
         numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
-        keys := ["w", "a", "s", "d", "q", "e"]
+        keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
         
+        ; Collect mappings with validation
         for key in keys {
             if (settingsGui.hotkeyDropdowns.Has(key)) {
                 dropdown := settingsGui.hotkeyDropdowns[key]
                 selectedIndex := dropdown.Value
-                newMappings[key] := numpadOptions[selectedIndex]
+                if (selectedIndex > 0 && selectedIndex <= numpadOptions.Length) {
+                    newMappings[key] := numpadOptions[selectedIndex]
+                } else {
+                    throw Error("Invalid selection for key '" . key . "'")
+                }
             }
         }
         
-        ; Preserve existing mappings for keys not shown
-        allKeys := ["w", "a", "s", "d", "q", "e", "z", "c", "x", "f", "r", "t"]
-        for key in allKeys {
-            if (!newMappings.Has(key)) {
-                newMappings[key] := wasdHotkeyMap[key]
+        ; Check for conflicts before applying
+        usedMappings := Map()
+        conflictKeys := []
+        for key, mapping in newMappings {
+            if (usedMappings.Has(mapping)) {
+                conflictKeys.Push("CapsLock+" . StrUpper(key) . " & CapsLock+" . StrUpper(usedMappings[mapping]) . " → " . mapping)
             }
+            usedMappings[mapping] := key
         }
         
-        ; Apply without saving
+        if (conflictKeys.Length > 0) {
+            MsgBox("❌ Cannot Apply - Conflicts Detected:`n`n" . conflictKeys.Length . " conflict(s):`n• " . conflictKeys.Join("`n• ") . "`n`nPlease resolve conflicts before testing.", "Apply Failed", "Icon!")
+            return
+        }
+        
+        ; Temporarily apply changes for testing
         wasActive := hotkeyProfileActive
         if (hotkeyProfileActive) {
             DisableWASDHotkeys()
+            hotkeyProfileActive := false
         }
         
         wasdHotkeyMap := newMappings
         
         if (wasActive) {
+            hotkeyProfileActive := true
             SetupWASDHotkeys()
         }
         
-        UpdateStatus("🧪 WASD mappings applied for testing")
-        MsgBox("Mappings applied! Use Ctrl+H to toggle and test.", "Test Applied", "Icon!")
+        ; Enhanced feedback for testing
+        UpdateStatus("🧪✅ WASD mappings applied for testing - changes NOT saved")
+        MsgBox("🧪 Test Mode Applied!`n`n" . keys.Length . " key combinations updated for testing.`n`n⚠️ Changes are NOT saved to disk.`nUse Ctrl+H to toggle profile and test your mappings.`nUse 💾 Save button to persist changes.", "Test Applied", "Icon!")
         
     } catch Error as e {
         UpdateStatus("❌ Failed to apply WASD mappings: " . e.Message)
@@ -5040,7 +5353,7 @@ LoadMacroState() {
 
 ; ===== TIMING CONFIGURATION FUNCTIONS =====
 UpdateTimingFromEdit(variableName, editControl) {
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
+    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     
     try {
         value := Integer(editControl.Text)
@@ -5064,6 +5377,8 @@ UpdateTimingFromEdit(variableName, editControl) {
                 keyPressDelay := value
             case "focusDelay":
                 focusDelay := value
+            case "mouseHoverDelay":
+                mouseHoverDelay := value
         }
         
         ; Save configuration
@@ -5076,7 +5391,7 @@ UpdateTimingFromEdit(variableName, editControl) {
 }
 
 ApplyTimingPreset(preset, settingsGui) {
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
+    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     
     switch preset {
         case "fast":
@@ -5087,6 +5402,7 @@ ApplyTimingPreset(preset, settingsGui) {
             betweenBoxDelay := 100
             keyPressDelay := 10
             focusDelay := 60
+            mouseHoverDelay := 15  ; Fast hover
             
         case "default":
             boxDrawDelay := 50
@@ -5096,6 +5412,7 @@ ApplyTimingPreset(preset, settingsGui) {
             betweenBoxDelay := 150
             keyPressDelay := 12
             focusDelay := 80
+            mouseHoverDelay := 25  ; Default hover
             
         case "safe":
             boxDrawDelay := 75
@@ -5105,6 +5422,7 @@ ApplyTimingPreset(preset, settingsGui) {
             betweenBoxDelay := 200
             keyPressDelay := 20
             focusDelay := 120
+            mouseHoverDelay := 35  ; Safe hover
             
         case "slow":
             boxDrawDelay := 100
@@ -5114,16 +5432,51 @@ ApplyTimingPreset(preset, settingsGui) {
             betweenBoxDelay := 300
             keyPressDelay := 30
             focusDelay := 180
+            mouseHoverDelay := 50  ; Slow hover
     }
+    
+    ; Update all GUI controls to reflect new values
+    UpdateTimingControls(settingsGui)
     
     ; Save configuration
     SaveConfig()
     
-    ; Close and reopen settings to refresh values
-    settingsGui.Destroy()
-    ShowSettings()
+    UpdateStatus("🎚️ Applied " . StrTitle(preset) . " timing preset - all controls updated")
+}
+
+; Update all timing controls in the settings GUI using stored references
+UpdateTimingControls(settingsGui) {
+    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     
-    UpdateStatus("🎚️ Applied " . StrTitle(preset) . " timing preset")
+    ; Update all controls using stored references (much more reliable)
+    try {
+        ; Update each control if it exists
+        if (settingsGui.HasOwnProp("boxDelayEdit"))
+            settingsGui.boxDelayEdit.Text := boxDrawDelay
+        if (settingsGui.HasOwnProp("clickDelayEdit"))
+            settingsGui.clickDelayEdit.Text := mouseClickDelay
+        if (settingsGui.HasOwnProp("dragDelayEdit"))
+            settingsGui.dragDelayEdit.Text := mouseDragDelay
+        if (settingsGui.HasOwnProp("releaseDelayEdit"))
+            settingsGui.releaseDelayEdit.Text := mouseReleaseDelay
+        if (settingsGui.HasOwnProp("betweenDelayEdit"))
+            settingsGui.betweenDelayEdit.Text := betweenBoxDelay
+        if (settingsGui.HasOwnProp("keyDelayEdit"))
+            settingsGui.keyDelayEdit.Text := keyPressDelay
+        if (settingsGui.HasOwnProp("focusDelayEdit"))
+            settingsGui.focusDelayEdit.Text := focusDelay
+        if (settingsGui.HasOwnProp("hoverDelayEdit"))
+            settingsGui.hoverDelayEdit.Text := mouseHoverDelay
+        
+        ; Force GUI redraw to show updated values
+        settingsGui.Redraw()
+        
+    } catch Error as e {
+        ; If control update fails, fall back to GUI recreation
+        UpdateStatus("⚠️ Control update failed, recreating settings GUI")
+        settingsGui.Destroy()
+        ShowSettings()
+    }
 }
 
 ClearAllMacros(parentGui := 0) {
@@ -5174,6 +5527,7 @@ ResetStatsFromSettings(parentGui) {
             applicationStartTime := A_TickCount
             totalActiveTime := 0
             lastActiveTime := A_TickCount
+            clearDegradationCount := 0
             
             ; Clear legacy stats
             macroExecutionLog := []
@@ -5197,6 +5551,7 @@ SaveConfig() {
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global wasdLabelsEnabled, hotkeyProfileActive
     
     try {
         ; Ensure directories exist
@@ -5238,6 +5593,11 @@ SaveConfig() {
         configContent .= "NarrowCanvasRight=" . narrowCanvasRight . "`n"
         configContent .= "NarrowCanvasBottom=" . narrowCanvasBottom . "`n"
         configContent .= "IsNarrowCanvasCalibrated=" . (isNarrowCanvasCalibrated ? "1" : "0") . "`n`n"
+        
+        ; Add WASD configuration section
+        configContent .= "[WASD]`n"
+        configContent .= "LabelsEnabled=" . (wasdLabelsEnabled ? "1" : "0") . "`n"
+        configContent .= "HotkeyProfileActive=" . (hotkeyProfileActive ? "1" : "0") . "`n`n"
         
         ; Add labels section
         if (buttonCustomLabels.Count > 0) {
@@ -5317,6 +5677,7 @@ LoadConfig() {
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global wasdLabelsEnabled, hotkeyProfileActive
     
     if !FileExist(configFile) {
         UpdateStatus("📚 No config file found - starting fresh")
@@ -5389,6 +5750,12 @@ LoadConfig() {
                         narrowCanvasBottom := Integer(value)
                     } else if (key = "IsNarrowCanvasCalibrated") {
                         isNarrowCanvasCalibrated := (value = "1")
+                    }
+                } else if (currentSection = "WASD") {
+                    if (key = "LabelsEnabled") {
+                        wasdLabelsEnabled := (value = "1")
+                    } else if (key = "HotkeyProfileActive") {
+                        hotkeyProfileActive := (value = "1")
                     }
                 } else if (currentSection = "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -5496,6 +5863,31 @@ LoadConfig() {
         
         ; Refresh all button appearances to ensure JSON annotations display correctly
         RefreshAllButtonAppearances()
+        
+        ; Restore WASD state and setup hotkeys if needed
+        if (hotkeyProfileActive) {
+            SetupWASDHotkeys()
+        }
+        
+        ; Restore standalone WASD hotkeys if enabled
+        if (wasdLabelsEnabled) {
+            ; Re-enable regular WASD keys for standalone mode
+            for wasdKey, numpadKey in wasdHotkeyMap {
+                try {
+                    Hotkey(wasdKey, WASDExecuteMacro.Bind(numpadKey), "On")
+                } catch Error as e {
+                    ; Skip if hotkey conflicts - not critical during config load
+                }
+            }
+        }
+        
+        ; Update labels based on loaded WASD state
+        UpdateButtonLabelsWithWASD()
+        
+        ; Update grid outline to reflect WASD mode state
+        UpdateGridOutlineColor()
+        
+        RefreshAllButtonAppearances()  ; Refresh again to show WASD labels
         
         if (macrosLoaded > 0) {
             UpdateStatus("📚 Configuration loaded: " . macrosLoaded . " macros restored")
@@ -5752,9 +6144,9 @@ InitializeCSVFile() {
             DirCreate(dataDir)
         }
         
-        ; Create CSV with exact 31-column header if file doesn't exist
+        ; Create CSV with exact 33-column header if file doesn't exist
         if (!FileExist(masterStatsCSV)) {
-            header := "timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,boxes_per_hour,executions_per_hour`n"
+            header := "timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
         }
     } catch as e {
@@ -5815,7 +6207,7 @@ CleanCorruptedTimeStats() {
 }
 
 AppendToCSV(executionData) {
-    global masterStatsCSV, sessionId, currentUsername, applicationStartTime, totalActiveTime, breakMode
+    global masterStatsCSV, sessionId, currentUsername, applicationStartTime, totalActiveTime, breakMode, clearDegradationCount
     global macroExecutionLog
     
     try {
@@ -5831,12 +6223,18 @@ AppendToCSV(executionData) {
         glareCount := executionData.Has("glare_count") ? executionData["glare_count"] : 0  
         splashesCount := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
         
-        ; Calculate rates per hour
-        activeTimeHours := totalActiveTime > 0 ? totalActiveTime / 3600000 : 0.001
-        boxesPerHour := activeTimeHours > 0 ? Round(executionData["total_boxes"] / activeTimeHours, 1) : 0
-        execsPerHour := activeTimeHours > 0 ? Round(totalExecs / activeTimeHours, 1) : 0
+        ; Calculate rates per hour - require at least 5 seconds for meaningful rates
+        if (totalActiveTime > 5000) { ; At least 5 seconds of active time
+            activeTimeHours := totalActiveTime / 3600000
+            boxesPerHour := Round(executionData["total_boxes"] / activeTimeHours, 1)
+            execsPerHour := Round(totalExecs / activeTimeHours, 1)
+        } else {
+            ; Not enough active time for meaningful hourly rates
+            boxesPerHour := 0
+            execsPerHour := 0
+        }
         
-        ; Build complete 31-column CSV row
+        ; Build complete 33-column CSV row to match header
         csvRow := executionData["timestamp"] . ","
                 . sessionId . ","
                 . currentUsername . ","
@@ -5867,6 +6265,7 @@ AppendToCSV(executionData) {
                 . executionData["timestamp"] . ","  ; macro_usage_last_used
                 . (executionData.Has("severity_level") ? executionData["severity_level"] : "") . ","  ; json_severity_breakdown_by_level
                 . executionData["degradation_types"] . ","  ; json_degradation_type_breakdown
+                . clearDegradationCount . ","  ; clear_degradation_count
                 . boxesPerHour . ","
                 . execsPerHour . "`n"
         
@@ -5967,13 +6366,16 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         }
     }
     
+    ; Update active time before recording to CSV to ensure accurate time tracking
+    UpdateActiveTime()
+    
     ; Call updated AppendToCSV with data structure
     AppendToCSV(executionData)
 }
 
 ; Record clear execution stats (NumpadEnter and Shift+Enter)
 RecordClearDegradationExecution(buttonName, executionStartTime) {
-    global breakMode, currentLayer, canvasType
+    global breakMode, currentLayer, canvasType, clearDegradationCount
     
     ; Skip if breakMode is true (don't track during break)
     if (breakMode) {
@@ -6004,6 +6406,12 @@ RecordClearDegradationExecution(buttonName, executionStartTime) {
     executionData["glare_count"] := 0
     executionData["splashes_count"] := 0
     
+    ; Increment session clear degradation count
+    clearDegradationCount++
+    
+    ; Update active time before recording to CSV to ensure accurate time tracking
+    UpdateActiveTime()
+    
     ; Call AppendToCSV with clear execution data
     AppendToCSV(executionData)
 }
@@ -6016,6 +6424,7 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["macro_executions_count"] := 0
     stats["json_profile_executions_count"] := 0
     stats["clear_executions_count"] := 0
+    stats["clear_degradation_count"] := 0
     stats["total_boxes"] := 0
     stats["boxes_per_hour"] := 0
     stats["executions_per_hour"] := 0
@@ -6060,8 +6469,8 @@ ReadStatsFromCSV(filterBySession := false) {
             if (!filterBySession || fields[2] = sessionId) {
                 stats["total_executions"]++
                 
-                ; Parse fields from 31-column format
-                ; timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,boxes_per_hour,executions_per_hour
+                ; Parse fields from 33-column format
+                ; timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour
                 ; Parse basic fields with error handling
                 try {
                     macro_name := fields[4]               ; macro_name
@@ -6081,12 +6490,18 @@ ReadStatsFromCSV(filterBySession := false) {
                 totalBoxes += total_boxes
                 stats["total_execution_time"] += execution_time
                 
-                ; For session-specific stats, use latest session time
-                ; For all-time stats, sum up total execution times as proxy
+                ; For session-specific stats, use latest total active time from CSV
+                ; For all-time stats, get the latest total active time (most recent record)
                 if (filterBySession) {
-                    sessionActiveTime := session_time
+                    ; For session filtering, use total_active_time_ms from current session
+                    if (fields.Length > 12 && IsNumber(fields[12])) {
+                        sessionActiveTime := Integer(fields[12]) ; total_active_time_ms from CSV
+                    }
                 } else {
-                    sessionActiveTime += execution_time ; Approximate total active time
+                    ; For all-time stats, use the latest total_active_time_ms value
+                    if (fields.Length > 12 && IsNumber(fields[12])) {
+                        sessionActiveTime := Integer(fields[12]) ; Use latest total active time
+                    }
                 }
                 
                 ; Count buttons
@@ -6101,9 +6516,11 @@ ReadStatsFromCSV(filterBySession := false) {
                 }
                 layerCount[layer]++
                 
-                ; Count execution types based on JSON severity field (column 29)
+                ; Count execution types based on degradation type and JSON severity field
                 json_severity := (fields.Length > 29) ? fields[29] : ""
-                if (json_severity != "" && json_severity != "none") {
+                if (degradation_assignments = "clear") {
+                    stats["clear_executions_count"]++
+                } else if (json_severity != "" && json_severity != "none") {
                     stats["json_profile_executions_count"]++
                 } else {
                     stats["macro_executions_count"]++
@@ -6125,14 +6542,30 @@ ReadStatsFromCSV(filterBySession := false) {
             }
         }
         
+        ; Get latest clear degradation count from last CSV row (field 31)
+        if (lines.Length > 1) {
+            lastLine := lines[lines.Length]
+            if (Trim(lastLine) != "") {
+                lastFields := StrSplit(lastLine, ",")
+                if (lastFields.Length >= 31 && IsNumber(lastFields[31])) {
+                    stats["clear_degradation_count"] := Integer(lastFields[31])
+                }
+            }
+        }
+        
         ; Calculate final stats
         stats["total_boxes"] := totalBoxes
         
         ; Calculate rates (boxes and executions per hour)
-        if (sessionActiveTime > 0) {
+        ; Use the current session's total active time for accurate calculation
+        if (sessionActiveTime > 5000) { ; Require at least 5 seconds of active time
             hoursActive := sessionActiveTime / 3600000 ; Convert ms to hours
             stats["boxes_per_hour"] := Round(totalBoxes / hoursActive, 1)
             stats["executions_per_hour"] := Round(stats["total_executions"] / hoursActive, 1)
+        } else {
+            ; Not enough active time for meaningful hourly rates
+            stats["boxes_per_hour"] := 0
+            stats["executions_per_hour"] := 0
         }
         
         ; Calculate average execution time
