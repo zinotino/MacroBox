@@ -32,6 +32,29 @@ global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
 
+; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
+global autoExecutionMode := false
+global autoExecutionButton := ""
+global autoExecutionTimer := 0
+global autoExecutionInterval := 2000  ; Default 2 seconds
+global autoExecutionCount := 0
+global autoExecutionMaxCount := 0  ; 0 = infinite
+global autoExecutionButtons := Map()  ; Track which buttons have automation enabled
+global buttonAutoSettings := Map()  ; Store auto settings per button (interval, count, etc.)
+global autoStartBtn := 0
+global autoStopBtn := 0
+global autoIntervalControl := 0
+global autoCountControl := 0
+global chromeMemoryCleanupCount := 0
+global chromeMemoryCleanupInterval := 50  ; Clean memory every 50 executions
+
+; ===== VISUAL INDICATOR SYSTEM =====
+global yellowOutlineButtons := Map()  ; Track buttons with yellow outlines
+
+; ===== WASD LABEL TOGGLE SYSTEM =====
+global wasdLabelsEnabled := false  ; Track if WASD labels should be shown
+global wasdToggleBtn := 0  ; Reference to the WASD toggle button
+
 ; ===== FILE SYSTEM PATHS =====
 global workDir := A_ScriptDir "\data"
 global configFile := A_ScriptDir "\config.ini"
@@ -227,22 +250,94 @@ global wasdHotkeyMap := Map()
 InitializeWASDHotkeys() {
     global wasdHotkeyMap
     
-    ; Default WASD mappings to numpad equivalents
-    wasdHotkeyMap["w"] := "Num8"    ; Up
-    wasdHotkeyMap["a"] := "Num4"    ; Left  
-    wasdHotkeyMap["s"] := "Num5"    ; Down/Center
-    wasdHotkeyMap["d"] := "Num6"    ; Right
-    wasdHotkeyMap["q"] := "Num7"    ; Up-Left
-    wasdHotkeyMap["e"] := "Num9"    ; Up-Right
-    wasdHotkeyMap["z"] := "Num1"    ; Down-Left
-    wasdHotkeyMap["c"] := "Num3"    ; Down-Right
-    wasdHotkeyMap["x"] := "Num2"    ; Down
-    wasdHotkeyMap["f"] := "Num0"    ; Special/Space
-    wasdHotkeyMap["r"] := "NumDot"  ; Dot
-    wasdHotkeyMap["t"] := "NumMult" ; Multiply
+    ; New 4x3 grid WASD mappings to numpad equivalents
+    ; Q  W  E  R
+    ; A  S  D  F  
+    ; Z  X  C  V
+    wasdHotkeyMap["q"] := "Num7"    ; Q -> Num7
+    wasdHotkeyMap["w"] := "Num8"    ; W -> Num8
+    wasdHotkeyMap["e"] := "Num9"    ; E -> Num9
+    wasdHotkeyMap["r"] := "Num4"    ; R -> Num4 (moved from original layout)
+    wasdHotkeyMap["a"] := "Num5"    ; A -> Num5 (moved from Num4)
+    wasdHotkeyMap["s"] := "Num6"    ; S -> Num6 (moved from Num5)
+    wasdHotkeyMap["d"] := "Num1"    ; D -> Num1 (moved from Num6)
+    wasdHotkeyMap["f"] := "Num2"    ; F -> Num2 (moved from Num0)
+    wasdHotkeyMap["z"] := "Num3"    ; Z -> Num3 (moved from Num1)
+    wasdHotkeyMap["x"] := "Num0"    ; X -> Num0 (moved from Num2)
+    wasdHotkeyMap["c"] := "NumDot"  ; C -> NumDot (moved from Num3)
+    wasdHotkeyMap["v"] := "NumMult" ; V -> NumMult (new)
     
     ; Try to load custom mappings from file
     LoadWASDMappingsFromFile()
+    
+    ; Update button labels to show WASD keys
+    UpdateButtonLabelsWithWASD()
+}
+
+; ===== UPDATE BUTTON LABELS WITH WASD KEYS =====
+UpdateButtonLabelsWithWASD() {
+    global buttonCustomLabels, wasdHotkeyMap, buttonNames, wasdLabelsEnabled
+    
+    if (!wasdLabelsEnabled) {
+        ; WASD mode disabled - show only numpad labels
+        for buttonName in buttonNames {
+            buttonCustomLabels[buttonName] := buttonName
+        }
+        return
+    }
+    
+    ; WASD mode enabled - show combined labels
+    ; Create reverse mapping from numpad to WASD
+    numpadToWASD := Map()
+    for wasdKey, numpadKey in wasdHotkeyMap {
+        numpadToWASD[numpadKey] := StrUpper(wasdKey)
+    }
+    
+    ; Update button labels to show WASD keys only (cleaner display)
+    for buttonName in buttonNames {
+        if (numpadToWASD.Has(buttonName)) {
+            wasdKey := numpadToWASD[buttonName]
+            buttonCustomLabels[buttonName] := wasdKey
+        } else {
+            buttonCustomLabels[buttonName] := buttonName
+        }
+    }
+}
+
+; ===== TOGGLE WASD LABELS =====
+ToggleWASDLabels() {
+    global wasdLabelsEnabled, wasdToggleBtn, wasdHotkeyMap
+    
+    wasdLabelsEnabled := !wasdLabelsEnabled
+    
+    ; Enable/disable regular WASD hotkeys based on mode
+    if (wasdLabelsEnabled) {
+        ; Enable regular WASD keys
+        for wasdKey, numpadKey in wasdHotkeyMap {
+            try {
+                Hotkey(wasdKey, WASDExecuteMacro.Bind(numpadKey), "On")
+            } catch Error as e {
+                ; Skip if hotkey conflicts
+            }
+        }
+    } else {
+        ; Disable regular WASD keys
+        for wasdKey, numpadKey in wasdHotkeyMap {
+            try {
+                Hotkey(wasdKey, "Off")
+            } catch Error as e {
+                ; Skip if hotkey doesn't exist
+            }
+        }
+    }
+    
+    ; Update all button labels
+    UpdateButtonLabelsWithWASD()
+    RefreshAllButtonAppearances()
+    
+    ; Note: WASD toggle will be available in Settings → Hotkey Configuration
+    
+    UpdateStatus(wasdLabelsEnabled ? "🎮 WASD mode enabled - keys active" : "🎮 WASD mode disabled - keys inactive")
 }
 
 SaveWASDMappingsToFile() {
@@ -370,8 +465,11 @@ SetupWASDHotkeys() {
             Hotkey("CapsLock & f", (*) => ExecuteWASDMacro(wasdHotkeyMap["f"]), "On")
         if (wasdHotkeyMap.Has("r"))
             Hotkey("CapsLock & r", (*) => ExecuteWASDMacro(wasdHotkeyMap["r"]), "On")
-        if (wasdHotkeyMap.Has("t"))
-            Hotkey("CapsLock & t", (*) => ExecuteWASDMacro(wasdHotkeyMap["t"]), "On")
+        if (wasdHotkeyMap.Has("v"))
+            Hotkey("CapsLock & v", (*) => ExecuteWASDMacro(wasdHotkeyMap["v"]), "On")
+        
+        ; Regular WASD keys are only enabled when WASD mode is toggled on
+        ; This prevents accidental macro execution when typing
         
     } catch Error as e {
         UpdateStatus("⚠️ WASD hotkey setup failed: " . e.Message)
@@ -1040,16 +1138,65 @@ SetupHotkeys() {
         Hotkey("+NumpadDot", (*) => ShiftNumpadClearExecution("NumDot"))
         Hotkey("+NumpadMult", (*) => ShiftNumpadClearExecution("NumMult"))
         
+        ; CapsLock combination hotkeys for layer switching
+        Hotkey("CapsLock & 1", (*) => SwitchToLayer(1))
+        Hotkey("CapsLock & 2", (*) => SwitchToLayer(2))
+        Hotkey("CapsLock & 3", (*) => SwitchToLayer(3))
+        Hotkey("CapsLock & 4", (*) => SwitchToLayer(4))
+        
+        ; WASD hotkeys for macro execution
+        SetupWASDHotkeys()
+        
         ; Utility
         Hotkey("NumpadEnter", (*) => SubmitCurrentImage())
         Hotkey("+Enter", (*) => DirectClearExecution())
         Hotkey("RCtrl", (*) => EmergencyStop())
         
-        UpdateStatus("✅ Hotkeys configured - F9 isolated for recording only")
+        UpdateStatus("✅ Hotkeys configured - F9 isolated for recording only, WASD + CapsLock support added")
     } catch Error as e {
         UpdateStatus("⚠️ Hotkey setup failed: " . e.Message)
         MsgBox("Hotkey error: " . e.Message, "Setup Error", "Icon!")
     }
+}
+
+; ===== WASD MACRO EXECUTION =====
+WASDExecuteMacro(buttonName, *) {
+    global wasdLabelsEnabled
+    
+    ; Only execute if WASD mode is enabled
+    if (!wasdLabelsEnabled) {
+        return
+    }
+    
+    SafeExecuteMacroByKey(buttonName)
+}
+
+; ===== LAYER SWITCHING =====
+SwitchToLayer(layerNum) {
+    global currentLayer, totalLayers
+    
+    if (layerNum < 1 || layerNum > totalLayers) {
+        UpdateStatus("❌ Invalid layer: " . layerNum)
+        return
+    }
+    
+    currentLayer := layerNum
+    
+    ; Update layer indicator display
+    if (layerIndicator) {
+        layerIndicator.Text := "Layer " . currentLayer
+        layerIndicator.Opt("+Background" . layerBorderColors[currentLayer])
+        layerIndicator.Redraw()
+    }
+    
+    ; Update grid outline
+    if (gridOutline) {
+        gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
+        gridOutline.Redraw()
+    }
+    
+    RefreshAllButtonAppearances()
+    UpdateStatus("📚 Switched to Layer " . layerNum)
 }
 
 ; ===== F9 RECORDING HANDLER - COMPLETELY ISOLATED =====
@@ -1171,18 +1318,39 @@ ResetRecordingUI() {
 
 ; ===== SAFE MACRO EXECUTION - BLOCKS F9 =====
 SafeExecuteMacroByKey(buttonName) {
+    global buttonAutoSettings, currentLayer, autoExecutionMode
+    
     ; CRITICAL: Absolutely prevent F9 from reaching macro execution
     if (buttonName = "F9" || InStr(buttonName, "F9")) {
         UpdateStatus("🚫 F9 BLOCKED from macro execution - Use for recording only")
         return
     }
     
+    buttonKey := "L" . currentLayer . "_" . buttonName
+    
+    ; Check if button has auto mode configured
+    if (buttonAutoSettings.Has(buttonKey) && buttonAutoSettings[buttonKey].enabled) {
+        if (!autoExecutionMode) {
+            ; Start auto mode for this button
+            autoExecutionInterval := buttonAutoSettings[buttonKey].interval
+            autoExecutionMaxCount := buttonAutoSettings[buttonKey].maxCount
+            StartAutoExecution(buttonName)
+            UpdateStatus("🤖 Auto mode activated for " . buttonName)
+        } else {
+            ; Stop current auto mode
+            StopAutoExecution()
+            UpdateStatus("⏹️ Auto mode stopped")
+        }
+        return
+    }
+    
+    ; Regular macro execution
     UpdateStatus("🎹 Numpad: " . buttonName)
     ExecuteMacro(buttonName)
 }
 
 ExecuteMacro(buttonName) {
-    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay
+    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, autoExecutionMode, autoExecutionCount, chromeMemoryCleanupCount, chromeMemoryCleanupInterval
     
     ; Double-check F9 protection
     if (buttonName = "F9" || InStr(buttonName, "F9")) {
@@ -1235,6 +1403,171 @@ ExecuteMacro(buttonName) {
     FlashButton(buttonName, false)
     playback := false
     UpdateStatus("✅ Completed: " . buttonName)
+    
+    ; Handle auto-execution memory cleanup for Chrome
+    if (autoExecutionMode) {
+        autoExecutionCount++
+        chromeMemoryCleanupCount++
+        if (chromeMemoryCleanupCount >= chromeMemoryCleanupInterval) {
+            PerformChromeMemoryCleanup()
+            chromeMemoryCleanupCount := 0
+        }
+    }
+}
+
+; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
+StartAutoExecution(buttonName) {
+    global autoExecutionMode, autoExecutionButton, autoExecutionTimer, autoExecutionInterval, autoExecutionCount, autoExecutionMaxCount
+    
+    if (!macroEvents.Has("L" . currentLayer . "_" . buttonName) || macroEvents["L" . currentLayer . "_" . buttonName].Length = 0) {
+        UpdateStatus("❌ No macro to automate on " . buttonName)
+        return false
+    }
+    
+    if (autoExecutionMode) {
+        StopAutoExecution()
+    }
+    
+    autoExecutionMode := true
+    autoExecutionButton := buttonName
+    autoExecutionCount := 0
+    
+    ; Add visual indicator
+    AddYellowOutline(buttonName)
+    
+    ; Start the timer
+    SetTimer(AutoExecuteLoop, autoExecutionInterval)
+    
+    UpdateStatus("🔄 Auto-executing " . buttonName . " every " . (autoExecutionInterval / 1000) . "s")
+    
+    ; Update GUI buttons if they exist
+    if (autoStartBtn) {
+        try {
+            autoStartBtn.Text := "Stop Auto"
+            autoStartBtn.Opt("+BackgroundRed")
+        } catch {
+        }
+    }
+    
+    return true
+}
+
+StopAutoExecution() {
+    global autoExecutionMode, autoExecutionButton, autoExecutionTimer, autoExecutionCount
+    
+    if (!autoExecutionMode) {
+        return
+    }
+    
+    ; Stop the timer
+    SetTimer(AutoExecuteLoop, 0)
+    
+    ; Remove visual indicator
+    if (autoExecutionButton != "") {
+        RemoveYellowOutline(autoExecutionButton)
+    }
+    
+    autoExecutionMode := false
+    prevButton := autoExecutionButton
+    autoExecutionButton := ""
+    
+    UpdateStatus("⏹️ Stopped auto-execution of " . prevButton . " (ran " . autoExecutionCount . " times)")
+    
+    ; Update GUI buttons if they exist
+    if (autoStartBtn) {
+        try {
+            autoStartBtn.Text := "Start Auto"
+            autoStartBtn.Opt("+BackgroundGreen")
+        } catch {
+        }
+    }
+}
+
+AutoExecuteLoop() {
+    global autoExecutionMode, autoExecutionButton, autoExecutionCount, autoExecutionMaxCount, playback
+    
+    if (!autoExecutionMode || autoExecutionButton = "") {
+        StopAutoExecution()
+        return
+    }
+    
+    ; Check if we've reached max count (if set)
+    if (autoExecutionMaxCount > 0 && autoExecutionCount >= autoExecutionMaxCount) {
+        UpdateStatus("✅ Completed " . autoExecutionCount . " auto-executions of " . autoExecutionButton)
+        StopAutoExecution()
+        return
+    }
+    
+    ; Don't execute if already playing back
+    if (playback) {
+        return
+    }
+    
+    ; Execute the macro
+    ExecuteMacro(autoExecutionButton)
+}
+
+; ===== VISUAL INDICATOR SYSTEM FOR AUTOMATION =====
+AddYellowOutline(buttonName) {
+    global buttonGrid, yellowOutlineButtons
+    
+    if (!buttonGrid.Has(buttonName)) {
+        return
+    }
+    
+    button := buttonGrid[buttonName]
+    
+    ; Store original border and apply yellow outline
+    if (!yellowOutlineButtons.Has(buttonName)) {
+        ; Create yellow outline effect by changing border
+        button.Opt("+Border")
+        button.Opt("+Background0xFFFF00")  ; Bright yellow background
+        yellowOutlineButtons[buttonName] := true
+        
+        ; Update button appearance to show automation status
+        UpdateButtonAppearance(buttonName)
+    }
+}
+
+RemoveYellowOutline(buttonName) {
+    global buttonGrid, yellowOutlineButtons
+    
+    if (!buttonGrid.Has(buttonName) || !yellowOutlineButtons.Has(buttonName)) {
+        return
+    }
+    
+    button := buttonGrid[buttonName]
+    
+    ; Restore original appearance
+    button.Opt("-Background0xFFFF00")
+    yellowOutlineButtons.Delete(buttonName)
+    
+    ; Update button appearance to normal
+    UpdateButtonAppearance(buttonName)
+}
+
+; ===== CHROME MEMORY CLEANUP =====
+PerformChromeMemoryCleanup() {
+    try {
+        ; Force garbage collection in Chrome processes
+        if (WinExist("ahk_exe chrome.exe")) {
+            ; Focus Chrome briefly to allow memory cleanup
+            WinActivate("ahk_exe chrome.exe")
+            Sleep(100)
+            
+            ; Send some cleanup keystrokes
+            Send("{F5}")  ; Refresh current page
+            Sleep(500)
+            Send("^+t")  ; Reopen recently closed tab
+            Sleep(100)
+            Send("^w")   ; Close the reopened tab
+            Sleep(200)
+        }
+        
+        UpdateStatus("🧹 Chrome memory cleanup performed")
+    } catch Error as e {
+        ; Silently continue if cleanup fails
+    }
 }
 
 ; ===== RECORDING SYSTEM =====
@@ -1587,7 +1920,6 @@ CreateToolbar() {
     mainGui.btnBreakMode := btnBreakMode
     x += Round(75 * scaleFactor)
     
-    
     ; Clear button
     btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(55 * scaleFactor) . " h" . btnHeight, "🗑️ Clear")
     btnClear.OnEvent("Click", (*) => ShowClearDialog())
@@ -1731,7 +2063,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings
     
     if (!buttonGrid.Has(buttonName))
         return
@@ -1741,6 +2073,7 @@ UpdateButtonAppearance(buttonName) {
     layerMacroName := "L" . currentLayer . "_" . buttonName
     
     hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
+    hasAutoMode := buttonAutoSettings.Has(layerMacroName) && buttonAutoSettings[layerMacroName].enabled
     
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
     
@@ -1818,9 +2151,17 @@ UpdateButtonAppearance(buttonName) {
                 button.Text := jsonInfo
             } else if (hasMacro) {
                 events := macroEvents[layerMacroName]
-                button.Opt("+Background" . layerBorderColors[currentLayer])
-                button.SetFont("s7 bold", "cWhite")
-                button.Text := "MACRO`n" . events.Length . " events"
+                if (hasAutoMode) {
+                    ; Auto mode enabled - bright orange background
+                    button.Opt("+Background0xFF8C00")
+                    button.SetFont("s7 bold", "cWhite")
+                    button.Text := "🤖 AUTO`n" . events.Length . " events"
+                } else {
+                    ; Regular macro - layer color
+                    button.Opt("+Background" . layerBorderColors[currentLayer])
+                    button.SetFont("s7 bold", "cWhite")
+                    button.Text := "MACRO`n" . events.Length . " events"
+                }
             } else {
                 button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
                 button.SetFont("s8", "cGray")
@@ -1995,6 +2336,22 @@ ShowContextMenu(buttonName, *) {
     contextMenu.Add("🗑️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
     contextMenu.Add()
     
+    ; Auto execution - two separate options
+    buttonKey := "L" . currentLayer . "_" . buttonName
+    hasAutoSettings := buttonAutoSettings.Has(buttonKey)
+    autoEnabled := hasAutoSettings && buttonAutoSettings[buttonKey].enabled
+    
+    ; Enable/Disable option
+    if (autoEnabled) {
+        contextMenu.Add("✅ Auto Mode: ON", (*) => ToggleAutoEnable(buttonName))
+    } else {
+        contextMenu.Add("⚙️ Auto Mode: Enable", (*) => ToggleAutoEnable(buttonName))
+    }
+    
+    ; Settings option
+    contextMenu.Add("🔧 Auto Mode: Settings", (*) => ConfigureAutoMode(buttonName))
+    contextMenu.Add()
+    
     ; Configuration submenu
     configMenu := Menu()
     configMenu.Add("⚙️ Settings & Profiles", (*) => ShowSettings())
@@ -2065,6 +2422,236 @@ ToggleBreakMode() {
         ApplyBreakModeUI()
         UpdateStatus("☕ Break mode active")
     }
+}
+
+; ===== AUTO EXECUTION TOGGLE =====
+ToggleAutoExecution() {
+    global autoExecutionMode
+    
+    if (!autoExecutionMode) {
+        ; Need to show dialog to select which button to automate
+        ShowAutoExecutionDialog()
+    } else {
+        StopAutoExecution()
+    }
+}
+
+ShowAutoExecutionDialog() {
+    global mainGui, buttonNames, macroEvents, currentLayer
+    
+    ; Create list of available macros
+    availableMacros := []
+    for buttonName in buttonNames {
+        layerMacroName := "L" . currentLayer . "_" . buttonName
+        if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
+            availableMacros.Push(buttonName)
+        }
+    }
+    
+    if (availableMacros.Length = 0) {
+        MsgBox("No recorded macros available on Layer " . currentLayer . ". Record some macros first!", "Auto Execution", "Icon!")
+        return
+    }
+    
+    ; Create simple dialog
+    autoDialog := Gui("+Owner" . mainGui.Hwnd, "Auto Execution Setup")
+    autoDialog.Add("Text", "x10 y10", "Select macro to auto-execute:")
+    
+    buttonList := ""
+    for i, buttonName in availableMacros {
+        buttonList .= buttonName . "|"
+    }
+    buttonList := RTrim(buttonList, "|")
+    
+    ddlButton := autoDialog.Add("DropDownList", "x10 y35 w200", StrSplit(buttonList, "|"))
+    ddlButton.Choose(1)
+    
+    autoDialog.Add("Text", "x10 y70", "Interval (seconds):")
+    editInterval := autoDialog.Add("Edit", "x120 y68 w60", "2")
+    
+    autoDialog.Add("Text", "x10 y100", "Max executions (0 = infinite):")
+    editCount := autoDialog.Add("Edit", "x180 y98 w60", "0")
+    
+    btnStart := autoDialog.Add("Button", "x10 y130 w100 h30", "Start Auto")
+    btnCancel := autoDialog.Add("Button", "x120 y130 w100 h30", "Cancel")
+    
+    btnStart.OnEvent("Click", StartAutoFromDialog.Bind(autoDialog, availableMacros, ddlButton, editInterval, editCount))
+    btnCancel.OnEvent("Click", (*) => autoDialog.Destroy())
+    
+    autoDialog.Show("w240 h170")
+}
+
+StartAutoFromDialog(autoDialog, availableMacros, ddlButton, editInterval, editCount, *) {
+    selectedButton := availableMacros[ddlButton.Value]
+    interval := Integer(editInterval.Text) * 1000
+    maxCount := Integer(editCount.Text)
+    
+    global autoExecutionInterval, autoExecutionMaxCount
+    autoExecutionInterval := interval > 0 ? interval : 2000
+    autoExecutionMaxCount := maxCount
+    
+    autoDialog.Destroy()
+    StartAutoExecution(selectedButton)
+}
+
+StartAutoExecutionFromContext(buttonName, *) {
+    global autoExecutionInterval, autoExecutionMaxCount, currentLayer, macroEvents, mainGui
+    
+    ; Check if button has a macro
+    if (!macroEvents.Has("L" . currentLayer . "_" . buttonName) || macroEvents["L" . currentLayer . "_" . buttonName].Length = 0) {
+        MsgBox("No macro recorded for " . buttonName . " on Layer " . currentLayer . ". Record a macro first!", "Auto Execution", "Icon!")
+        return
+    }
+    
+    ; Simple dialog for quick setup
+    quickDialog := Gui("+Owner" . mainGui.Hwnd, "Quick Auto Setup - " . buttonName)
+    quickDialog.Add("Text", "x10 y10", "Interval (seconds):")
+    editInterval := quickDialog.Add("Edit", "x100 y8 w60", "2")
+    
+    quickDialog.Add("Text", "x10 y40", "Max runs (0 = infinite):")
+    editCount := quickDialog.Add("Edit", "x130 y38 w60", "0")
+    
+    btnStart := quickDialog.Add("Button", "x10 y70 w80 h30", "Start")
+    btnCancel := quickDialog.Add("Button", "x100 y70 w80 h30", "Cancel")
+    
+    btnStart.OnEvent("Click", StartQuickAutoFromDialog.Bind(quickDialog, buttonName, editInterval, editCount))
+    btnCancel.OnEvent("Click", (*) => quickDialog.Destroy())
+    
+    quickDialog.Show("w200 h110")
+}
+
+; ===== NEW AUTO MODE CONFIGURATION SYSTEM =====
+ConfigureAutoMode(buttonName, *) {
+    global buttonAutoSettings, currentLayer, macroEvents, mainGui
+    
+    buttonKey := "L" . currentLayer . "_" . buttonName
+    
+    ; Check if button has a macro
+    if (!macroEvents.Has(buttonKey) || macroEvents[buttonKey].Length = 0) {
+        MsgBox("No macro recorded for " . buttonName . " on Layer " . currentLayer . ". Record a macro first!", "Auto Mode Setup", "Icon!")
+        return
+    }
+    
+    ; Get existing settings or defaults
+    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: 2000, maxCount: 0}
+    
+    ; Create configuration dialog
+    configDialog := Gui("+Owner" . mainGui.Hwnd, "Auto Mode Setup - " . buttonName)
+    
+    configDialog.Add("Text", "x10 y10", "Auto Mode Configuration for " . buttonName . " (Layer " . currentLayer . ")")
+    
+    ; Enable checkbox
+    enableCheck := configDialog.Add("Checkbox", "x10 y35", "Enable Auto Mode")
+    enableCheck.Value := currentSettings.enabled
+    
+    configDialog.Add("Text", "x10 y65", "Interval (seconds):")
+    intervalEdit := configDialog.Add("Edit", "x120 y63 w60", String(currentSettings.interval / 1000))
+    
+    configDialog.Add("Text", "x10 y95", "Max executions (0 = infinite):")
+    countEdit := configDialog.Add("Edit", "x160 y93 w60", String(currentSettings.maxCount))
+    
+    configDialog.Add("Text", "x10 y125 w320 h40", "Note: Use numpad hotkeys or right-click → Auto Mode to trigger execution")
+    
+    btnSave := configDialog.Add("Button", "x10 y170 w100 h30", "Save Settings")
+    btnCancel := configDialog.Add("Button", "x120 y170 w100 h30", "Cancel")
+    
+    btnSave.OnEvent("Click", SaveAutoSettings.Bind(configDialog, buttonKey, enableCheck, intervalEdit, countEdit, buttonName))
+    btnCancel.OnEvent("Click", (*) => configDialog.Destroy())
+    
+    configDialog.Show("w340 h210")
+}
+
+; ===== TOGGLE AUTO MODE ENABLE/DISABLE =====
+ToggleAutoEnable(buttonName, *) {
+    global buttonAutoSettings, currentLayer, macroEvents
+    
+    buttonKey := "L" . currentLayer . "_" . buttonName
+    
+    ; Check if button has a macro
+    if (!macroEvents.Has(buttonKey) || macroEvents[buttonKey].Length = 0) {
+        MsgBox("No macro recorded for " . buttonName . " on Layer " . currentLayer . ". Record a macro first!", "Auto Mode", "Icon!")
+        return
+    }
+    
+    ; Toggle enable state
+    if (buttonAutoSettings.Has(buttonKey)) {
+        ; Settings exist - toggle enable state
+        buttonAutoSettings[buttonKey].enabled := !buttonAutoSettings[buttonKey].enabled
+        status := buttonAutoSettings[buttonKey].enabled ? "✅ Auto mode enabled for " : "❌ Auto mode disabled for "
+        UpdateStatus(status . buttonName)
+    } else {
+        ; No settings exist - create with defaults and enable
+        buttonAutoSettings[buttonKey] := {
+            enabled: true,
+            interval: 2000,  ; 2 seconds default
+            maxCount: 0      ; infinite default
+        }
+        UpdateStatus("✅ Auto mode enabled for " . buttonName . " (default settings)")
+    }
+    
+    ; Update button appearance and save
+    UpdateButtonAppearance(buttonName)
+    SaveConfig()
+}
+
+DisableAutoMode(buttonName, *) {
+    global buttonAutoSettings, currentLayer
+    
+    buttonKey := "L" . currentLayer . "_" . buttonName
+    
+    if (buttonAutoSettings.Has(buttonKey)) {
+        buttonAutoSettings[buttonKey].enabled := false
+        UpdateButtonAppearance(buttonName)
+        SaveConfig()
+        UpdateStatus("❌ Auto mode disabled for " . buttonName)
+    }
+}
+
+SaveAutoSettings(configDialog, buttonKey, enableCheck, intervalEdit, countEdit, buttonName, *) {
+    global buttonAutoSettings
+    
+    ; Read values before destroying dialog
+    isEnabled := enableCheck.Value
+    intervalValue := Integer(intervalEdit.Text) * 1000
+    maxCountValue := Integer(countEdit.Text)
+    
+    ; Save settings
+    buttonAutoSettings[buttonKey] := {
+        enabled: isEnabled,
+        interval: intervalValue,
+        maxCount: maxCountValue
+    }
+    
+    configDialog.Destroy()
+    
+    ; Update button appearance and save
+    UpdateButtonAppearance(buttonName)
+    SaveConfig()
+    
+    status := isEnabled ? "✅ Auto mode enabled for " : "❌ Auto mode disabled for "
+    UpdateStatus(status . buttonName)
+}
+
+EmergencyStopAllAuto(*) {
+    global autoExecutionMode
+    
+    if (autoExecutionMode) {
+        StopAutoExecution()
+    }
+    
+    UpdateStatus("🚨 Emergency stop - all auto modes halted")
+}
+
+StartQuickAutoFromDialog(quickDialog, buttonName, editInterval, editCount, *) {
+    interval := Integer(editInterval.Text) * 1000
+    maxCount := Integer(editCount.Text)
+    
+    global autoExecutionInterval, autoExecutionMaxCount
+    autoExecutionInterval := interval > 0 ? interval : 2000
+    autoExecutionMaxCount := maxCount
+    
+    quickDialog.Destroy()
+    StartAutoExecution(buttonName)
 }
 
 EnableAllControls(enabled) {
@@ -4329,10 +4916,12 @@ SaveMacroState() {
                     stateContent .= macroName . "=keyUp," . event.key . "`n"
                 }
                 else if (event.type = "mouseDown") {
-                    stateContent .= macroName . "=mouseDown," . event.x . "," . event.y . "," . event.button . "`n"
+                    button := event.HasProp("button") ? event.button : "left"
+                    stateContent .= macroName . "=mouseDown," . event.x . "," . event.y . "," . button . "`n"
                 }
                 else if (event.type = "mouseUp") {
-                    stateContent .= macroName . "=mouseUp," . event.x . "," . event.y . "," . event.button . "`n"
+                    button := event.HasProp("button") ? event.button : "left"
+                    stateContent .= macroName . "=mouseUp," . event.x . "," . event.y . "," . button . "`n"
                 }
             }
         }
@@ -5664,13 +6253,18 @@ ShowWelcomeMessage() {
 }
 
 EmergencyStop() {
-    global recording, playback, awaitingAssignment, mainGui
+    global recording, playback, awaitingAssignment, mainGui, autoExecutionMode
     
     UpdateStatus("🚨 EMERGENCY STOP")
     
     recording := false
     playback := false
     awaitingAssignment := false
+    
+    ; Stop any auto execution
+    if (autoExecutionMode) {
+        StopAutoExecution()
+    }
     
     try {
         SafeUninstallMouseHook()
