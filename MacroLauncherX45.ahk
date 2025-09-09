@@ -22,6 +22,8 @@ global modeToggleBtn := 0
 global recording := false
 global playback := false
 global awaitingAssignment := false
+global lastExecutionTime := 0
+global playbackStartTime := 0
 global currentMacro := ""
 global macroEvents := Map()
 global buttonGrid := Map()
@@ -31,6 +33,17 @@ global buttonCustomLabels := Map()
 global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
+
+; ===== HOTKEY CONFIGURATION =====
+global hotkeyRecordToggle := "F9"
+global hotkeySubmit := "NumpadEnter"
+global hotkeyDirectClear := "+Enter"
+global hotkeyEmergency := "RCtrl"
+global hotkeyBreakMode := "^b"
+global hotkeyLayerPrev := "NumpadDiv"
+global hotkeyLayerNext := "NumpadSub"
+global hotkeySettings := "^k"
+global hotkeyStats := "F12"
 
 ; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
 global autoExecutionMode := false
@@ -280,7 +293,7 @@ InitializeWASDHotkeys() {
 
 ; ===== UPDATE BUTTON LABELS WITH WASD KEYS =====
 UpdateButtonLabelsWithWASD() {
-    global buttonCustomLabels, wasdHotkeyMap, buttonNames, wasdLabelsEnabled
+    global buttonCustomLabels, wasdHotkeyMap, buttonNames
     
     ; Create reverse mapping from numpad to WASD
     numpadToWASD := Map()
@@ -288,13 +301,13 @@ UpdateButtonLabelsWithWASD() {
         numpadToWASD[numpadKey] := StrUpper(wasdKey)
     }
     
-    ; Update labels to show WASD keys when mode is active
+    ; Always show both numpad and WASD keys for buttons that have WASD mapping
     for buttonName in buttonNames {
-        if (wasdLabelsEnabled && numpadToWASD.Has(buttonName)) {
+        if (numpadToWASD.Has(buttonName)) {
             wasdKey := numpadToWASD[buttonName]
-            buttonCustomLabels[buttonName] := buttonName . "/" . wasdKey
+            buttonCustomLabels[buttonName] := buttonName . " / " . wasdKey
         } else {
-            ; Reset to default numpad name
+            ; Show only numpad name for buttons without WASD mapping
             buttonCustomLabels[buttonName] := buttonName
         }
     }
@@ -342,7 +355,7 @@ ToggleWASDLabels() {
     ; Save configuration immediately to persist state
     SaveConfig()
     
-    UpdateStatus(wasdLabelsEnabled ? "🎮 WASD mode enabled - button labels show key mappings" : "🎮 WASD mode disabled - numpad labels restored")
+    UpdateStatus(wasdLabelsEnabled ? "WASD mode enabled - button labels show key mappings" : "WASD mode disabled - numpad labels restored")
 }
 
 SaveWASDMappingsToFile() {
@@ -462,7 +475,7 @@ SetupWASDHotkeys() {
         for wasdKey, numpadKey in wasdHotkeyMap {
             try {
                 hotkeyCombo := "CapsLock & " . wasdKey
-                Hotkey(hotkeyCombo, (*) => ExecuteWASDMacro(numpadKey), "On")
+                Hotkey(hotkeyCombo, ExecuteWASDMacro.Bind(numpadKey), "On")
             } catch Error as keyError {
                 ; Skip individual key conflicts but continue with others
                 UpdateStatus("⚠️ Skipped conflicted hotkey: CapsLock & " . wasdKey)
@@ -529,19 +542,16 @@ CapsLockUp() {
     }
 }
 
-ExecuteWASDMacro(buttonName) {
-    global hotkeyProfileActive, capsLockPressed
+ExecuteWASDMacro(buttonName, *) {
+    global hotkeyProfileActive
     
     ; Enhanced validation to prevent mis-inputs
     if (!hotkeyProfileActive) {
         return
     }
     
-    ; Additional check: ensure CapsLock was actually pressed as modifier
-    if (!capsLockPressed) {
-        UpdateStatus("⚠️ CapsLock modifier required for WASD hotkeys")
-        return
-    }
+    ; Note: CapsLock modifier is already enforced by "CapsLock & key" syntax
+    ; No need to check capsLockPressed state since hotkey won't trigger without CapsLock
     
     UpdateStatus("🎹 WASD: CapsLock+" . RegExReplace(buttonName, "Num", "") . " → " . buttonName)
     SafeExecuteMacroByKey(buttonName)
@@ -584,9 +594,10 @@ Main() {
         ; Refresh all button appearances after loading config
         RefreshAllButtonAppearances()
         
-        ; Setup time tracking and auto-save
+        ; Setup time tracking, auto-save, and state monitoring
         SetTimer(UpdateActiveTime, 30000)
         SetTimer(AutoSave, 60000)
+        SetTimer(MonitorExecutionState, 15000)  ; Check for stuck states every 15 seconds
         
         ; Setup cleanup
         OnExit((*) => CleanupAndExit())
@@ -658,8 +669,44 @@ InitializeDirectories() {
     if !DirExist(workDir)
         DirCreate(workDir)
     
-    if !DirExist(thumbnailDir)
-        DirCreate(thumbnailDir)
+    ; Try to create thumbnail directory using Method 4 fallback approach for corporate environments
+    if !DirExist(thumbnailDir) {
+        ; Try original path first
+        try {
+            DirCreate(thumbnailDir)
+            if (DirExist(thumbnailDir)) {
+                return
+            }
+        } catch {
+            ; Original path failed, try fallback locations
+        }
+        
+        ; Method 4: Try alternative thumbnail directory locations
+        fallbackDirs := [
+            A_ScriptDir . "\thumbnails",
+            A_MyDocuments . "\MacroMaster_thumbnails", 
+            EnvGet("USERPROFILE") . "\MacroMaster_thumbnails",
+            A_Desktop . "\MacroMaster_thumbnails"
+        ]
+        
+        for testDir in fallbackDirs {
+            try {
+                DirCreate(testDir)
+                if (DirExist(testDir)) {
+                    ; Update global thumbnail directory to working path
+                    thumbnailDir := testDir
+                    UpdateStatus("📁 Using alternate thumbnail directory: " . testDir)
+                    return
+                }
+            } catch {
+                continue
+            }
+        }
+        
+        ; If all directory creation fails, disable thumbnails
+        UpdateStatus("⚠️ Could not create thumbnail directory - thumbnails disabled")
+        thumbnailDir := ""
+    }
 }
 
 ; ===== MACRO VISUALIZATION SYSTEM INITIALIZATION =====
@@ -1049,14 +1096,62 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
 }
 
 SaveVisualizationPNG(bitmap, filePath) {
-    ; Save bitmap as PNG
+    ; Save bitmap as PNG with Method 4 fallback paths for corporate environments
     clsid := Buffer(16)
     NumPut("UInt", 0x557CF406, clsid, 0)
     NumPut("UInt", 0x11D31A04, clsid, 4)
     NumPut("UInt", 0x0000739A, clsid, 8)
     NumPut("UInt", 0x2EF31EF8, clsid, 12)
     
-    return DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", filePath, "Ptr", clsid, "Ptr", 0) = 0
+    ; Try original path first
+    result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", filePath, "Ptr", clsid, "Ptr", 0)
+    if (result = 0 && FileExist(filePath)) {
+        return true
+    }
+    
+    ; Method 4: Try alternative paths for corporate environments
+    fileName := "macro_viz_" . A_TickCount . ".png"
+    fallbackPaths := [
+        A_ScriptDir . "\" . fileName,
+        A_MyDocuments . "\" . fileName,
+        EnvGet("USERPROFILE") . "\" . fileName,
+        A_Desktop . "\" . fileName,
+        A_Temp . "\" . fileName  ; Keep original as last resort
+    ]
+    
+    for testPath in fallbackPaths {
+        try {
+            result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", testPath, "Ptr", clsid, "Ptr", 0)
+            if (result = 0 && FileExist(testPath)) {
+                ; Copy successful path back to the expected location for compatibility
+                if (testPath != filePath) {
+                    try {
+                        FileCopy(testPath, filePath, 1)
+                        ; Clean up temporary file - capture path in variable for lambda
+                        pathToDelete := testPath
+                        SetTimer(() => DeleteFile(pathToDelete), -2000)
+                    } catch {
+                        ; If copy fails, just use the working path - but cannot modify filePath here as it's a parameter
+                    }
+                }
+                return true
+            }
+        } catch {
+            continue
+        }
+    }
+    
+    return false
+}
+
+DeleteFile(filePath) {
+    ; Helper function for safe file deletion
+    try {
+        if (FileExist(filePath))
+            FileDelete(filePath)
+    } catch {
+        ; Ignore deletion errors for temporary files
+    }
 }
 
 ; ===== CANVAS CALIBRATION FUNCTIONS =====
@@ -1113,34 +1208,54 @@ ResetCanvasCalibration() {
 
 ; ===== HOTKEY SETUP - FIXED F9 SYSTEM =====
 SetupHotkeys() {
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyEmergency, hotkeyBreakMode
+    global hotkeyLayerPrev, hotkeyLayerNext, hotkeySettings, hotkeyStats
+    
     try {
-        ; CRITICAL: Clear any existing F9 hotkey to prevent conflicts
+        ; CRITICAL: Clear any existing configured hotkey to prevent conflicts
         try {
-            Hotkey("F9", "Off")
+            Hotkey(hotkeyRecordToggle, "Off")
         } catch {
         }
         
         Sleep(50)  ; Ensure cleanup
         
-        ; F9 RECORDING CONTROL - COMPLETELY ISOLATED
-        Hotkey("F9", F9_RecordingOnly, "On")
+        ; Recording control - use configured key (default F9)
+        if (hotkeyRecordToggle != "") {
+            Hotkey(hotkeyRecordToggle, F9_RecordingOnly, "On")
+        }
         
-        ; Debug and utility keys
+        ; Stats display - use configured key (default F12)
+        if (hotkeyStats != "") {
+            Hotkey(hotkeyStats, (*) => ShowOfflineStatsScreen())
+        }
+        
+        ; Break mode toggle - use configured key (default Ctrl+B)
+        if (hotkeyBreakMode != "") {
+            Hotkey(hotkeyBreakMode, (*) => ToggleBreakMode())
+        }
+        
+        ; Hotkey profile toggle (not configurable - keep as Ctrl+H)
+        Hotkey("^h", (*) => ToggleHotkeyProfile())
+        
+        ; Configuration menu access - use configured key (default Ctrl+K)
+        if (hotkeySettings != "") {
+            Hotkey(hotkeySettings, (*) => ShowSettings())
+        }
+        
+        ; Manual state reset (not configurable - keep as Ctrl+Shift+R)
+        Hotkey("^+r", (*) => ForceStateReset())
+        
+        ; Debug (not configurable - keep as F11)
         Hotkey("F11", (*) => ShowRecordingDebug())
-        Hotkey("F12", (*) => ShowOfflineStatsScreen())
         
-        ; Break mode toggle
-        Hotkey("^b", (*) => ToggleBreakMode())  ; Ctrl+B for break mode
-        
-        ; Hotkey profile toggle
-        Hotkey("^h", (*) => ToggleHotkeyProfile())  ; Ctrl+H for hotkey profile toggle
-        
-        ; Configuration menu access
-        Hotkey("^k", (*) => ShowSettings())  ; Ctrl+K for configuration menu
-        
-        ; Layer navigation
-        Hotkey("NumpadDiv", (*) => SwitchLayer("prev"))
-        Hotkey("NumpadSub", (*) => SwitchLayer("next"))
+        ; Layer navigation - use configured keys
+        if (hotkeyLayerPrev != "") {
+            Hotkey(hotkeyLayerPrev, (*) => SwitchLayer("prev"))
+        }
+        if (hotkeyLayerNext != "") {
+            Hotkey(hotkeyLayerNext, (*) => SwitchLayer("next"))
+        }
         
         ; Macro execution - EXPLICITLY EXCLUDE F9
         Hotkey("Numpad7", (*) => SafeExecuteMacroByKey("Num7"))
@@ -1179,10 +1294,16 @@ SetupHotkeys() {
         ; WASD hotkeys for macro execution
         SetupWASDHotkeys()
         
-        ; Utility
-        Hotkey("NumpadEnter", (*) => SubmitCurrentImage())
-        Hotkey("+Enter", (*) => DirectClearExecution())
-        Hotkey("RCtrl", (*) => EmergencyStop())
+        ; Utility - use configured keys
+        if (hotkeySubmit != "") {
+            Hotkey(hotkeySubmit, (*) => SubmitCurrentImage())
+        }
+        if (hotkeyDirectClear != "") {
+            Hotkey(hotkeyDirectClear, (*) => DirectClearExecution())
+        }
+        if (hotkeyEmergency != "") {
+            Hotkey(hotkeyEmergency, (*) => EmergencyStop())
+        }
         
         UpdateStatus("✅ Hotkeys configured - F9 isolated for recording only, WASD + CapsLock support added")
     } catch Error as e {
@@ -1235,14 +1356,14 @@ SwitchToLayer(layerNum) {
 F9_RecordingOnly(*) {
     global recording, awaitingAssignment, breakMode, playback, annotationMode
     
-    ; Comprehensive state checking with detailed logging
-    UpdateStatus("🔧 F9 PRESSED (" . annotationMode . " mode) - Checking states...")
-    
-    ; Block in problematic states
-    if (breakMode && !recording) {
-        UpdateStatus("☕ F9 BLOCKED: Break mode active")
+    ; CRITICAL: Block ALL F9 operations during break mode
+    if (breakMode) {
+        UpdateStatus("🔴 BREAK MODE ACTIVE - F9 recording completely blocked")
         return
     }
+    
+    ; Comprehensive state checking with detailed logging
+    UpdateStatus("🔧 F9 PRESSED (" . annotationMode . " mode) - Checking states...")
     
     if (playback) {
         UpdateStatus("⏸️ F9 BLOCKED: Macro playback active")
@@ -1350,7 +1471,27 @@ ResetRecordingUI() {
 
 ; ===== SAFE MACRO EXECUTION - BLOCKS F9 =====
 SafeExecuteMacroByKey(buttonName) {
-    global buttonAutoSettings, currentLayer, autoExecutionMode
+    global buttonAutoSettings, currentLayer, autoExecutionMode, breakMode, playback, lastExecutionTime
+    
+    ; CRITICAL: Block ALL execution during break mode
+    if (breakMode) {
+        UpdateStatus("☕ BREAK MODE ACTIVE - All macro execution blocked")
+        return
+    }
+    
+    ; CRITICAL: Prevent rapid execution race conditions (minimum 50ms between executions)
+    currentTime := A_TickCount
+    if (lastExecutionTime && (currentTime - lastExecutionTime) < 50) {
+        UpdateStatus("⚡ Execution too rapid - please wait")
+        return
+    }
+    lastExecutionTime := currentTime
+    
+    ; CRITICAL: Double-check playback state before proceeding
+    if (playback) {
+        UpdateStatus("⌚ Execution in progress - please wait")
+        return
+    }
     
     ; CRITICAL: Absolutely prevent F9 from reaching macro execution
     if (buttonName = "F9" || InStr(buttonName, "F9")) {
@@ -1407,34 +1548,45 @@ ExecuteMacro(buttonName) {
         return
     }
     
-    playback := true
-    FlashButton(buttonName, true)
-    FocusBrowser()
-    
-    events := macroEvents[layerMacroName]
-    startTime := A_TickCount
-    
-    if (events.Length = 1 && events[1].type = "jsonAnnotation") {
-        UpdateStatus("⚡ JSON " . events[1].mode . " L" . currentLayer)
-        ExecuteJsonAnnotation(events[1])
-    } else {
-        UpdateStatus("▶️ Playing macro...")
-        PlayEventsOptimized(events)
+    ; CRITICAL: Use try-catch to prevent playback state corruption
+    try {
+        playback := true
+        playbackStartTime := A_TickCount  ; Track when playback started
+        FlashButton(buttonName, true)
+        FocusBrowser()
+        
+        events := macroEvents[layerMacroName]
+        startTime := A_TickCount
+        
+        if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+            UpdateStatus("⚡ JSON " . events[1].mode . " L" . currentLayer)
+            ExecuteJsonAnnotation(events[1])
+        } else {
+            UpdateStatus("▶️ Playing macro...")
+            PlayEventsOptimized(events)
+        }
+        
+        executionTime := A_TickCount - startTime
+        analysisRecord := MacroExecutionAnalysis(buttonName, events, executionTime)
+        
+        ; Record execution stats with analysis data
+        if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+            RecordExecutionStats(buttonName, startTime, "json_profile", events, analysisRecord)
+        } else {
+            RecordExecutionStats(buttonName, startTime, "macro", events, analysisRecord)
+        }
+        
+        UpdateStatus("✅ Completed: " . buttonName)
+        
+    } catch Error as e {
+        ; CRITICAL: Force state reset on any execution error
+        UpdateStatus("⚠️ Execution error: " . e.Message . " - State reset")
+    } finally {
+        ; CRITICAL: Always reset playback state and button flash
+        FlashButton(buttonName, false)
+        playback := false
+        playbackStartTime := 0
     }
-    
-    executionTime := A_TickCount - startTime
-    analysisRecord := MacroExecutionAnalysis(buttonName, events, executionTime)
-    
-    ; Record execution stats with analysis data
-    if (events.Length = 1 && events[1].type = "jsonAnnotation") {
-        RecordExecutionStats(buttonName, startTime, "json_profile", events, analysisRecord)
-    } else {
-        RecordExecutionStats(buttonName, startTime, "macro", events, analysisRecord)
-    }
-    
-    FlashButton(buttonName, false)
-    playback := false
-    UpdateStatus("✅ Completed: " . buttonName)
     
     ; Handle auto-execution memory cleanup for Chrome
     if (autoExecutionMode) {
@@ -1516,7 +1668,13 @@ StopAutoExecution() {
 }
 
 AutoExecuteLoop() {
-    global autoExecutionMode, autoExecutionButton, autoExecutionCount, autoExecutionMaxCount, playback
+    global autoExecutionMode, autoExecutionButton, autoExecutionCount, autoExecutionMaxCount, playback, breakMode
+    
+    ; CRITICAL: Block auto-execution during break mode
+    if (breakMode) {
+        UpdateStatus("☕ BREAK MODE ACTIVE - Auto-execution paused")
+        return
+    }
     
     if (!autoExecutionMode || autoExecutionButton = "") {
         StopAutoExecution()
@@ -1816,81 +1974,161 @@ AssignToButton(buttonName) {
 PlayEventsOptimized(recordedEvents) {
     global playback, boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay
     
-    SetMouseDelay(0)
-    SetKeyDelay(5)
-    CoordMode("Mouse", "Screen")
-    
-    for eventIndex, event in recordedEvents {
-        if (!playback)
-            break
+    try {
+        SetMouseDelay(0)
+        SetKeyDelay(5)
+        CoordMode("Mouse", "Screen")
         
-        if (event.type = "boundingBox") {
-            MouseMove(event.left, event.top, 2)
-            Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before drawing
-            Sleep(boxDrawDelay)
+        for eventIndex, event in recordedEvents {
+            ; CRITICAL: Check playback state to allow early termination
+            if (!playback)
+                break
             
-            Send("{LButton Down}")
-            Sleep(mouseClickDelay)
-            
-            MouseMove(event.right, event.bottom, 5)
-            Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before release
-            Sleep(mouseReleaseDelay)
-            
-            Send("{LButton Up}")
-            Sleep(betweenBoxDelay)
+            try {
+                if (event.type = "boundingBox") {
+                    MouseMove(event.left, event.top, 2)
+                    Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before drawing
+                    Sleep(boxDrawDelay)
+                    
+                    Send("{LButton Down}")
+                    Sleep(mouseClickDelay)
+                    
+                    MouseMove(event.right, event.bottom, 5)
+                    Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before release
+                    Sleep(mouseReleaseDelay)
+                    
+                    Send("{LButton Up}")
+                    Sleep(betweenBoxDelay)
+                }
+                else if (event.type = "mouseDown") {
+                    MouseMove(event.x, event.y, 2)
+                    Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
+                    Send("{LButton Down}")
+                }
+                else if (event.type = "mouseUp") {
+                    MouseMove(event.x, event.y, 2)
+                    Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
+                    Send("{LButton Up}")
+                }
+                else if (event.type = "keyDown") {
+                    Send("{" . event.key . " Down}")
+                    Sleep(keyPressDelay)
+                }
+                else if (event.type = "keyUp") {
+                    Send("{" . event.key . " Up}")
+                }
+            } catch Error as e {
+                ; Continue with next event if individual event fails
+                continue
+            }
         }
-        else if (event.type = "mouseDown") {
-            MouseMove(event.x, event.y, 2)
-            Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
-            Send("{LButton Down}")
-        }
-        else if (event.type = "mouseUp") {
-            MouseMove(event.x, event.y, 2)
-            Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
-            Send("{LButton Up}")
-        }
-        else if (event.type = "keyDown") {
-            Send("{" . event.key . " Down}")
-            Sleep(keyPressDelay)
-        }
-        else if (event.type = "keyUp") {
-            Send("{" . event.key . " Up}")
-        }
+        
+    } finally {
+        ; CRITICAL: Always restore default delays
+        SetMouseDelay(10)
+        SetKeyDelay(10)
     }
-    
-    SetMouseDelay(10)
-    SetKeyDelay(10)
 }
 
 ExecuteJsonAnnotation(jsonEvent) {
     global annotationMode
     
-    UpdateStatus("⚡ Executing JSON annotation (" . jsonEvent.mode . " mode)")
-    FocusBrowser()
-    
-    ; Use the stored annotation from the JSON event
-    A_Clipboard := jsonEvent.annotation
-    Sleep(20)
-    Send("^v")
-    Sleep(30)
-    Send("+{Enter}")
-    
-    UpdateStatus("✅ JSON annotation executed in " . jsonEvent.mode . " mode")
+    try {
+        UpdateStatus("⚡ Executing JSON annotation (" . jsonEvent.mode . " mode)")
+        
+        ; Enhanced browser focus with validation and fallback
+        focusResult := FocusBrowser()
+        if (!focusResult) {
+            ; Fallback attempt with more aggressive focusing
+            UpdateStatus("🔄 Browser focus failed, attempting fallback...")
+            Sleep(200)
+            
+            ; Try one more time with extended delay
+            focusResult := FocusBrowser()
+            if (!focusResult) {
+                throw Error("Browser focus failed after retry - ensure browser is running")
+            }
+        }
+        
+        ; JSON-specific delays for reliable execution
+        Sleep(150)  ; Extra delay after browser focus for JSON execution
+        
+        ; Use the stored annotation from the JSON event
+        A_Clipboard := jsonEvent.annotation
+        Sleep(50)   ; Increased clipboard delay for JSON data
+        
+        ; Send paste command with verification
+        Send("^v")
+        Sleep(100)  ; Increased delay for JSON paste operation
+        
+        ; Send Shift+Enter to execute the annotation
+        Send("+{Enter}")
+        Sleep(50)   ; Brief delay after execution command
+        
+        UpdateStatus("✅ JSON annotation executed in " . jsonEvent.mode . " mode")
+    } catch Error as e {
+        UpdateStatus("⚠️ JSON annotation failed: " . e.Message)
+        ; Re-throw to be caught by ExecuteMacro's exception handler
+        throw e
+    }
 }
 
 FocusBrowser() {
     global focusDelay
-    if (WinExist("ahk_exe chrome.exe"))
-        WinActivate("ahk_exe chrome.exe")
-    else if (WinExist("ahk_exe firefox.exe"))
-        WinActivate("ahk_exe firefox.exe")
-    else if (WinExist("ahk_exe msedge.exe"))
-        WinActivate("ahk_exe msedge.exe")
-    else
-        return false
     
-    Sleep(focusDelay)
-    return true
+    ; Browser detection with priority order
+    browsers := [
+        {exe: "ahk_exe chrome.exe", name: "Chrome"},
+        {exe: "ahk_exe firefox.exe", name: "Firefox"}, 
+        {exe: "ahk_exe msedge.exe", name: "Edge"}
+    ]
+    
+    ; Try to find and focus a browser with retry logic
+    maxRetries := 3
+    retryDelay := 100
+    
+    for browser in browsers {
+        if (WinExist(browser.exe)) {
+            ; Attempt focus with retries
+            Loop maxRetries {
+                try {
+                    WinActivate(browser.exe)
+                    Sleep(retryDelay)
+                    
+                    ; Verify focus succeeded by checking if window is active
+                    if (WinActive(browser.exe)) {
+                        Sleep(focusDelay)
+                        UpdateStatus("🌐 Focused " . browser.name . " browser")
+                        return true
+                    }
+                    
+                    ; If not focused, try more aggressive methods
+                    WinRestore(browser.exe)  ; Restore if minimized
+                    Sleep(50)
+                    WinActivate(browser.exe)
+                    Sleep(retryDelay)
+                    
+                    if (WinActive(browser.exe)) {
+                        Sleep(focusDelay)
+                        UpdateStatus("🌐 Focused " . browser.name . " browser (restored)")
+                        return true
+                    }
+                    
+                } catch Error as e {
+                    ; Continue with next retry attempt
+                    continue
+                }
+                
+                ; Wait before retry
+                if (A_Index < maxRetries) {
+                    Sleep(retryDelay * A_Index)  ; Increasing delay
+                }
+            }
+        }
+    }
+    
+    UpdateStatus("⚠️ No browser found or focus failed")
+    return false
 }
 
 ; ===== GUI MANAGEMENT =====
@@ -1905,6 +2143,14 @@ InitializeGui() {
     CreateGridOutline()
     CreateButtonGrid()
     CreateStatusBar()
+    
+    ; Update button labels to show combined numpad/WASD format
+    UpdateButtonLabelsWithWASD()
+    
+    ; Force visual update of all buttons to show new labels
+    for buttonName in buttonNames {
+        UpdateButtonAppearance(buttonName)
+    }
     
     mainGui.OnEvent("Size", GuiResize)
     mainGui.OnEvent("Close", (*) => SafeExit())
@@ -2141,7 +2387,7 @@ UpdateButtonAppearance(buttonName) {
         jsonInfo := jsonEvent.mode . "`n" . typeName . " " . StrUpper(jsonEvent.severity)
         
         if (degradationColors.Has(jsonEvent.categoryId)) {
-            jsonColor := degradationColors[jsonEvent.categoryId]
+            jsonColor := Format("0x{:X}", degradationColors[jsonEvent.categoryId])
         }
     }
     
@@ -2247,11 +2493,15 @@ UpdateButtonAppearance(buttonName) {
             picture.Redraw()
             
     } catch Error as e {
+        ; Enhanced error handling with more specific feedback
         button.Visible := true
         picture.Visible := false
         button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
         button.SetFont("s8", "cGray")
-        button.Text := "ERROR"
+        button.Text := "ERR: " . buttonName
+        
+        ; Log error for debugging (optional)
+        ; UpdateStatus("Button error for " . buttonName . ": " . e.Message)
     }
 }
 
@@ -2409,7 +2659,7 @@ FlashButton(buttonName, isFlashing) {
     }
 }
 
-UpdateButtonAppearanceDelayed(buttonName) {
+UpdateButtonAppearanceDelayed(buttonName, *) {
     UpdateButtonAppearance(buttonName)
 }
 
@@ -3277,19 +3527,10 @@ ShowStats() {
     avgPerExecDisplay := statsGui.Add("Text", "x440 y235 w80 h20", avgBoxPerExec)
     avgPerExecDisplay.SetFont("s10 Bold", "cTeal")
     
-    ; === CURRENT STATUS ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x520 y140 w200 h25", "📍 CURRENT STATUS")
-    statsGui.SetFont("s10")
-    
-    ; Show canvas mode status 
-    statsGui.Add("Text", "x530 y175 w100 h20", "Canvas Mode:")
-    canvasDisplay := statsGui.Add("Text", "x640 y175 w100 h20", canvasType ? canvasType : "wide")
-    canvasDisplay.SetFont("s10 Bold", "cBlue")
     
     ; === TIME ANALYTICS ===
     statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y295 w400 h25", "⏰ TIME ANALYTICS")
+    statsGui.Add("Text", "x20 y270 w400 h25", "⏰ TIME ANALYTICS")
     statsGui.SetFont("s10")
     
     ; Application uptime
@@ -3300,13 +3541,18 @@ ShowStats() {
     statsGui.Add("Text", "x30 y330 w200 h20", "Application Uptime:")
     statsGui.Add("Text", "x240 y330 w150 h20", uptimeDisplay)
     
-    statsGui.Add("Text", "x30 y360 w200 h20", "Total Execution Time:")
+    statsGui.Add("Text", "x30 y360 w200 h20", "Active Time:")
+    activeTimeFormatted := FormatActiveTime(currentActiveTime)
+    activeTimeDisplay := statsGui.Add("Text", "x240 y360 w150 h20", activeTimeFormatted)
+    activeTimeDisplay.SetFont("s10 Bold", "cGreen")
+    
+    statsGui.Add("Text", "x30 y390 w200 h20", "Total Execution Time:")
     totalExecTimeFormatted := FormatPreciseTime(csvStats["total_execution_time"])
-    execTimeDisplay := statsGui.Add("Text", "x240 y360 w150 h20", totalExecTimeFormatted)
+    execTimeDisplay := statsGui.Add("Text", "x240 y390 w150 h20", totalExecTimeFormatted)
     execTimeDisplay.SetFont("s10 Bold", "cBlue")
     
-    statsGui.Add("Text", "x30 y390 w200 h20", "Time Utilization:")
-    utilizationDisplay := statsGui.Add("Text", "x240 y390 w150 h20", utilizationPct . "%")
+    statsGui.Add("Text", "x30 y420 w200 h20", "Time Utilization:")
+    utilizationDisplay := statsGui.Add("Text", "x240 y420 w150 h20", utilizationPct . "%")
     utilizationColor := utilizationPct >= 70 ? "cGreen" : (utilizationPct >= 40 ? "cOrange" : "cRed")
     utilizationDisplay.SetFont("s10 Bold", utilizationColor)
     
@@ -3335,7 +3581,7 @@ ShowStats() {
     
     ; === DEGRADATION BREAKDOWN ===
     statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y410 w400 h25", "🎯 DEGRADATION BREAKDOWN (9 TYPES)")
+    statsGui.Add("Text", "x20 y455 w400 h25", "🎯 DEGRADATION BREAKDOWN (9 TYPES)")
     statsGui.SetFont("s10")
     
     ; Get degradation stats from CSV
@@ -3359,73 +3605,163 @@ ShowStats() {
         "snow", "cLime"
     )
     
-    ; First row: first 5 degradation types
+    ; Improved display names for better layout
+    degradationDisplayNames := Map(
+        "smudge", "Smudge",
+        "glare", "Glare", 
+        "splashes", "Splashes",
+        "partial_blockage", "Partial Block",
+        "full_blockage", "Full Block",
+        "light_flare", "Light Flare",
+        "rain", "Rain",
+        "haze", "Haze", 
+        "snow", "Snow"
+    )
+    
+    ; First row: first 5 degradation types with better spacing
     topRowTypes := ["smudge", "glare", "splashes", "partial_blockage", "full_blockage"]
     xPos := 30
     for degType in topRowTypes {
         count := degradationStats.Has(degType) ? degradationStats[degType] : 0
         displayColor := degradationDisplayColors.Has(degType) ? degradationDisplayColors[degType] : "cBlue"
+        displayName := degradationDisplayNames.Has(degType) ? degradationDisplayNames[degType] : StrTitle(degType)
         
-        statsGui.Add("Text", "x" . xPos . " y445 w80 h20", StrTitle(degType) . ":")
-        countDisplay := statsGui.Add("Text", "x" . (xPos + 85) . " y445 w40 h20", count)
+        statsGui.Add("Text", "x" . xPos . " y490 w100 h20", displayName . ":")
+        countDisplay := statsGui.Add("Text", "x" . (xPos + 105) . " y490 w35 h20", count)
         countDisplay.SetFont("s10 Bold", displayColor)
         
-        xPos += 150
+        xPos += 155
     }
     
-    ; Second row: remaining 4 degradation types + clear
+    ; Second row: remaining 4 degradation types with better spacing  
     bottomRowTypes := ["light_flare", "rain", "haze", "snow"]
     xPos := 30
     for degType in bottomRowTypes {
         count := degradationStats.Has(degType) ? degradationStats[degType] : 0
         displayColor := degradationDisplayColors.Has(degType) ? degradationDisplayColors[degType] : "cBlue"
+        displayName := degradationDisplayNames.Has(degType) ? degradationDisplayNames[degType] : StrTitle(degType)
         
-        statsGui.Add("Text", "x" . xPos . " y470 w80 h20", StrTitle(degType) . ":")
-        countDisplay := statsGui.Add("Text", "x" . (xPos + 85) . " y470 w40 h20", count)
+        statsGui.Add("Text", "x" . xPos . " y520 w100 h20", displayName . ":")
+        countDisplay := statsGui.Add("Text", "x" . (xPos + 105) . " y520 w35 h20", count)
         countDisplay.SetFont("s10 Bold", displayColor)
         
-        xPos += 150
+        xPos += 155
     }
     
-    ; Add clear executions to degradation breakdown section
-    clearCount := csvStats.Has("clear_executions_count") ? csvStats["clear_executions_count"] : 0
-    statsGui.Add("Text", "x630 y470 w80 h20", "Clear:")
-    clearDisplay := statsGui.Add("Text", "x715 y470 w40 h20", clearCount)
-    clearDisplay.SetFont("s10 Bold", "cGreen")
-    
-    ; Add clear degradation count (Shift+Numpad events)
+    ; Add clear degradation count with improved spacing and display name
     clearDegradCount := csvStats.Has("clear_degradation_count") ? csvStats["clear_degradation_count"] : 0
-    statsGui.Add("Text", "x770 y470 w120 h20", "Clear Degrad:")
-    clearDegradDisplay := statsGui.Add("Text", "x890 y470 w40 h20", clearDegradCount)
+    statsGui.Add("Text", "x650 y520 w60 h20", "Clear:")
+    clearDegradDisplay := statsGui.Add("Text", "x715 y520 w35 h20", clearDegradCount)
     clearDegradDisplay.SetFont("s10 Bold", "cBlue")
     
     ; All 9 proper degradation types are now displayed above with clear executions
     
-    ; === SESSION MANAGEMENT ===
+    ; === JSON DEGRADATION PROFILES ===
     statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y510 w400 h25", "🛠️ SESSION MANAGEMENT")
+    statsGui.Add("Text", "x20 y560 w400 h25", "📋 JSON DEGRADATION PROFILES")
     statsGui.SetFont("s10")
     
-    btnRefresh := statsGui.Add("Button", "x30 y540 w100 h35", "🔄 Refresh")
+    ; Parse JSON severity and degradation data from CSV
+    jsonSeverityData := Map("high", 0, "medium", 0, "low", 0)
+    jsonDegradationData := Map()
+    
+    try {
+        if (FileExist(masterStatsCSV)) {
+            content := FileRead(masterStatsCSV, "UTF-8")
+            lines := StrSplit(content, "`n")
+            for i, line in lines {
+                if (i = 1 || Trim(line) = "") {
+                    continue
+                }
+                
+                cols := StrSplit(line, ",")
+                if (cols.Length >= 31 && cols[4] = "json_profile") {
+                    ; Column 30: json_severity_breakdown_by_level 
+                    ; Column 31: json_degradation_type_breakdown
+                    if (cols.Length >= 30 && cols[30] != "") {
+                        severity := Trim(cols[30])
+                        if (jsonSeverityData.Has(severity)) {
+                            jsonSeverityData[severity]++
+                        }
+                    }
+                    if (cols.Length >= 31 && cols[31] != "") {
+                        degType := Trim(cols[31])
+                        if (!jsonDegradationData.Has(degType)) {
+                            jsonDegradationData[degType] := 0
+                        }
+                        jsonDegradationData[degType]++
+                    }
+                }
+            }
+        }
+    } catch {
+        ; Fallback to zero counts if parsing fails
+    }
+    
+    ; Display JSON severity breakdown (compact horizontal layout)
+    severityTotal := jsonSeverityData["high"] + jsonSeverityData["medium"] + jsonSeverityData["low"]
+    statsGui.Add("Text", "x30 y595 w300 h20", "Severity:")
+    xPos := 100
+    for severity, count in jsonSeverityData {
+        if (count > 0) {
+            severityColor := severity = "high" ? "cRed" : (severity = "medium" ? "cOrange" : "cGreen")
+            statsGui.Add("Text", "x" . xPos . " y595 w60 h20", StrTitle(severity) . ": " . count)
+            countDisplay := statsGui.Add("Text", "x" . (xPos + 65) . " y595 w25 h20", "")
+            countDisplay.SetFont("s10 Bold", severityColor)
+            xPos += 95
+        }
+    }
+    
+    ; Display JSON degradation types used (compact layout)
+    if (jsonDegradationData.Count > 0) {
+        statsGui.Add("Text", "x30 y625 w300 h20", "Types Used:")
+        xPos := 110
+        yPos := 625
+        count := 0
+        for degType, execCount in jsonDegradationData {
+            if (execCount > 0 && degradationDisplayNames.Has(degType)) {
+                displayName := degradationDisplayNames[degType]
+                displayColor := degradationDisplayColors.Has(degType) ? degradationDisplayColors[degType] : "cBlue"
+                
+                statsGui.Add("Text", "x" . xPos . " y" . yPos . " w90 h20", displayName . ": " . execCount)
+                typeDisplay := statsGui.Add("Text", "x" . (xPos + 95) . " y" . yPos . " w25 h20", "")
+                typeDisplay.SetFont("s10 Bold", displayColor)
+                
+                xPos += 130
+                count++
+                if (count = 4) {  ; Start new row after 4 items
+                    xPos := 110
+                    yPos += 25
+                }
+            }
+        }
+    }
+    
+    ; === SESSION MANAGEMENT ===
+    statsGui.SetFont("s11 Bold")
+    statsGui.Add("Text", "x20 y670 w400 h25", "🛠️ SESSION MANAGEMENT")
+    statsGui.SetFont("s10")
+    
+    btnRefresh := statsGui.Add("Button", "x30 y700 w100 h35", "🔄 Refresh")
     btnRefresh.OnEvent("Click", (*) => RefreshStatsDisplay(statsGui))
     
-    btnResetDaily := statsGui.Add("Button", "x140 y540 w120 h35", "📅 Reset Daily")
+    btnResetDaily := statsGui.Add("Button", "x140 y700 w120 h35", "📅 Reset Daily")
     btnResetDaily.OnEvent("Click", (*) => ResetDailyStatsDisplay(statsGui))
     
-    btnResetFull := statsGui.Add("Button", "x270 y540 w120 h35", "🗑️ Reset All")
+    btnResetFull := statsGui.Add("Button", "x270 y700 w120 h35", "🗑️ Reset All")
     btnResetFull.OnEvent("Click", (*) => ResetAllStatsFromDisplay(statsGui))
     
-    btnExportCSV := statsGui.Add("Button", "x400 y540 w120 h35", "📊 Export CSV")
+    btnExportCSV := statsGui.Add("Button", "x400 y700 w120 h35", "📊 Export CSV")
     btnExportCSV.OnEvent("Click", (*) => ExportCSVData())
     
-    btnClose := statsGui.Add("Button", "x720 y540 w100 h35", "❌ Close")
+    btnClose := statsGui.Add("Button", "x720 y700 w100 h35", "❌ Close")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
     
     ; Footer with data source
     statsGui.SetFont("s9", "cGray")
-    statsGui.Add("Text", "x20 y595 w880 h30", "📊 Data Source: master_stats.csv • Session ID: " . sessionId . " • Professional Analytics Dashboard")
+    statsGui.Add("Text", "x20 y755 w880 h30", "📊 Data Source: master_stats.csv • Session ID: " . sessionId . " • Professional Analytics Dashboard")
     
-    statsGui.Show("w850 h635")
+    statsGui.Show("w850 h795")
 }
 
 
@@ -3605,7 +3941,7 @@ ShowSettings() {
     settingsGui.SetFont("s12 Bold")
     
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h400", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
+    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h500", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
     
     ; TAB 1: Configuration Management
     tabs.UseTab(1)
@@ -3840,15 +4176,48 @@ ShowSettings() {
     btnApplyMappings := settingsGui.Add("Button", "x220 y" . y . " w80 h25", "🧪 Apply")
     btnApplyMappings.OnEvent("Click", (*) => ApplyWASDMappingsInSettings(settingsGui))
     
-    ; Add standalone WASD labels toggle
+    ; Main Utility Hotkeys Section
     y += 40
-    settingsGui.Add("Text", "x40 y" . y . " w400 h20", "🏷️ Label Display Options:")
+    settingsGui.Add("Text", "x40 y" . y . " w400 h20", "🎮 Main Utility Hotkeys:")
     y += 25
     
-    standaloneLabelStatus := wasdLabelsEnabled ? "🟢 ON" : "🔴 OFF"
-    settingsGui.Add("Text", "x40 y" . y . " w200 h20", "Standalone WASD Labels: " . standaloneLabelStatus)
-    btnToggleStandalone := settingsGui.Add("Button", "x250 y" . (y-2) . " w120 h22", wasdLabelsEnabled ? "🔴 Disable WASD" : "🟢 Enable WASD")
-    btnToggleStandalone.OnEvent("Click", (*) => ToggleStandaloneWASDInSettings(btnToggleStandalone, settingsGui))
+    ; Record Toggle
+    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Record Toggle:")
+    editRecordToggle := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyRecordToggle)
+    y += 25
+    
+    ; Submit/Direct Clear keys
+    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Submit:")
+    editSubmit := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeySubmit)
+    settingsGui.Add("Text", "x255 y" . y . " w80 h20", "Direct Clear:")
+    editDirectClear := settingsGui.Add("Edit", "x340 y" . (y-2) . " w60 h20", hotkeyDirectClear)
+    y += 25
+    
+    ; Stats key (on separate row)
+    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Stats:")
+    editStats := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyStats)
+    y += 25
+    
+    ; Break Mode/Settings keys
+    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Break Mode:")
+    editBreakMode := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyBreakMode)
+    settingsGui.Add("Text", "x255 y" . y . " w60 h20", "Settings:")
+    editSettings := settingsGui.Add("Edit", "x320 y" . (y-2) . " w80 h20", hotkeySettings)
+    y += 25
+    
+    ; Layer Navigation
+    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Layer Prev:")
+    editLayerPrev := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyLayerPrev)
+    settingsGui.Add("Text", "x255 y" . y . " w60 h20", "Layer Next:")
+    editLayerNext := settingsGui.Add("Edit", "x320 y" . (y-2) . " w80 h20", hotkeyLayerNext)
+    y += 30
+    
+    ; Apply/Reset buttons for hotkeys
+    btnApplyHotkeys := settingsGui.Add("Button", "x40 y" . y . " w90 h25", "🎮 Apply Keys")
+    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui))
+    
+    btnResetHotkeys := settingsGui.Add("Button", "x140 y" . y . " w90 h25", "🔄 Reset Keys")
+    btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
     
     ; Enhanced Instructions
     y += 40
@@ -3859,7 +4228,7 @@ ShowSettings() {
     settingsGui.Add("Text", "x40 y" . y . " w400 h15 c0x666666", "ℹ️ Both modes can be active simultaneously. Access settings via Ctrl+K anytime.")
     
     ; Close button
-    btnClose := settingsGui.Add("Button", "x420 y470 w60 h25", "Close")
+    btnClose := settingsGui.Add("Button", "x420 y570 w60 h25", "Close")
     btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
     
     settingsGui.Show("w500 h620")
@@ -5015,6 +5384,9 @@ MacroExecutionAnalysis(buttonName, events, executionTime) {
             executionRecord.jsonDegradationType := jsonEvent.categoryId
             executionRecord.jsonDegradationName := degradationName
             executionRecord.perBoxSummary := "JSON: " . StrTitle(degradationName) . " (" . StrTitle(jsonEvent.severity) . ")"
+            
+            ; CRITICAL: Ensure degradationAssignments is set for JSON profiles
+            executionRecord.degradationAssignments := degradationName
         }
     }
     
@@ -5552,6 +5924,8 @@ SaveConfig() {
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global wasdLabelsEnabled, hotkeyProfileActive
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyEmergency, hotkeyBreakMode
+    global hotkeyLayerPrev, hotkeyLayerNext, hotkeySettings, hotkeyStats
     
     try {
         ; Ensure directories exist
@@ -5598,6 +5972,18 @@ SaveConfig() {
         configContent .= "[WASD]`n"
         configContent .= "LabelsEnabled=" . (wasdLabelsEnabled ? "1" : "0") . "`n"
         configContent .= "HotkeyProfileActive=" . (hotkeyProfileActive ? "1" : "0") . "`n`n"
+        
+        ; Add hotkeys configuration section
+        configContent .= "[Hotkeys]`n"
+        configContent .= "RecordToggle=" . hotkeyRecordToggle . "`n"
+        configContent .= "Submit=" . hotkeySubmit . "`n"
+        configContent .= "DirectClear=" . hotkeyDirectClear . "`n"
+        configContent .= "Emergency=" . hotkeyEmergency . "`n"
+        configContent .= "BreakMode=" . hotkeyBreakMode . "`n"
+        configContent .= "LayerPrev=" . hotkeyLayerPrev . "`n"
+        configContent .= "LayerNext=" . hotkeyLayerNext . "`n"
+        configContent .= "Settings=" . hotkeySettings . "`n"
+        configContent .= "Stats=" . hotkeyStats . "`n`n"
         
         ; Add labels section
         if (buttonCustomLabels.Count > 0) {
@@ -5678,6 +6064,8 @@ LoadConfig() {
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global wasdLabelsEnabled, hotkeyProfileActive
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyEmergency, hotkeyBreakMode
+    global hotkeyLayerPrev, hotkeyLayerNext, hotkeySettings, hotkeyStats
     
     if !FileExist(configFile) {
         UpdateStatus("📚 No config file found - starting fresh")
@@ -5756,6 +6144,26 @@ LoadConfig() {
                         wasdLabelsEnabled := (value = "1")
                     } else if (key = "HotkeyProfileActive") {
                         hotkeyProfileActive := (value = "1")
+                    }
+                } else if (currentSection = "Hotkeys") {
+                    if (key = "RecordToggle" && value != "") {
+                        hotkeyRecordToggle := value
+                    } else if (key = "Submit" && value != "") {
+                        hotkeySubmit := value
+                    } else if (key = "DirectClear" && value != "") {
+                        hotkeyDirectClear := value
+                    } else if (key = "Emergency" && value != "") {
+                        hotkeyEmergency := value
+                    } else if (key = "BreakMode" && value != "") {
+                        hotkeyBreakMode := value
+                    } else if (key = "LayerPrev" && value != "") {
+                        hotkeyLayerPrev := value
+                    } else if (key = "LayerNext" && value != "") {
+                        hotkeyLayerNext := value
+                    } else if (key = "Settings" && value != "") {
+                        hotkeySettings := value
+                    } else if (key = "Stats" && value != "") {
+                        hotkeyStats := value
                     }
                 } else if (currentSection = "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -6146,7 +6554,7 @@ InitializeCSVFile() {
         
         ; Create CSV with exact 33-column header if file doesn't exist
         if (!FileExist(masterStatsCSV)) {
-            header := "timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour`n"
+            header := "timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
         }
     } catch as e {
@@ -6234,10 +6642,11 @@ AppendToCSV(executionData) {
             execsPerHour := 0
         }
         
-        ; Build complete 33-column CSV row to match header
+        ; Build complete 34-column CSV row to match header
         csvRow := executionData["timestamp"] . ","
                 . sessionId . ","
                 . currentUsername . ","
+                . executionData["execution_type"] . ","
                 . executionData["macro_name"] . ","
                 . executionData["layer"] . ","
                 . executionData["execution_time_ms"] . ","
@@ -6324,11 +6733,18 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         ; For JSON profiles: get data from analysis record
         if (IsObject(analysisRecord)) {
             bbox_count := 0
-            degradation_assignments := ""
+            ; Get degradation type from JSON annotation - try multiple sources
+            if (analysisRecord.HasOwnProp("jsonDegradationName")) {
+                degradation_assignments := analysisRecord.jsonDegradationName
+            } else if (analysisRecord.HasOwnProp("degradationAssignments") && analysisRecord.degradationAssignments != "") {
+                degradation_assignments := analysisRecord.degradationAssignments
+            } else {
+                degradation_assignments := "unknown"
+            }
             severity_level := analysisRecord.HasOwnProp("severity") ? analysisRecord.severity : "medium"
         } else {
             bbox_count := 0
-            degradation_assignments := ""
+            degradation_assignments := "unknown"
             severity_level := "medium" ; Default fallback
         }
     }
@@ -6469,18 +6885,19 @@ ReadStatsFromCSV(filterBySession := false) {
             if (!filterBySession || fields[2] = sessionId) {
                 stats["total_executions"]++
                 
-                ; Parse fields from 33-column format
-                ; timestamp,session_id,username,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour
+                ; Parse fields from 34-column format
+                ; timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour
                 ; Parse basic fields with error handling
                 try {
-                    macro_name := fields[4]               ; macro_name
-                    layer := IsNumber(fields[5]) ? Integer(fields[5]) : 1
-                    execution_time := IsNumber(fields[6]) ? Integer(fields[6]) : 0
-                    total_boxes := IsNumber(fields[7]) ? Integer(fields[7]) : 0
-                    degradation_assignments := fields[8]  ; degradation_types
+                    execution_type := fields[4]           ; execution_type
+                    macro_name := fields[5]               ; macro_name
+                    layer := IsNumber(fields[6]) ? Integer(fields[6]) : 1
+                    execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
+                    total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
+                    degradation_assignments := fields[9]  ; degradation_types
                     
-                    ; For session time, try to use field 12 if available, otherwise use execution_time
-                    session_time := (fields.Length > 12 && IsNumber(fields[12])) ? Integer(fields[12]) : execution_time
+                    ; For session time, try to use field 13 if available (shifted by 1), otherwise use execution_time
+                    session_time := (fields.Length > 13 && IsNumber(fields[13])) ? Integer(fields[13]) : execution_time
                 } catch {
                     continue ; Skip this row if parsing fails
                 }
@@ -6516,11 +6933,10 @@ ReadStatsFromCSV(filterBySession := false) {
                 }
                 layerCount[layer]++
                 
-                ; Count execution types based on degradation type and JSON severity field
-                json_severity := (fields.Length > 29) ? fields[29] : ""
-                if (degradation_assignments = "clear") {
+                ; Count execution types using the actual execution_type field
+                if (execution_type = "clear") {
                     stats["clear_executions_count"]++
-                } else if (json_severity != "" && json_severity != "none") {
+                } else if (execution_type = "json_profile") {
                     stats["json_profile_executions_count"]++
                 } else {
                     stats["macro_executions_count"]++
@@ -6661,6 +7077,7 @@ CleanupAndExit() {
         
         SetTimer(UpdateActiveTime, 0)
         SetTimer(AutoSave, 0)
+        SetTimer(MonitorExecutionState, 0)
         
         Send("{LButton Up}{RButton Up}{MButton Up}")
         Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
@@ -6685,24 +7102,79 @@ ShowWelcomeMessage() {
     UpdateStatus("📦 Draw boxes, press 1-9 to tag | F9: Record | All systems ready")
 }
 
+; ===== STATE RESET AND RECOVERY FUNCTIONS =====
+; ===== EXECUTION STATE MONITORING =====
+MonitorExecutionState() {
+    global playback, recording, lastExecutionTime, playbackStartTime
+    
+    currentTime := A_TickCount
+    
+    ; Check for stuck playback state (longer than 30 seconds)
+    if (playback) {
+        if (!playbackStartTime) {
+            playbackStartTime := currentTime
+        } else if ((currentTime - playbackStartTime) > 30000) {
+            UpdateStatus("⚠️ Detected stuck playback state - forcing reset")
+            ForceStateReset()
+            return
+        }
+    } else {
+        playbackStartTime := 0
+    }
+    
+    ; Check for stuck recording state (longer than 5 minutes)
+    if (recording && lastExecutionTime && (currentTime - lastExecutionTime) > 300000) {
+        UpdateStatus("⚠️ Detected stuck recording state - forcing reset")
+        ForceStateReset()
+        return
+    }
+}
+
+ForceStateReset() {
+    global recording, playback, awaitingAssignment, autoExecutionMode, lastExecutionTime, playbackStartTime
+    
+    ; Force reset all execution states
+    recording := false
+    playback := false
+    awaitingAssignment := false
+    lastExecutionTime := 0
+    playbackStartTime := 0
+    
+    ; Stop any auto execution
+    if (autoExecutionMode) {
+        try {
+            StopAutoExecution()
+        } catch {
+        }
+    }
+    
+    ; Clean up all hooks and timers
+    try {
+        SafeUninstallMouseHook()
+        SafeUninstallKeyboardHook()
+        SetTimer(CheckForAssignment, 0)
+    } catch {
+    }
+    
+    ; Reset any stuck mouse/key states
+    try {
+        Send("{LButton Up}{RButton Up}{MButton Up}")
+        Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
+    } catch {
+    }
+    
+    UpdateStatus("🔄 State reset completed")
+}
+
 EmergencyStop() {
     global recording, playback, awaitingAssignment, mainGui, autoExecutionMode
     
     UpdateStatus("🚨 EMERGENCY STOP")
     
-    recording := false
-    playback := false
-    awaitingAssignment := false
-    
-    ; Stop any auto execution
-    if (autoExecutionMode) {
-        StopAutoExecution()
-    }
+    ; Use the comprehensive state reset
+    ForceStateReset()
     
     try {
-        SafeUninstallMouseHook()
-        SafeUninstallKeyboardHook()
-        SetTimer(CheckForAssignment, 0)
         SetTimer(UpdateActiveTime, 0)
     } catch {
     }
@@ -6917,6 +7389,106 @@ TestSaveLoad() {
         MsgBox("Save/Load mismatch!`n`nOriginal: " . currentMacros . " macros`nLoaded: " . loadedMacros . " macros`n`nPress F11 for detailed debug info.", "Save/Load Test Failed", "Icon!")
     } else {
         MsgBox("Save/Load test successful!`n`n" . loadedMacros . " macros preserved correctly.", "Save/Load Test Passed", "Icon!")
+    }
+}
+
+; ===== HOTKEY SETTINGS FUNCTIONS =====
+ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui) {
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
+    
+    try {
+        ; Get new values from edit controls
+        newRecordToggle := Trim(editRecordToggle.Text)
+        newSubmit := Trim(editSubmit.Text)
+        newDirectClear := Trim(editDirectClear.Text)
+        newStats := Trim(editStats.Text)
+        newBreakMode := Trim(editBreakMode.Text)
+        newSettings := Trim(editSettings.Text)
+        newLayerPrev := Trim(editLayerPrev.Text)
+        newLayerNext := Trim(editLayerNext.Text)
+        
+        ; Basic validation - ensure no empty values
+        if (newRecordToggle = "" || newSubmit = "" || newDirectClear = "" || newStats = "" || newBreakMode = "" || newSettings = "" || newLayerPrev = "" || newLayerNext = "") {
+            MsgBox("All hotkey fields must be filled out.", "Invalid Hotkeys", "Icon!")
+            return
+        }
+        
+        ; Clear existing hotkeys before applying new ones
+        try {
+            Hotkey(hotkeyRecordToggle, "Off")
+            Hotkey(hotkeySubmit, "Off")
+            Hotkey(hotkeyDirectClear, "Off")
+            Hotkey(hotkeyStats, "Off")
+            Hotkey(hotkeyBreakMode, "Off")
+            Hotkey(hotkeySettings, "Off")
+            Hotkey(hotkeyLayerPrev, "Off")
+            Hotkey(hotkeyLayerNext, "Off")
+        } catch {
+        }
+        
+        ; Update global variables
+        hotkeyRecordToggle := newRecordToggle
+        hotkeySubmit := newSubmit
+        hotkeyDirectClear := newDirectClear
+        hotkeyStats := newStats
+        hotkeyBreakMode := newBreakMode
+        hotkeySettings := newSettings
+        hotkeyLayerPrev := newLayerPrev
+        hotkeyLayerNext := newLayerNext
+        
+        ; Re-setup hotkeys
+        SetupHotkeys()
+        
+        ; Save to config
+        SaveConfig()
+        
+        MsgBox("Hotkeys applied successfully!`n`nNew configuration:`nRecord: " . hotkeyRecordToggle . "`nSubmit: " . hotkeySubmit . "`nDirect Clear: " . hotkeyDirectClear . "`nStats: " . hotkeyStats . "`nBreak: " . hotkeyBreakMode . "`nSettings: " . hotkeySettings . "`nLayer Prev: " . hotkeyLayerPrev . "`nLayer Next: " . hotkeyLayerNext, "Hotkeys Updated", "Icon!")
+        
+    } catch Error as e {
+        MsgBox("Failed to apply hotkeys: " . e.Message, "Error", "Icon!")
+    }
+}
+
+ResetHotkeySettings(settingsGui) {
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
+    
+    result := MsgBox("Reset all hotkeys to defaults?`n`nRecord: F9`nSubmit: NumpadEnter`nDirect Clear: +Enter`nStats: F12`nBreak: ^b`nSettings: ^k`nLayer Prev: NumpadDiv`nLayer Next: NumpadSub", "Reset Hotkeys", "YesNo Icon?")
+    
+    if (result = "Yes") {
+        ; Clear existing hotkeys
+        try {
+            Hotkey(hotkeyRecordToggle, "Off")
+            Hotkey(hotkeySubmit, "Off")
+            Hotkey(hotkeyDirectClear, "Off")
+            Hotkey(hotkeyStats, "Off")
+            Hotkey(hotkeyBreakMode, "Off")
+            Hotkey(hotkeySettings, "Off")
+            Hotkey(hotkeyLayerPrev, "Off")
+            Hotkey(hotkeyLayerNext, "Off")
+        } catch {
+        }
+        
+        ; Reset to defaults
+        hotkeyRecordToggle := "F9"
+        hotkeySubmit := "NumpadEnter"
+        hotkeyDirectClear := "+Enter"
+        hotkeyStats := "F12"
+        hotkeyBreakMode := "^b"
+        hotkeySettings := "^k"
+        hotkeyLayerPrev := "NumpadDiv"
+        hotkeyLayerNext := "NumpadSub"
+        
+        ; Re-setup hotkeys
+        SetupHotkeys()
+        
+        ; Save to config
+        SaveConfig()
+        
+        ; Refresh settings GUI
+        settingsGui.Destroy()
+        ShowSettings()
+        
+        UpdateStatus("🎮 Hotkeys reset to defaults")
     }
 }
 

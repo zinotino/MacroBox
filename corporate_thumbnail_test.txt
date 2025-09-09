@@ -1,0 +1,442 @@
+#Requires AutoHotkey v2.0
+#SingleInstance Force
+
+; =============================================
+; CORPORATE THUMBNAIL TEST SUITE
+; Test different methods to bypass image blocking
+; =============================================
+
+global testGui := 0
+global gdiplusToken := 0
+
+; Sample degradation colors for testing
+global degradationColors := Map(
+    1, 0xFF4500,  ; smudge - orangered
+    2, 0xFFD700,  ; glare - gold
+    3, 0x8A2BE2,  ; smudges - blueviolet
+    4, 0x00FF32,  ; partial_blockages - limegreen
+)
+
+; Test results storage
+global testResults := Map()
+
+; ===== INITIALIZATION =====
+InitializeTest() {
+    ; Initialize GDI+
+    if (!InitializeGDIPlus()) {
+        MsgBox("Failed to initialize GDI+")
+        ExitApp()
+    }
+    
+    ; Create test GUI
+    CreateTestGUI()
+    
+    ; Run all tests
+    RunAllTests()
+}
+
+InitializeGDIPlus() {
+    global gdiplusToken
+    si := Buffer(24, 0)
+    NumPut("UInt", 1, si, 0)
+    result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiplusToken, "Ptr", si, "Ptr", 0)
+    return result = 0
+}
+
+CreateTestGUI() {
+    global testGui
+    
+    testGui := Gui("+Resize", "Corporate Thumbnail Test Suite")
+    testGui.SetFont("s10", "Segoe UI")
+    testGui.OnEvent("Close", (*) => CleanupAndExit())
+    
+    ; Title
+    testGui.Add("Text", "x10 y10 w600 h25 Center", "🔬 Testing Different Thumbnail Display Methods")
+    testGui.SetFont("s12 Bold")
+    testGui.Add("Text", "x10 y35 w600 h25 Center", "Corporate Environment Compatibility Test")
+    testGui.SetFont("s10")
+    
+    ; Test method descriptions
+    testGui.Add("GroupBox", "x10 y70 w780 h120", "Test Methods")
+    testGui.Add("Text", "x20 y90 w750 h80", 
+        "Method 1: Traditional File Approach (Current) - Save PNG to temp file, load via Picture.Value`n" .
+        "Method 2: HBITMAP Direct Assignment - Convert GDI+ bitmap to HBITMAP, assign directly`n" .
+        "Method 3: Memory Stream Approach - Use IStream interface to bypass file system`n" .
+        "Method 4: Different Temp Locations - Try user profile, script dir, system temp`n" .
+        "Method 5: Alternative Visualization - Use colored Text controls instead of images")
+    
+    ; Test results area with individual picture controls for each method
+    testGui.Add("GroupBox", "x10 y200 w780 h300", "Visual Test Results (Each method shows a 100x100 preview)")
+    
+    ; Method 1: Traditional approach
+    testGui.Add("Text", "x30 y225 w120 h15 Center", "Method 1: File")
+    global pic1 := testGui.Add("Picture", "x30 y240 w100 h100 Border")
+    global status1 := testGui.Add("Text", "x30 y345 w120 h30", "Testing...")
+    
+    ; Method 2: HBITMAP direct
+    testGui.Add("Text", "x160 y225 w120 h15 Center", "Method 2: HBITMAP")
+    global pic2 := testGui.Add("Picture", "x160 y240 w100 h100 Border")
+    global status2 := testGui.Add("Text", "x160 y345 w120 h30", "Testing...")
+    
+    ; Method 3: Memory stream
+    testGui.Add("Text", "x290 y225 w120 h15 Center", "Method 3: Stream")
+    global pic3 := testGui.Add("Picture", "x290 y240 w100 h100 Border")
+    global status3 := testGui.Add("Text", "x290 y345 w120 h30", "Testing...")
+    
+    ; Method 4: Different locations
+    testGui.Add("Text", "x420 y225 w120 h15 Center", "Method 4: Alt Path")
+    global pic4 := testGui.Add("Picture", "x420 y240 w100 h100 Border")
+    global status4 := testGui.Add("Text", "x420 y345 w120 h30", "Testing...")
+    
+    ; Method 5: Text-based visualization
+    testGui.Add("Text", "x550 y225 w120 h15 Center", "Method 5: Text")
+    global txt5 := testGui.Add("Text", "x550 y240 w100 h100 Border Center +Background0xFFFFFF", "████████`n████████`n████████`n████████")
+    txt5.SetFont("s6", "cRed")
+    global status5 := testGui.Add("Text", "x550 y345 w120 h30", "✅ Always Works")
+    
+    ; Control buttons
+    testGui.Add("Button", "x20 y520 w120 h30", "🔄 Retest All").OnEvent("Click", (*) => RunAllTests())
+    testGui.Add("Button", "x160 y520 w120 h30", "📋 Copy Results").OnEvent("Click", (*) => CopyResults())
+    testGui.Add("Button", "x300 y520 w120 h30", "💾 Export Log").OnEvent("Click", (*) => ExportLog())
+    
+    ; Results summary
+    global resultSummary := testGui.Add("Edit", "x450 y520 w340 h80 ReadOnly VScroll")
+    
+    testGui.Show("w810 h620")
+}
+
+; ===== TEST METHODS =====
+
+RunAllTests() {
+    global status1, status2, status3, status4, resultSummary
+    
+    ; Clear previous results
+    testResults := Map()
+    resultSummary.Value := "🧪 Running tests...\n"
+    
+    ; Update status displays
+    status1.Text := "Testing..."
+    status2.Text := "Testing..."
+    status3.Text := "Testing..."
+    status4.Text := "Testing..."
+    
+    ; Create test bitmap data
+    testBitmap := CreateTestBitmap(100, 100)
+    if (!testBitmap) {
+        resultSummary.Value := "❌ Failed to create test bitmap"
+        return
+    }
+    
+    ; Test Method 1: Traditional File Approach
+    TestMethod1(testBitmap)
+    
+    ; Test Method 2: HBITMAP Direct
+    TestMethod2(testBitmap)
+    
+    ; Test Method 3: Memory Stream
+    TestMethod3(testBitmap)
+    
+    ; Test Method 4: Different Paths
+    TestMethod4(testBitmap)
+    
+    ; Cleanup test bitmap
+    DllCall("gdiplus\GdipDisposeImage", "Ptr", testBitmap)
+    
+    ; Update summary
+    UpdateResultSummary()
+}
+
+TestMethod1(bitmap) {
+    global pic1, status1, testResults
+    
+    try {
+        ; Traditional approach - save to A_Temp
+        tempFile := A_Temp . "\corporate_test_1.png"
+        
+        ; Save bitmap to file
+        success := SaveBitmapToPNG(bitmap, tempFile)
+        
+        if (success && FileExist(tempFile)) {
+            ; Try to load into picture control
+            pic1.Value := tempFile
+            status1.Text := "✅ SUCCESS`nFile method works"
+            testResults["Method1"] := "SUCCESS"
+            
+            ; Clean up file - capture value properly
+            capturedFile := tempFile
+            SetTimer(() => DeleteFile(capturedFile), -2000)
+        } else {
+            status1.Text := "❌ FAILED`nFile save failed"
+            testResults["Method1"] := "FAILED - File save"
+        }
+    } catch Error as e {
+        status1.Text := "❌ FAILED`n" . SubStr(e.Message, 1, 20)
+        testResults["Method1"] := "FAILED - " . e.Message
+    }
+}
+
+TestMethod2(bitmap) {
+    global pic2, status2, testResults
+    
+    try {
+        ; Convert GDI+ bitmap to HBITMAP
+        hBitmap := 0
+        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hBitmap, "UInt", 0xFFFFFFFF)
+        
+        if (result = 0 && hBitmap) {
+            ; Try to assign HBITMAP directly to picture control
+            ; This requires Win32 API calls to set the image
+            SendMessage(0x172, 0, hBitmap, pic2.Hwnd)  ; STM_SETIMAGE, IMAGE_BITMAP
+            
+            status2.Text := "✅ SUCCESS`nHBITMAP direct"
+            testResults["Method2"] := "SUCCESS"
+            
+            ; Note: Don't delete hBitmap immediately as control owns it now
+        } else {
+            status2.Text := "❌ FAILED`nHBITMAP creation"
+            testResults["Method2"] := "FAILED - HBITMAP creation"
+        }
+    } catch Error as e {
+        status2.Text := "❌ FAILED`n" . SubStr(e.Message, 1, 20)
+        testResults["Method2"] := "FAILED - " . e.Message
+    }
+}
+
+TestMethod3(bitmap) {
+    global pic3, status3, testResults
+    
+    try {
+        ; Memory stream approach using IStream interface
+        ; This is complex and may not work in AutoHotkey v2 easily
+        
+        ; For now, simulate the approach
+        status3.Text := "⚠️ NOT IMPL`nComplex API calls"
+        testResults["Method3"] := "NOT IMPLEMENTED"
+        
+        ; Note: Real implementation would involve:
+        ; 1. Create IStream in memory
+        ; 2. Save bitmap to stream as PNG
+        ; 3. Load picture from stream
+        ; This requires extensive Win32 API work
+        
+    } catch Error as e {
+        status3.Text := "❌ FAILED`n" . SubStr(e.Message, 1, 20)
+        testResults["Method3"] := "FAILED - " . e.Message
+    }
+}
+
+TestMethod4(bitmap) {
+    global pic4, status4, testResults
+    
+    ; Test different file locations
+    testPaths := [
+        A_ScriptDir . "\test_thumb.png",           ; Script directory
+        A_MyDocuments . "\test_thumb.png",         ; Documents folder
+        EnvGet("USERPROFILE") . "\test_thumb.png", ; User profile
+        A_Desktop . "\test_thumb.png"              ; Desktop
+    ]
+    
+    success := false
+    workingPath := ""
+    
+    for path in testPaths {
+        try {
+            if (SaveBitmapToPNG(bitmap, path) && FileExist(path)) {
+                pic4.Value := path
+                success := true
+                workingPath := path
+                
+                ; Clean up
+                SetTimer(() => DeleteFile(path), -2000)
+                break
+            }
+        } catch {
+            continue
+        }
+    }
+    
+    if (success) {
+        status4.Text := "✅ SUCCESS`nAlternate path works"
+        testResults["Method4"] := "SUCCESS - " . workingPath
+    } else {
+        status4.Text := "❌ FAILED`nAll paths blocked"
+        testResults["Method4"] := "FAILED - All paths blocked"
+    }
+}
+
+; ===== HELPER FUNCTIONS =====
+
+CreateTestBitmap(width, height) {
+    ; Create a test bitmap with colored rectangles
+    bitmap := 0
+    result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", width, "Int", height, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+    
+    if (result != 0)
+        return 0
+    
+    ; Get graphics context
+    graphics := 0
+    DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+    
+    ; Clear to white
+    DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFFFFFFFF)
+    
+    ; Draw colored rectangles to simulate bounding boxes
+    colors := [0xFFFF4500, 0xFFFFD700, 0xFF8A2BE2, 0xFF00FF32]  ; degradation colors
+    
+    boxSize := 20
+    for i, color in colors {
+        x := (i-1) * 25 + 5
+        y := 5
+        
+        ; Create brush
+        brush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", color, "Ptr*", &brush)
+        
+        ; Draw rectangle
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x, "Float", y, "Float", boxSize, "Float", boxSize)
+        
+        ; Cleanup brush
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+    }
+    
+    ; Add text to show this is a test image
+    ; Create font
+    fontFamily := 0
+    DllCall("gdiplus\GdipCreateFontFamilyFromName", "WStr", "Arial", "Ptr", 0, "Ptr*", &fontFamily)
+    
+    font := 0
+    DllCall("gdiplus\GdipCreateFont", "Ptr", fontFamily, "Float", 12, "Int", 0, "Int", 2, "Ptr*", &font)
+    
+    ; Create brush for text
+    textBrush := 0
+    DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &textBrush)
+    
+    ; Draw text
+    rect := Buffer(16, 0)
+    NumPut("Float", 5, rect, 0)   ; x
+    NumPut("Float", 35, rect, 4)  ; y
+    NumPut("Float", 90, rect, 8)  ; width
+    NumPut("Float", 60, rect, 12) ; height
+    
+    DllCall("gdiplus\GdipDrawString", "Ptr", graphics, "WStr", "TEST`nTHUMB", "Int", -1, "Ptr", font, "Ptr", rect, "Ptr", 0, "Ptr", textBrush)
+    
+    ; Cleanup text resources
+    DllCall("gdiplus\GdipDeleteBrush", "Ptr", textBrush)
+    DllCall("gdiplus\GdipDeleteFont", "Ptr", font)
+    DllCall("gdiplus\GdipDeleteFontFamily", "Ptr", fontFamily)
+    DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+    
+    return bitmap
+}
+
+SaveBitmapToPNG(bitmap, filePath) {
+    ; PNG encoder CLSID
+    clsid := Buffer(16)
+    NumPut("UInt", 0x557CF406, clsid, 0)
+    NumPut("UInt", 0x11D31A04, clsid, 4)
+    NumPut("UInt", 0x0000739A, clsid, 8)
+    NumPut("UInt", 0x2EF31EF8, clsid, 12)
+    
+    result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", filePath, "Ptr", clsid, "Ptr", 0)
+    return result = 0
+}
+
+DeleteFile(filePath) {
+    try {
+        if (FileExist(filePath))
+            FileDelete(filePath)
+    } catch {
+        ; Ignore deletion errors
+    }
+}
+
+UpdateResultSummary() {
+    global resultSummary, testResults
+    
+    summary := "🔍 TEST RESULTS SUMMARY:`n`n"
+    
+    ; Analyze results
+    workingMethods := []
+    failedMethods := []
+    
+    for method, result in testResults {
+        if (InStr(result, "SUCCESS")) {
+            workingMethods.Push(method . ": ✅")
+        } else {
+            failedMethods.Push(method . ": ❌")
+        }
+    }
+    
+    summary .= "✅ WORKING METHODS (" . workingMethods.Length . "):`n"
+    for method in workingMethods {
+        summary .= "  " . method . "`n"
+    }
+    
+    summary .= "`n❌ BLOCKED METHODS (" . failedMethods.Length . "):`n"
+    for method in failedMethods {
+        summary .= "  " . method . "`n"
+    }
+    
+    ; Recommendations
+    summary .= "`n💡 RECOMMENDATIONS:`n"
+    if (workingMethods.Length = 0) {
+        summary .= "  Use Method 5 (ASCII text visualization)`n"
+        summary .= "  Use # * @ X characters with background colors`n"
+        summary .= "  Pattern density = box count visualization`n"
+    } else {
+        summary .= "  Use the working methods above`n"
+        summary .= "  Method 5 as fallback always works`n"
+    }
+    
+    resultSummary.Value := summary
+}
+
+CopyResults() {
+    global resultSummary
+    A_Clipboard := "CORPORATE THUMBNAIL TEST RESULTS`n" . 
+                   "==============================`n" .
+                   resultSummary.Value
+    MsgBox("Results copied to clipboard!")
+}
+
+ExportLog() {
+    global testResults
+    
+    logFile := A_Desktop . "\corporate_thumbnail_test_log.txt"
+    
+    content := "CORPORATE THUMBNAIL TEST LOG`n"
+    content .= "Generated: " . A_Now . "`n"
+    content .= "Script: " . A_ScriptName . "`n`n"
+    
+    for method, result in testResults {
+        content .= method . ": " . result . "`n"
+    }
+    
+    content .= "`nSYSTEM INFO:`n"
+    content .= "OS: " . A_OSVersion . "`n"
+    content .= "AHK Version: " . A_AhkVersion . "`n"
+    content .= "Temp Dir: " . A_Temp . "`n"
+    content .= "Script Dir: " . A_ScriptDir . "`n"
+    
+    try {
+        FileAppend(content, logFile)
+        MsgBox("Log exported to:`n" . logFile)
+    } catch Error as e {
+        MsgBox("Failed to export log:`n" . e.Message)
+    }
+}
+
+CleanupAndExit() {
+    global gdiplusToken
+    
+    ; Shutdown GDI+
+    if (gdiplusToken) {
+        DllCall("gdiplus\GdiplusShutdown", "Ptr", gdiplusToken)
+    }
+    
+    ExitApp()
+}
+
+; ===== STARTUP =====
+InitializeTest()
