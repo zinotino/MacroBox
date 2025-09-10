@@ -2241,11 +2241,20 @@ CreateToolbar() {
     btnSettings.SetFont("s8 bold")
     mainGui.btnSettings := btnSettings
     
-    btnEmergency := mainGui.Add("Button", "x" . (rightSection + (btnWidth * 2) + 10) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "🚨 RCtrl")
+    btnEmergency := mainGui.Add("Button", "x" . (rightSection + (btnWidth * 2) + 10) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "🚨 " . hotkeyEmergency)
     btnEmergency.OnEvent("Click", (*) => EmergencyStop())
     btnEmergency.SetFont("s8 bold")
     btnEmergency.Opt("+Background0xDC143C")
     mainGui.btnEmergency := btnEmergency
+}
+
+; Update emergency button text to show current assigned key
+UpdateEmergencyButtonText() {
+    global mainGui, hotkeyEmergency
+    
+    if (mainGui.HasProp("btnEmergency") && mainGui.btnEmergency) {
+        mainGui.btnEmergency.Text := "🚨 " . hotkeyEmergency
+    }
 }
 
 CreateGridOutline() {
@@ -2675,24 +2684,109 @@ UpdateStatus(text) {
 }
 
 GuiResize(thisGui, minMax, width, height) {
-    global statusBar, windowWidth, windowHeight, mainGui
+    global statusBar, windowWidth, windowHeight, mainGui, buttonGrid, buttonLabels, buttonPictures
+    static resizeTimer := 0
     
     if (minMax = -1)
         return
     
+    ; Add bounds checking
+    if (width < 800 || height < 600) {
+        return  ; Don't resize below minimum
+    }
+    
     windowWidth := width
     windowHeight := height
     
+    ; Move status bar (existing code - keep this)
     if (statusBar) {
         statusY := height - 25
         statusBar.Move(8, statusY, width - 16, 20)
     }
     
+    ; Move toolbar background (existing code - keep this)
     if (mainGui.HasProp("tbBg") && mainGui.tbBg) {
         mainGui.tbBg.Move(0, 0, width, 35)
     }
     
-    CreateButtonGrid()
+    ; MOVE existing button controls (fast, no appearance updates)
+    MoveButtonGridFast()
+    
+    ; Debounce appearance updates to reduce flickering
+    if (resizeTimer) {
+        SetTimer(resizeTimer, 0)  ; Cancel previous timer
+    }
+    resizeTimer := () => UpdateAllButtonAppearances()
+    SetTimer(resizeTimer, -150)  ; Update appearances 150ms after resize stops
+}
+
+; FAST FUNCTION - Move controls without appearance updates (no flicker)
+MoveButtonGridFast() {
+    global buttonGrid, buttonLabels, buttonPictures, buttonNames, windowWidth, windowHeight, scaleFactor, gridOutline
+    
+    ; Calculate new positions (same math as CreateButtonGrid)
+    margin := 8
+    padding := 4
+    toolbarHeight := Round(35 * scaleFactor)
+    gridTopPadding := 4
+    gridBottomPadding := 30
+    
+    gridWidth := windowWidth - (margin * 2)
+    gridHeight := windowHeight - toolbarHeight - gridTopPadding - gridBottomPadding - (margin * 2)
+    
+    ; Add safety bounds
+    if (gridWidth < 300 || gridHeight < 200) {
+        return  ; Don't resize if too small
+    }
+    
+    buttonWidth := Floor((gridWidth - padding * 2) / 3)
+    buttonHeight := Floor((gridHeight - padding * 3) / 4)
+    labelHeight := Round(18 * scaleFactor)
+    thumbHeight := buttonHeight - labelHeight - 2
+    
+    ; Move grid outline
+    outlineThickness := 2
+    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness, 
+                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
+    
+    ; Move existing button controls (fast - no appearance updates)
+    for row in [0, 1, 2, 3] {
+        for col in [0, 1, 2] {
+            index := row * 3 + col + 1
+            if (index > 12)
+                continue
+                
+            buttonName := buttonNames[index]
+            x := margin + col * (buttonWidth + padding)
+            y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
+            
+            ; Move existing controls if they exist (positions only)
+            if (buttonGrid.Has(buttonName) && buttonGrid[buttonName]) {
+                buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+            }
+            if (buttonPictures.Has(buttonName) && buttonPictures[buttonName]) {
+                buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+            }
+            if (buttonLabels.Has(buttonName) && buttonLabels[buttonName]) {
+                buttonLabels[buttonName].Move(Floor(x), Floor(y + thumbHeight + 1), Floor(buttonWidth), Floor(labelHeight))
+            }
+        }
+    }
+}
+
+; BATCH UPDATE - Refresh all button appearances (called after resize stops)
+UpdateAllButtonAppearances() {
+    global buttonNames
+    
+    for buttonName in buttonNames {
+        UpdateButtonAppearance(buttonName)
+    }
+}
+
+; LEGACY FUNCTION - Keep for compatibility (slower but complete)
+MoveButtonGrid() {
+    MoveButtonGridFast()
+    UpdateAllButtonAppearances()
 }
 
 ; ===== LAYER SYSTEM =====
@@ -6410,6 +6504,9 @@ LoadConfig() {
         
         RefreshAllButtonAppearances()  ; Refresh again to show WASD labels
         
+        ; Update emergency button text to reflect loaded hotkey
+        UpdateEmergencyButtonText()
+        
         if (macrosLoaded > 0) {
             UpdateStatus("📚 Configuration loaded: " . macrosLoaded . " macros restored")
         } else {
@@ -7551,6 +7648,9 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
         
         ; Re-setup hotkeys
         SetupHotkeys()
+        
+        ; Update emergency button display
+        UpdateEmergencyButtonText()
         
         ; Save to config
         SaveConfig()
