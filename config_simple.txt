@@ -1,3 +1,8 @@
+L1_Num0=mouseDown,1629,390,left
+L1_Num0=boundingBox,1629,390,1718,580
+L1_Num0=mouseUp,1718,580,left
+L1_Num0=keyDown,9
+L1_Num0=keyUp,9
 L1_Num1=mouseDown,736,546,left
 L1_Num1=boundingBox,736,546,880,607
 L1_Num1=mouseUp,880,607,left

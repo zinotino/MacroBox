@@ -23,7 +23,8 @@
       "Bash(python:*)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahv)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_stats.ahk)",
-      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_integration.ahk)"
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_integration.ahk)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []
