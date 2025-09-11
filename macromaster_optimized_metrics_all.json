@@ -1,0 +1,24 @@
+{
+  "filter_mode": "all",
+  "dashboard_type": "optimized_9_chart",
+  "total_executions": 5,
+  "macro_executions": 3,
+  "json_executions": 2,
+  "total_boxes": 26,
+  "avg_execution_time_ms": 1780.0,
+  "efficiency_boxes_per_second": 3.03,
+  "session_duration_hours": 0.3,
+  "boxes_per_hour": 78.0,
+  "quality_score": 0.0,
+  "button_performance": {
+    "L1_Num1": 11,
+    "L1_Num2": 8,
+    "L1_Num3": 3,
+    "L1_Num4": 4
+  },
+  "degradation_breakdown": {
+    "smudge": 1,
+    "glare": 1
+  },
+  "generated_at": "2025-09-11T00:34:23.659950"
+}

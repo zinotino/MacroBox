@@ -2232,7 +2232,7 @@ CreateToolbar() {
     btnWidth := Round((rightWidth - 20) / 3)
     
     btnStats := mainGui.Add("Button", "x" . rightSection . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📊 Stats")
-    btnStats.OnEvent("Click", (*) => ShowStats())
+    btnStats.OnEvent("Click", (*) => ShowPythonStats())
     btnStats.SetFont("s8 bold")
     mainGui.btnStats := btnStats
     
@@ -2356,7 +2356,7 @@ HandleButtonClick(buttonName, *) {
 
 HandleContextMenu(buttonName, *) {
     UpdateStatus("🖱️ Right-click: " . buttonName . " | ⚙️ Configuration menu available")
-    ShowContextMenu(buttonName)
+    ShowContextMenuCleaned(buttonName)
 }
 
 ; ===== BUTTON APPEARANCE =====
@@ -2818,62 +2818,57 @@ SwitchLayer(direction) {
 }
 
 ; ===== CONTEXT MENUS =====
-ShowContextMenu(buttonName, *) {
+; REMOVE EFFICIENCY SCORE FROM CONTEXT MENU
+ShowContextMenuCleaned(buttonName, *) {
     global currentLayer, degradationTypes, severityLevels
     
     contextMenu := Menu()
     
-    contextMenu.Add("🎥 Record Macro", (*) => F9_RecordingOnly())  ; Use F9 handler
+    contextMenu.Add("🎥 Record Macro", (*) => F9_RecordingOnly())
     contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
     contextMenu.Add("🏷️ Edit Label", (*) => EditCustomLabel(buttonName))
     contextMenu.Add()
     
+    ; JSON Profiles
     jsonMainMenu := Menu()
-    
     for id, typeName in degradationTypes {
         typeMenu := Menu()
-        
         for severity in severityLevels {
             presetName := StrTitle(typeName) . " (" . StrTitle(severity) . ")"
             typeMenu.Add(StrTitle(severity), AssignJsonAnnotation.Bind(buttonName, presetName))
         }
-        
         jsonMainMenu.Add("🎨 " . StrTitle(typeName), typeMenu)
     }
-    
     contextMenu.Add("🏷️ JSON Profiles", jsonMainMenu)
     contextMenu.Add()
     
+    ; Thumbnails
     contextMenu.Add("🖼️ Add Thumbnail", (*) => AddThumbnail(buttonName))
     contextMenu.Add("🗑️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
     contextMenu.Add()
     
-    ; Auto execution - two separate options
+    ; Auto execution
     buttonKey := "L" . currentLayer . "_" . buttonName
     hasAutoSettings := buttonAutoSettings.Has(buttonKey)
     autoEnabled := hasAutoSettings && buttonAutoSettings[buttonKey].enabled
     
-    ; Enhanced Auto Mode options
     if (autoEnabled) {
-        contextMenu.Add("✅ Auto Mode: ON", (*) => {}) ; Status indicator only
+        contextMenu.Add("✅ Auto Mode: ON", (*) => {})
         contextMenu.Add("❌ Disable Auto Mode", (*) => ToggleAutoEnable(buttonName))
     } else {
         contextMenu.Add("⚙️ Enable Auto Mode", (*) => ToggleAutoEnable(buttonName))
     }
-    
-    ; Settings option
     contextMenu.Add("🔧 Auto Mode: Settings", (*) => ConfigureAutoMode(buttonName))
-    contextMenu.Add()
     
-    ; Configuration submenu
-    configMenu := Menu()
-    configMenu.Add("⚙️ Settings & Profiles", (*) => ShowSettings())
-    configMenu.Add("📊 Statistics", (*) => ShowStats())
-    configMenu.Add("🗃️ Data Export", (*) => ShowOfflineStatsScreen())
-    
-    contextMenu.Add("⚙️ Configuration", configMenu)
+    ; REMOVED: Efficiency score (worthless)
+    ; REMOVED: Other redundant options
     
     contextMenu.Show()
+}
+
+; Legacy function for backward compatibility
+ShowContextMenu(buttonName, *) {
+    ShowContextMenuCleaned(buttonName)
 }
 
 ClearMacro(buttonName) {
@@ -3485,7 +3480,285 @@ ApplyWASDMappings(configGui) {
 }
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
-ShowStats() {
+ShowPythonStats() {
+    global masterStatsCSV, dailyResetActive
+    
+    ; Use optimized MacroMaster analytics dashboard (9-chart layout with relevant information)
+    optimizedScript := A_ScriptDir . "\macromaster_optimized.py"
+    simpleScript := A_ScriptDir . "\simple_stats.py"
+    
+    ; Check if CSV file exists, create if needed
+    if (!FileExist(masterStatsCSV)) {
+        try {
+            ; Ensure data directory exists
+            dataDir := A_ScriptDir . "\data"
+            if (!DirExist(dataDir)) {
+                DirCreate(dataDir)
+            }
+            
+            ; Create CSV with proper header
+            csvHeader := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active`n"
+            FileAppend(csvHeader, masterStatsCSV, "UTF-8")
+            UpdateStatus("📄 Created CSV data file")
+        } catch Error as e {
+            ShowSimpleStatsMenu()
+            UpdateStatus("❌ Could not create CSV file - showing built-in stats")
+            return
+        }
+    }
+    
+    ; Determine filter mode based on daily reset state
+    filterMode := dailyResetActive ? "today" : "all"
+    
+    ; Launch optimized dashboard (9-chart layout with relevant information)
+    if (FileExist(optimizedScript)) {
+        pythonCmd := 'python "' . optimizedScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
+        
+        try {
+            UpdateStatus("📊 Launching optimized MacroMaster analytics...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("🎮 MacroMaster Analytics Dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            UpdateStatus("⚠️ Analytics dashboard failed - trying simple dashboard...")
+        }
+    }
+    
+    ; Fallback to simple dashboard
+    if (FileExist(simpleScript)) {
+        pythonCmd := 'python "' . simpleScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
+        
+        try {
+            UpdateStatus("⚡ Launching simple dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("⚡ Simple Dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            UpdateStatus("⚠️ Simple dashboard failed - showing built-in stats")
+        }
+    }
+    
+    ; Final fallback to built-in stats
+    ShowSimpleStatsMenu()
+    UpdateStatus("📊 Showing built-in stats menu")
+}
+
+; New function to show analytics mode selection
+ShowAnalyticsModeDialog(csvPath, filterMode, focusedScript, simpleScript) {
+    ; Create analytics mode selection GUI
+    modeGui := Gui("+Resize +MinSize400x300", "📊 MacroMaster Analytics")
+    
+    ; Header
+    modeGui.SetFont("s12 Bold")
+    modeGui.Add("Text", "x20 y20 w360 Center", "Choose Your Analytics View")
+    modeGui.SetFont("s14 Bold")
+    modeGui.Add("Text", "x20 y50 w360 Center", "📊 MacroMaster Analytics Dashboard")
+    modeGui.SetFont("s10")
+    
+    ; Filter info
+    modeGui.Add("Text", "x20 y80 w360", "Current Filter: " . (filterMode = "today" ? "📅 Today's Data" : "📈 All-Time Data"))
+    
+    ; Mode options
+    modeGui.SetFont("s11 Bold")
+    
+    ; Focused Visual Dashboard
+    btnFocused := modeGui.Add("Button", "x20 y120 w360 h60", "🎯 Focused Visual Dashboard`n6 essential charts with clear spacing")
+    btnFocused.OnEvent("Click", (*) => LaunchFocusedDashboard(modeGui, csvPath, filterMode, focusedScript))
+    
+    ; Text Analytics Dashboard  
+    btnText := modeGui.Add("Button", "x20 y190 w360 h60", "📋 Text Analytics Dashboard`nClear tables and metrics for detailed review")
+    btnText.OnEvent("Click", (*) => LaunchTextDashboard(modeGui, csvPath, filterMode, focusedScript))
+    
+    ; Simple Fallback
+    btnSimple := modeGui.Add("Button", "x20 y260 w360 h40", "⚡ Simple Dashboard (No Dependencies)")
+    btnSimple.OnEvent("Click", (*) => LaunchSimpleDashboard(modeGui, csvPath, filterMode, simpleScript))
+    
+    ; Show GUI
+    modeGui.Show("w400 h320")
+}
+
+; Launch focused visual dashboard
+LaunchFocusedDashboard(gui, csvPath, filterMode, script) {
+    gui.Destroy()
+    
+    if (FileExist(script)) {
+        pythonCmd := 'python "' . script . '" "' . csvPath . '" --filter ' . filterMode
+        
+        try {
+            UpdateStatus("📊 Launching focused analytics dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("🎯 Focused Analytics Dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            ; Dashboard failed, fall through to simple dashboard
+            UpdateStatus("⚠️ Professional dashboard failed - trying simple dashboard...")
+        }
+    }
+    
+    ; Fallback to simple dashboard - use full path
+    simpleScript := A_ScriptDir . "\simple_stats.py"
+    if (FileExist(simpleScript)) {
+        pythonCmd := 'python "' . simpleScript . '" "' . csvPath . '" --filter ' . filterMode
+        
+        try {
+            UpdateStatus("📊 Launching simple analytics dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("📊 Simple dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            UpdateStatus("⚠️ Python dashboard failed - showing built-in stats")
+        }
+    }
+    
+    ; Final fallback to AutoHotkey stats
+    ShowSimpleStatsMenu()
+    UpdateStatus("📊 Showing built-in stats menu")
+}
+
+; Launch text analytics dashboard
+LaunchTextDashboard(gui, csvPath, filterMode, script) {
+    gui.Destroy()
+    
+    if (FileExist(script)) {
+        pythonCmd := 'python "' . script . '" "' . csvPath . '" --filter ' . filterMode . ' --text'
+        
+        try {
+            UpdateStatus("📋 Launching text analytics dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("📋 Text Analytics Dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            UpdateStatus("⚠️ Text dashboard failed - trying simple dashboard")
+        }
+    }
+    
+    ; Fallback to simple dashboard
+    ; LaunchSimpleDashboard(gui, csvPath, filterMode, A_ScriptDir . "\simple_stats.py")
+    ; Instead, show simple stats menu directly
+    ShowSimpleStatsMenu()
+    UpdateStatus("📊 Showing built-in stats menu")
+}
+
+; Launch simple dashboard
+LaunchSimpleDashboard(gui, csvPath, filterMode, simpleScript) {
+    gui.Destroy()
+    
+    if (FileExist(simpleScript)) {
+        pythonCmd := 'python "' . simpleScript . '" "' . csvPath . '" --filter ' . filterMode
+        
+        try {
+            UpdateStatus("⚡ Launching simple dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+            UpdateStatus("⚡ Simple Dashboard opened in browser")
+            return
+            
+        } catch Error as e {
+            UpdateStatus("⚠️ Simple dashboard failed - showing built-in stats")
+        }
+    }
+    
+    ; Final fallback to built-in stats
+    ShowSimpleStatsMenu()
+    UpdateStatus("📊 Showing built-in stats menu")
+}
+
+ShowSimpleStatsMenu() {
+    ; Simple fallback stats menu
+    global applicationStartTime, totalActiveTime, lastActiveTime, sessionId
+    
+    ; Calculate basic stats
+    currentActiveTime := totalActiveTime + (A_TickCount - lastActiveTime)
+    uptimeFormatted := FormatActiveTime(A_TickCount - applicationStartTime)
+    activeTimeFormatted := FormatActiveTime(currentActiveTime)
+    
+    ; Count basic execution stats from CSV if available
+    executionCount := 0
+    totalBoxes := 0
+    
+    if (FileExist(masterStatsCSV)) {
+        try {
+            content := FileRead(masterStatsCSV, "UTF-8")
+            lines := StrSplit(content, "`n")
+            for i, line in lines {
+                if (i = 1 || Trim(line) = "") {
+                    continue
+                }
+                cols := StrSplit(line, ",")
+                if (cols.Length >= 7) {
+                    executionCount++
+                    if (IsNumber(cols[7])) {
+                        totalBoxes += Integer(cols[7])
+                    }
+                }
+            }
+        } catch {
+            ; Ignore CSV read errors
+        }
+    }
+    
+    ; Create simple stats GUI
+    statsGui := Gui("+Resize", "📊 MacroMaster Statistics")
+    statsGui.SetFont("s11")
+    
+    ; Header
+    statsGui.Add("Text", "x20 y20 w460 h30 Center", "📊 MACROMASTER STATISTICS")
+        .SetFont("s14 Bold", "cBlue")
+    
+    ; Stats content
+    y := 70
+    statsGui.Add("Text", "x30 y" . y . " w200 h20", "Total Executions:")
+    statsGui.Add("Text", "x250 y" . y . " w100 h20", executionCount)
+        .SetFont("s11 Bold", "cGreen")
+    
+    y += 30
+    statsGui.Add("Text", "x30 y" . y . " w200 h20", "Total Boxes:")
+    statsGui.Add("Text", "x250 y" . y . " w100 h20", totalBoxes)
+        .SetFont("s11 Bold", "cTeal")
+    
+    y += 30
+    statsGui.Add("Text", "x30 y" . y . " w200 h20", "Session Time:")
+    statsGui.Add("Text", "x250 y" . y . " w200 h20", activeTimeFormatted)
+        .SetFont("s11 Bold", "cOrange")
+    
+    y += 30
+    statsGui.Add("Text", "x30 y" . y . " w200 h20", "App Uptime:")
+    statsGui.Add("Text", "x250 y" . y . " w200 h20", uptimeFormatted)
+        .SetFont("s11 Bold", "cNavy")
+    
+    if (sessionId != "") {
+        y += 30
+        statsGui.Add("Text", "x30 y" . y . " w200 h20", "Session ID:")
+        statsGui.Add("Text", "x250 y" . y . " w200 h20", sessionId)
+            .SetFont("s10")
+    }
+    
+    ; Buttons
+    y += 60
+    btnRefresh := statsGui.Add("Button", "x30 y" . y . " w100 h35", "🔄 Refresh")
+    btnRefresh.OnEvent("Click", (*) => RefreshStatsDisplay(statsGui))
+    
+    btnDaily := statsGui.Add("Button", "x150 y" . y . " w120 h35", "📅 Daily Reset")
+    btnDaily.OnEvent("Click", (*) => ShowIntuitiveDailyResetDialog())
+    
+    btnClose := statsGui.Add("Button", "x390 y" . y . " w100 h35", "❌ Close")
+    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
+    
+    ; Show GUI
+    statsGui.Show("w500 h" . (y + 60))
+}
+
+RefreshStatsDisplay(statsGui) {
+    statsGui.Destroy()
+    ShowPythonStats()
+}
+
+; Legacy ShowStats function kept for backward compatibility
+ShowStatsLegacy() {
     global applicationStartTime, totalActiveTime, lastActiveTime, breakMode, sessionId
     global currentLayer, totalLayers, canvasType
     
@@ -3502,9 +3775,16 @@ ShowStats() {
     ; Calculate current active time
     currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
     
-    ; Create professional stats GUI
-    statsGui := Gui("+Resize", "📊 MacroMaster Professional Analytics")
-    statsGui.SetFont("s10")
+    ; Create professional stats GUI with improved scaling
+    statsGui := Gui("+Resize -MaximizeBox", "📊 MacroMaster Professional Analytics")
+    statsGui.SetFont("s11") ; Slightly smaller base font for better fit
+    
+    ; Define responsive layout dimensions
+    guiWidth := 1100
+    guiHeight := 950
+    marginX := 25
+    marginY := 20
+    sectionSpacing := 40
     
     ; Header with break mode and daily reset indication
     if (breakMode) {
@@ -3515,7 +3795,7 @@ ShowStats() {
         headerText := "📊 MACROMASTER ANALYTICS"
     }
     
-    header := statsGui.Add("Text", "x20 y20 w900 h40 Center", headerText)
+    header := statsGui.Add("Text", "x" . marginX . " y" . marginY . " w" . (guiWidth - 2 * marginX) . " h35 Center", headerText)
     if (breakMode) {
         header.SetFont("s16 Bold", "cRed")
     } else if (dailyResetActive) {
@@ -3525,9 +3805,11 @@ ShowStats() {
     }
     
     ; === KEY PERFORMANCE METRICS ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y70 w400 h25", "⚡ PERFORMANCE OVERVIEW")
-    statsGui.SetFont("s10")
+    currentY := marginY + 60  ; Dynamic Y positioning
+    statsGui.SetFont("s13 Bold")
+    statsGui.Add("Text", "x" . marginX . " y" . currentY . " w500 h30", "⚡ PERFORMANCE OVERVIEW")
+    statsGui.SetFont("s11")
+    currentY += 35
     
     ; Calculate performance metrics using CURRENT SESSION data only (not CSV totals)
     ; Require at least 5 seconds of active time for meaningful hourly rates
@@ -3573,110 +3855,142 @@ ShowStats() {
     execsColor := execsPerHour >= 10 ? "cGreen" : (execsPerHour >= 5 ? "cOrange" : "cRed")
     timeColor := avgExecTime <= 2000 ? "cGreen" : (avgExecTime <= 5000 ? "cOrange" : "cRed")
     
-    ; Performance metrics row
-    boxesDisplay := statsGui.Add("Text", "x30 y100 w200 h25", "📦 " . boxesPerHour . " boxes/hour")
+    ; Performance metrics row with improved spacing and responsive layout
+    metricsColWidth := (guiWidth - 3 * marginX) / 3  ; Three equal columns
+    
+    boxesDisplay := statsGui.Add("Text", "x" . marginX . " y" . currentY . " w" . metricsColWidth . " h30", "📦 " . boxesPerHour . " boxes/hour")
     boxesDisplay.SetFont("s12 Bold", boxesColor)
     
-    execsDisplay := statsGui.Add("Text", "x250 y100 w200 h25", "⚡ " . execsPerHour . " exec/hour")  
+    execsDisplay := statsGui.Add("Text", "x" . (marginX + metricsColWidth) . " y" . currentY . " w" . metricsColWidth . " h30", "⚡ " . execsPerHour . " exec/hour")  
     execsDisplay.SetFont("s12 Bold", execsColor)
     
     ; Total executions in top metrics
-    totalExecsDisplay := statsGui.Add("Text", "x470 y100 w200 h25", "📊 " . csvStats["total_executions"] . " executions")
+    totalExecsDisplay := statsGui.Add("Text", "x" . (marginX + 2 * metricsColWidth) . " y" . currentY . " w" . metricsColWidth . " h30", "📊 " . csvStats["total_executions"] . " total")
     totalExecsColor := csvStats["total_executions"] >= 50 ? "cGreen" : (csvStats["total_executions"] >= 10 ? "cOrange" : "cRed")
     totalExecsDisplay.SetFont("s12 Bold", totalExecsColor)
+    currentY += sectionSpacing
     
     ; === EXECUTION BREAKDOWN ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y140 w400 h25", "📊 EXECUTION BREAKDOWN")
-    statsGui.SetFont("s10")
+    statsGui.SetFont("s13 Bold")
+    statsGui.Add("Text", "x" . marginX . " y" . currentY . " w500 h30", "📊 EXECUTION BREAKDOWN")
+    statsGui.SetFont("s11")
+    currentY += 35
     
-    ; Two-column layout for execution types - total moved to top metrics
-    statsGui.Add("Text", "x30 y175 w130 h20", "Macro Executions:")
-    macroDisplay := statsGui.Add("Text", "x165 y175 w80 h20", csvStats["macro_executions_count"])
-    macroDisplay.SetFont("s10 Bold", "cGreen")
+    ; Two-column responsive layout for execution types
+    leftColX := marginX
+    rightColX := marginX + (guiWidth - 2 * marginX) / 2
+    labelWidth := 140
+    valueWidth := 80
     
-    statsGui.Add("Text", "x30 y205 w120 h20", "JSON Profiles:")
-    jsonDisplay := statsGui.Add("Text", "x160 y205 w80 h20", csvStats["json_profile_executions_count"])
-    jsonDisplay.SetFont("s10 Bold", "cOrange")
+    ; Left column
+    statsGui.Add("Text", "x" . leftColX . " y" . currentY . " w" . labelWidth . " h25", "Macro Executions:")
+    macroDisplay := statsGui.Add("Text", "x" . (leftColX + labelWidth) . " y" . currentY . " w" . valueWidth . " h25", csvStats["macro_executions_count"])
+    macroDisplay.SetFont("s11 Bold", "cGreen")
     
-    ; Add average execution time here (moved from top)
+    ; Right column
+    statsGui.Add("Text", "x" . rightColX . " y" . currentY . " w" . labelWidth . " h25", "Total Boxes:")
+    boxDisplay := statsGui.Add("Text", "x" . (rightColX + labelWidth) . " y" . currentY . " w" . valueWidth . " h25", csvStats["total_boxes"])
+    boxDisplay.SetFont("s11 Bold", "cTeal")
+    currentY += 30
+    
+    ; Second row
+    statsGui.Add("Text", "x" . leftColX . " y" . currentY . " w" . labelWidth . " h25", "JSON Profiles:")
+    jsonDisplay := statsGui.Add("Text", "x" . (leftColX + labelWidth) . " y" . currentY . " w" . valueWidth . " h25", csvStats["json_profile_executions_count"])
+    jsonDisplay.SetFont("s11 Bold", "cOrange")
+    
+    statsGui.Add("Text", "x" . rightColX . " y" . currentY . " w" . labelWidth . " h25", "Most Used Button:")
+    mostUsedDisplay := statsGui.Add("Text", "x" . (rightColX + labelWidth) . " y" . currentY . " w150 h25", csvStats["most_used_button"])
+    mostUsedDisplay.SetFont("s11 Bold", "cNavy")
+    currentY += 30
+    
+    ; Third row
     avgExecTimeFormatted := avgExecTime >= 1000 ? Round(avgExecTime / 1000, 2) . "s" : avgExecTime . "ms"
-    statsGui.Add("Text", "x30 y235 w120 h20", "Avg Execution:")
-    avgExecDisplay := statsGui.Add("Text", "x160 y235 w80 h20", avgExecTimeFormatted)
+    statsGui.Add("Text", "x" . leftColX . " y" . currentY . " w" . labelWidth . " h25", "Avg Execution:")
+    avgExecDisplay := statsGui.Add("Text", "x" . (leftColX + labelWidth) . " y" . currentY . " w" . valueWidth . " h25", avgExecTimeFormatted)
     avgExecTimeColor := avgExecTime <= 2000 ? "cGreen" : (avgExecTime <= 5000 ? "cOrange" : "cRed")
-    avgExecDisplay.SetFont("s10 Bold", avgExecTimeColor)
+    avgExecDisplay.SetFont("s11 Bold", avgExecTimeColor)
     
-    ; Right column - remove layer info, keep essential metrics
-    statsGui.Add("Text", "x300 y175 w130 h20", "Total Boxes:")
-    boxDisplay := statsGui.Add("Text", "x440 y175 w80 h20", csvStats["total_boxes"])
-    boxDisplay.SetFont("s10 Bold", "cTeal")
-    
-    statsGui.Add("Text", "x300 y205 w130 h20", "Most Used Button:")
-    mostUsedDisplay := statsGui.Add("Text", "x440 y205 w150 h20", csvStats["most_used_button"])
-    mostUsedDisplay.SetFont("s10 Bold", "cNavy")
-    
-    ; Average boxes per execution
-    statsGui.Add("Text", "x300 y235 w130 h20", "Avg per Execution:")
     avgBoxPerExec := csvStats["total_executions"] > 0 ? Round(csvStats["total_boxes"] / csvStats["total_executions"], 1) : 0
-    avgPerExecDisplay := statsGui.Add("Text", "x440 y235 w80 h20", avgBoxPerExec)
-    avgPerExecDisplay.SetFont("s10 Bold", "cTeal")
+    statsGui.Add("Text", "x" . rightColX . " y" . currentY . " w" . labelWidth . " h25", "Avg per Execution:")
+    avgPerExecDisplay := statsGui.Add("Text", "x" . (rightColX + labelWidth) . " y" . currentY . " w" . valueWidth . " h25", avgBoxPerExec)
+    avgPerExecDisplay.SetFont("s11 Bold", "cTeal")
+    currentY += sectionSpacing
     
     
     ; === TIME ANALYTICS ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y270 w400 h25", "⏰ TIME ANALYTICS")
-    statsGui.SetFont("s10")
+    statsGui.SetFont("s13 Bold")
+    statsGui.Add("Text", "x" . marginX . " y" . currentY . " w500 h30", "⏰ TIME ANALYTICS")
+    statsGui.SetFont("s11")
+    currentY += 35
     
     ; Application uptime
     appUptimeMs := A_TickCount - applicationStartTime
     uptimeDisplay := FormatActiveTime(appUptimeMs)
     utilizationPct := appUptimeMs > 0 ? Round((currentActiveTime / appUptimeMs) * 100, 1) : 0
     
-    statsGui.Add("Text", "x30 y330 w200 h20", "Application Uptime:")
-    statsGui.Add("Text", "x240 y330 w150 h20", uptimeDisplay)
+    ; Time analytics in two columns
+    timeLeftColX := marginX
+    timeRightColX := marginX + (guiWidth - 2 * marginX) / 2
+    timeLabelWidth := 160
+    timeValueWidth := 150
     
-    statsGui.Add("Text", "x30 y360 w200 h20", "Active Time:")
+    statsGui.Add("Text", "x" . timeLeftColX . " y" . currentY . " w" . timeLabelWidth . " h22", "Application Uptime:")
+    statsGui.Add("Text", "x" . (timeLeftColX + timeLabelWidth) . " y" . currentY . " w" . timeValueWidth . " h22", uptimeDisplay)
+    
+    statsGui.Add("Text", "x" . timeRightColX . " y" . currentY . " w" . timeLabelWidth . " h22", "Active Time:")
     activeTimeFormatted := FormatActiveTime(currentActiveTime)
-    activeTimeDisplay := statsGui.Add("Text", "x240 y360 w150 h20", activeTimeFormatted)
-    activeTimeDisplay.SetFont("s10 Bold", "cGreen")
+    activeTimeDisplay := statsGui.Add("Text", "x" . (timeRightColX + timeLabelWidth) . " y" . currentY . " w" . timeValueWidth . " h22", activeTimeFormatted)
+    activeTimeDisplay.SetFont("s11 Bold", "cGreen")
+    currentY += 25
     
-    statsGui.Add("Text", "x30 y390 w200 h20", "Total Execution Time:")
+    statsGui.Add("Text", "x" . timeLeftColX . " y" . currentY . " w" . timeLabelWidth . " h22", "Total Execution Time:")
     totalExecTimeFormatted := FormatPreciseTime(csvStats["total_execution_time"])
-    execTimeDisplay := statsGui.Add("Text", "x240 y390 w150 h20", totalExecTimeFormatted)
-    execTimeDisplay.SetFont("s10 Bold", "cBlue")
+    execTimeDisplay := statsGui.Add("Text", "x" . (timeLeftColX + timeLabelWidth) . " y" . currentY . " w" . timeValueWidth . " h22", totalExecTimeFormatted)
+    execTimeDisplay.SetFont("s11 Bold", "cBlue")
     
-    statsGui.Add("Text", "x30 y420 w200 h20", "Time Utilization:")
-    utilizationDisplay := statsGui.Add("Text", "x240 y420 w150 h20", utilizationPct . "%")
+    statsGui.Add("Text", "x" . timeRightColX . " y" . currentY . " w" . timeLabelWidth . " h22", "Time Utilization:")
+    utilizationDisplay := statsGui.Add("Text", "x" . (timeRightColX + timeLabelWidth) . " y" . currentY . " w" . timeValueWidth . " h22", utilizationPct . "%")
     utilizationColor := utilizationPct >= 70 ? "cGreen" : (utilizationPct >= 40 ? "cOrange" : "cRed")
-    utilizationDisplay.SetFont("s10 Bold", utilizationColor)
+    utilizationDisplay.SetFont("s11 Bold", utilizationColor)
+    currentY += sectionSpacing
     
     ; === PRODUCTIVITY INSIGHTS ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x420 y295 w400 h25", "🎯 PRODUCTIVITY INSIGHTS")
-    statsGui.SetFont("s10")
+    statsGui.SetFont("s12 Bold")
+    statsGui.Add("Text", "x" . marginX . " y" . currentY . " w400 h25", "🎯 PRODUCTIVITY INSIGHTS")
+    statsGui.SetFont("s11")
+    currentY += 30
     
     ; Calculate insights
     avgBoxesPerExec := csvStats["total_executions"] > 0 ? Round(csvStats["total_boxes"] / csvStats["total_executions"], 1) : 0
     sessionDuration := FormatActiveTime(currentActiveTime)
     
-    statsGui.Add("Text", "x430 y330 w180 h20", "Boxes per Execution:")
-    avgBoxDisplay := statsGui.Add("Text", "x620 y330 w80 h20", avgBoxesPerExec)
-    avgBoxDisplay.SetFont("s10 Bold", avgBoxesPerExec >= 3 ? "cGreen" : "cOrange")
+    ; Productivity insights in two columns
+    insightLeftColX := marginX + 20
+    insightRightColX := marginX + (guiWidth - 2 * marginX) / 2 + 20
+    insightLabelWidth := 160
+    insightValueWidth := 100
     
-    statsGui.Add("Text", "x430 y360 w180 h20", "Session Duration:")
-    statsGui.Add("Text", "x620 y360 w150 h20", sessionDuration)
+    statsGui.Add("Text", "x" . insightLeftColX . " y" . currentY . " w" . insightLabelWidth . " h22", "Boxes per Execution:")
+    avgBoxDisplay := statsGui.Add("Text", "x" . (insightLeftColX + insightLabelWidth) . " y" . currentY . " w" . insightValueWidth . " h22", avgBoxesPerExec)
+    avgBoxDisplay.SetFont("s11 Bold", avgBoxesPerExec >= 3 ? "cGreen" : "cOrange")
     
     ; Efficiency rating
     efficiencyScore := Round((boxesPerHour * 0.4) + (execsPerHour * 0.3) + (utilizationPct * 0.3), 0)
-    statsGui.Add("Text", "x430 y390 w180 h20", "Efficiency Score:")
-    efficiencyDisplay := statsGui.Add("Text", "x620 y390 w80 h20", efficiencyScore . "%")
+    statsGui.Add("Text", "x" . insightRightColX . " y" . currentY . " w" . insightLabelWidth . " h22", "Efficiency Score:")
+    efficiencyDisplay := statsGui.Add("Text", "x" . (insightRightColX + insightLabelWidth) . " y" . currentY . " w" . insightValueWidth . " h22", efficiencyScore . "%")
     efficiencyColor := efficiencyScore >= 70 ? "cGreen" : (efficiencyScore >= 50 ? "cOrange" : "cRed")
-    efficiencyDisplay.SetFont("s10 Bold", efficiencyColor)
+    efficiencyDisplay.SetFont("s11 Bold", efficiencyColor)
+    currentY += 25
+    
+    statsGui.Add("Text", "x" . insightLeftColX . " y" . currentY . " w" . insightLabelWidth . " h22", "Session Duration:")
+    statsGui.Add("Text", "x" . (insightLeftColX + insightLabelWidth) . " y" . currentY . " w" . insightValueWidth . " h22", sessionDuration)
+    currentY += sectionSpacing
     
     ; === DEGRADATION BREAKDOWN ===
-    statsGui.SetFont("s11 Bold")
-    statsGui.Add("Text", "x20 y455 w400 h25", "🎯 DEGRADATION BREAKDOWN (9 TYPES)")
+    statsGui.SetFont("s12 Bold")
+    statsGui.Add("Text", "x" . marginX . " y" . currentY . " w500 h25", "🎯 DEGRADATION BREAKDOWN (9 TYPES)")
     statsGui.SetFont("s10")
+    currentY += 35
     
     ; Get degradation stats from CSV
     degradationStats := csvStats.Has("degradation_breakdown") ? csvStats["degradation_breakdown"] : Map()
@@ -3704,49 +4018,53 @@ ShowStats() {
         "smudge", "Smudge",
         "glare", "Glare", 
         "splashes", "Splashes",
-        "partial_blockage", "Partial Block",
-        "full_blockage", "Full Block",
-        "light_flare", "Light Flare",
+        "partial_blockage", "Partial",
+        "full_blockage", "Full",
+        "light_flare", "Flare",
         "rain", "Rain",
         "haze", "Haze", 
         "snow", "Snow"
     )
     
-    ; First row: first 5 degradation types with better spacing
+    ; Calculate responsive column width for degradation types
+    degColWidth := (guiWidth - 2 * marginX) / 5  ; 5 columns to fit better
+    degLabelWidth := degColWidth - 45
+    degValueWidth := 35
+    
+    ; First row: first 5 degradation types with responsive spacing
     topRowTypes := ["smudge", "glare", "splashes", "partial_blockage", "full_blockage"]
-    xPos := 30
-    for degType in topRowTypes {
+    for i, degType in topRowTypes {
         count := degradationStats.Has(degType) ? degradationStats[degType] : 0
         displayColor := degradationDisplayColors.Has(degType) ? degradationDisplayColors[degType] : "cBlue"
         displayName := degradationDisplayNames.Has(degType) ? degradationDisplayNames[degType] : StrTitle(degType)
         
-        statsGui.Add("Text", "x" . xPos . " y490 w100 h20", displayName . ":")
-        countDisplay := statsGui.Add("Text", "x" . (xPos + 105) . " y490 w35 h20", count)
+        xPos := marginX + ((i - 1) * degColWidth)
+        statsGui.Add("Text", "x" . xPos . " y" . currentY . " w" . degLabelWidth . " h20", displayName . ":")
+        countDisplay := statsGui.Add("Text", "x" . (xPos + degLabelWidth + 5) . " y" . currentY . " w" . degValueWidth . " h20", count)
         countDisplay.SetFont("s10 Bold", displayColor)
-        
-        xPos += 155
     }
+    currentY += 25
     
-    ; Second row: remaining 4 degradation types with better spacing  
+    ; Second row: remaining 4 degradation types plus clear
     bottomRowTypes := ["light_flare", "rain", "haze", "snow"]
-    xPos := 30
-    for degType in bottomRowTypes {
+    for i, degType in bottomRowTypes {
         count := degradationStats.Has(degType) ? degradationStats[degType] : 0
         displayColor := degradationDisplayColors.Has(degType) ? degradationDisplayColors[degType] : "cBlue"
         displayName := degradationDisplayNames.Has(degType) ? degradationDisplayNames[degType] : StrTitle(degType)
         
-        statsGui.Add("Text", "x" . xPos . " y520 w100 h20", displayName . ":")
-        countDisplay := statsGui.Add("Text", "x" . (xPos + 105) . " y520 w35 h20", count)
+        xPos := marginX + ((i - 1) * degColWidth)
+        statsGui.Add("Text", "x" . xPos . " y" . currentY . " w" . degLabelWidth . " h20", displayName . ":")
+        countDisplay := statsGui.Add("Text", "x" . (xPos + degLabelWidth + 5) . " y" . currentY . " w" . degValueWidth . " h20", count)
         countDisplay.SetFont("s10 Bold", displayColor)
-        
-        xPos += 155
     }
     
-    ; Add clear degradation count with improved spacing and display name
+    ; Add clear degradation count in the 5th column of second row
     clearDegradCount := csvStats.Has("clear_degradation_count") ? csvStats["clear_degradation_count"] : 0
-    statsGui.Add("Text", "x650 y520 w60 h20", "Clear:")
-    clearDegradDisplay := statsGui.Add("Text", "x715 y520 w35 h20", clearDegradCount)
+    xPos := marginX + (4 * degColWidth)
+    statsGui.Add("Text", "x" . xPos . " y" . currentY . " w" . degLabelWidth . " h20", "Clear:")
+    clearDegradDisplay := statsGui.Add("Text", "x" . (xPos + degLabelWidth + 5) . " y" . currentY . " w" . degValueWidth . " h20", clearDegradCount)
     clearDegradDisplay.SetFont("s10 Bold", "cBlue")
+    currentY += sectionSpacing
     
     ; All 9 proper degradation types are now displayed above with clear executions
     
@@ -3839,8 +4157,8 @@ ShowStats() {
     btnRefresh := statsGui.Add("Button", "x30 y700 w100 h35", "🔄 Refresh")
     btnRefresh.OnEvent("Click", (*) => RefreshStatsDisplay(statsGui))
     
-    btnResetDaily := statsGui.Add("Button", "x140 y700 w120 h35", "📅 Reset Daily")
-    btnResetDaily.OnEvent("Click", (*) => ResetDailyStatsDisplay(statsGui))
+    btnResetDaily := statsGui.Add("Button", "x140 y700 w120 h35", "📅 Daily Reset")
+    btnResetDaily.OnEvent("Click", (*) => ShowIntuitiveDailyResetDialog())
     
     btnResetFull := statsGui.Add("Button", "x270 y700 w120 h35", "🗑️ Reset All")
     btnResetFull.OnEvent("Click", (*) => ResetAllStatsFromDisplay(statsGui))
@@ -3848,44 +4166,204 @@ ShowStats() {
     btnExportCSV := statsGui.Add("Button", "x400 y700 w120 h35", "📊 Export CSV")
     btnExportCSV.OnEvent("Click", (*) => ExportCSVData())
     
-    btnClose := statsGui.Add("Button", "x720 y700 w100 h35", "❌ Close")
+    btnClose := statsGui.Add("Button", "x850 y810 w120 h40", "❌ Close")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
     
     ; Footer with data source
-    statsGui.SetFont("s9", "cGray")
-    statsGui.Add("Text", "x20 y755 w880 h30", "📊 Data Source: master_stats.csv • Session ID: " . sessionId . " • Professional Analytics Dashboard")
+    statsGui.SetFont("s10", "cGray")
+    statsGui.Add("Text", "x30 y860 w940 h30", "📊 Data Source: master_stats.csv • Session ID: " . sessionId . " • Professional Analytics Dashboard")
     
-    statsGui.Show("w850 h795")
+    statsGui.Show("w1000 h900")
 }
 
 
 ; Refresh stats display function
-RefreshStatsDisplay(statsGui) {
-    statsGui.Destroy()
-    ShowStats()
-}
-
 ; Reset daily stats display function
 ResetDailyStatsDisplay(statsGui) {
-    result := MsgBox("Reset daily statistics display?`n`nThis will reset timing displays and switch to session-only view (preserves all CSV data).", "Reset Daily Stats", "YesNo Icon!")
+    ; Close stats GUI and show intuitive daily reset dialog
+    statsGui.Destroy()
+    ShowIntuitiveDailyResetDialog()
+}
+
+ShowIntuitiveDailyResetDialog() {
+    ; CLEAR, USER-FRIENDLY DAILY RESET
+    
+    resetGui := Gui("+AlwaysOnTop", "📅 Daily Reset - Start Fresh Day")
+    resetGui.SetFont("s11")
+    
+    ; Clear explanation
+    resetGui.Add("Text", "x20 y20 w400 h40", "📅 DAILY RESET - START A FRESH DAY")
+        .SetFont("s14 Bold", "cBlue")
+    
+    resetGui.Add("Text", "x20 y70 w400 h60", 
+                 "This will start fresh daily tracking while preserving all your historical data.`n`n" .
+                 "✅ Resets today's timing and JSON degradation counts`n" .
+                 "✅ Keeps all your recorded macros and historical stats")
+    
+    ; Current day summary
+    currentStats := GetTodayStats()
+    resetGui.Add("Text", "x20 y140 w400 h20", "📊 Today's Progress:")
+        .SetFont("s11 Bold")
+    
+    resetGui.Add("Text", "x30 y165 w400 h60", 
+                 "• Executions: " . currentStats.executions . "`n" .
+                 "• Boxes: " . currentStats.boxes . "`n" .
+                 "• Time Active: " . currentStats.activeTime . "`n" .
+                 "• JSON Degradations: " . currentStats.jsonDegradations)
+    
+    ; Clear action buttons
+    btnReset := resetGui.Add("Button", "x30 y240 w140 h35", "📅 Start Fresh Day")
+    btnReset.SetFont("s11 Bold")
+    btnReset.OnEvent("Click", (*) => ConfirmDailyReset(resetGui))
+    
+    btnCancel := resetGui.Add("Button", "x190 y240 w100 h35", "Cancel")
+    btnCancel.OnEvent("Click", (*) => resetGui.Destroy())
+    
+    btnViewHistory := resetGui.Add("Button", "x310 y240 w110 h35", "📊 View History")
+    btnViewHistory.OnEvent("Click", (*) => ViewHistoricalStats())
+    
+    resetGui.Show("w440 h295")
+}
+
+ConfirmDailyReset(parentGui) {
+    parentGui.Destroy()
+    
+    ; Simple confirmation
+    result := MsgBox("Start a fresh daily session?`n`nYour historical data will be preserved.", "Confirm Daily Reset", "YesNo Icon!")
     
     if (result = "Yes") {
-        global applicationStartTime, totalActiveTime, lastActiveTime, sessionId, dailyResetActive, clearDegradationCount
+        PerformIntuitiveDailyReset()
+    }
+}
+
+PerformIntuitiveDailyReset() {
+    global applicationStartTime, totalActiveTime, lastActiveTime, sessionId, dailyResetActive
+    
+    try {
+        ; Mark day boundary in CSV
+        MarkDayBoundary()
         
-        ; Reset timing for display purposes only
+        ; Reset daily tracking
         applicationStartTime := A_TickCount
         totalActiveTime := 0
         lastActiveTime := A_TickCount
-        clearDegradationCount := 0
-        
-        ; Generate new session ID for daily reset tracking
         dailyResetActive := true
-        sessionId := "sess_" . FormatTime(, "yyyyMMdd_HHmmss")
         
-        ; Refresh display to show session-only stats
-        RefreshStatsDisplay(statsGui)
+        ; Create new session ID
+        sessionId := "day_" . FormatTime(, "yyyyMMdd_HHmmss")
         
-        UpdateStatus("📅 Daily stats display reset - Now showing session-only view")
+        ; Success feedback
+        UpdateStatus("📅 Fresh daily session started - Previous data preserved")
+        
+        ; Show today's fresh stats
+        ShowPythonStats()  ; Will automatically show "today" filter
+        
+    } catch Error as e {
+        MsgBox("Daily reset failed: " . e.Message, "Error", "Icon!")
+    }
+}
+
+; Helper function to get today's stats for display
+GetTodayStats() {
+    ; Read today's data from CSV for summary display
+    return {
+        executions: GetTodayExecutionCount(),
+        boxes: GetTodayBoxCount(), 
+        activeTime: FormatActiveTime(GetTodayActiveTime()),
+        jsonDegradations: GetTodayJSONDegradationCount()
+    }
+}
+
+GetTodayExecutionCount() {
+    global masterStatsCSV, sessionId
+    count := 0
+    try {
+        if (FileExist(masterStatsCSV)) {
+            content := FileRead(masterStatsCSV, "UTF-8")
+            lines := StrSplit(content, "`n")
+            today := FormatTime(, "yyyy-MM-dd")
+            for i, line in lines {
+                if (i = 1 || Trim(line) = "") {
+                    continue
+                }
+                cols := StrSplit(line, ",")
+                if (cols.Length >= 1 && InStr(cols[1], today)) {
+                    count++
+                }
+            }
+        }
+    } catch {
+        ; Fallback to 0
+    }
+    return count
+}
+
+GetTodayBoxCount() {
+    global masterStatsCSV
+    count := 0
+    try {
+        if (FileExist(masterStatsCSV)) {
+            content := FileRead(masterStatsCSV, "UTF-8")
+            lines := StrSplit(content, "`n")
+            today := FormatTime(, "yyyy-MM-dd")
+            for i, line in lines {
+                if (i = 1 || Trim(line) = "") {
+                    continue
+                }
+                cols := StrSplit(line, ",")
+                if (cols.Length >= 7 && InStr(cols[1], today) && IsNumber(cols[7])) {
+                    count += Integer(cols[7])
+                }
+            }
+        }
+    } catch {
+        ; Fallback to 0
+    }
+    return count
+}
+
+GetTodayActiveTime() {
+    global totalActiveTime, breakMode, lastActiveTime
+    return breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
+}
+
+GetTodayJSONDegradationCount() {
+    global masterStatsCSV
+    count := 0
+    try {
+        if (FileExist(masterStatsCSV)) {
+            content := FileRead(masterStatsCSV, "UTF-8")
+            lines := StrSplit(content, "`n")
+            today := FormatTime(, "yyyy-MM-dd")
+            for i, line in lines {
+                if (i = 1 || Trim(line) = "") {
+                    continue
+                }
+                cols := StrSplit(line, ",")
+                if (cols.Length >= 4 && InStr(cols[1], today) && cols[4] = "json_profile") {
+                    count++
+                }
+            }
+        }
+    } catch {
+        ; Fallback to 0
+    }
+    return count
+}
+
+ViewHistoricalStats() {
+    ; Launch Python dashboard with all-time view
+    ShowPythonStats()
+}
+
+MarkDayBoundary() {
+    global masterStatsCSV, sessionId
+    try {
+        ; Add a boundary marker to CSV for day separation
+        boundaryData := FormatTime(, "yyyy-MM-dd HH:mm:ss") . "," . sessionId . "," . A_UserName . ",day_boundary,DAY_BOUNDARY,0,0,0,none,none,none,0,false`n"
+        FileAppend(boundaryData, masterStatsCSV, "UTF-8")
+    } catch {
+        ; Silent fail - not critical
     }
 }
 
@@ -4025,264 +4503,479 @@ CreateTimingMetricsTabOriginal(statsGui, tabs) {
     statsGui.editTiming := editTiming
 }
 
-ShowSettings() {
-    ; Create settings dialog with tabbed interface
-    settingsGui := Gui("+Resize", "⚙️ Configuration Manager")
-    settingsGui.SetFont("s10")
+; STANDARD MENU DIMENSIONS (both config and stats)
+global standardMenuWidth := 900
+global standardMenuHeight := 650
+
+CreateStandardMenuBase(title, icon := "⚙️") {
+    ; Standard menu foundation for consistency
+    gui := Gui("+Resize", icon . " " . title)
+    gui.SetFont("s11")
     
-    ; Header
-    settingsGui.Add("Text", "x20 y20 w460 h30 Center", "CONFIGURATION MANAGEMENT")
-    settingsGui.SetFont("s12 Bold")
+    ; Standard header
+    gui.Add("Text", "x20 y15 w860 h30 Center", icon . " " . StrUpper(title))
+        .SetFont("s14 Bold", "cNavy")
     
-    ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h500", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
+    ; Standard content area
+    contentY := 55
+    contentHeight := standardMenuHeight - 100  ; Leave space for footer
     
-    ; TAB 1: Configuration Management
+    return {gui: gui, contentY: contentY, contentHeight: contentHeight}
+}
+
+ShowConfigStandardSize() {
+    ; CONFIG MENU - Standard size with efficient layout
+    menuBase := CreateStandardMenuBase("MACROMASTER CONFIGURATION")
+    configGui := menuBase.gui
+    
+    ; Efficient tab layout
+    tabs := configGui.Add("Tab3", "x20 y" . menuBase.contentY . " w860 h" . menuBase.contentHeight, 
+                          ["🎮 Hotkeys", "🎯 Canvas & Performance"])
+    
+    ; TAB 1: Compact hotkey interface
     tabs.UseTab(1)
+    CreateEfficientHotkeyInterface(configGui, menuBase.contentY + 35)
     
-    ; Import/Export section
-    settingsGui.SetFont("s9")
-    settingsGui.Add("Text", "x40 y95 w400 h20", "📦 Import & Export:")
-    
-    btnExport := settingsGui.Add("Button", "x40 y120 w120 h30", "📤 Export Config")
-    btnExport.OnEvent("Click", (*) => ExportConfiguration())
-    
-    btnImport := settingsGui.Add("Button", "x170 y120 w120 h30", "📥 Import Config")
-    btnImport.OnEvent("Click", (*) => ImportConfiguration())
-    
-    btnCreatePack := settingsGui.Add("Button", "x300 y120 w120 h30", "📦 Create Pack")
-    btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
-    
-    ; Quick save/load slots
-    settingsGui.Add("Text", "x40 y165 w400 h20", "🎛️ Quick Save Slots:")
-    
-    ; Slot 1
-    btnSaveSlot1 := settingsGui.Add("Button", "x40 y190 w80 h25", "Save Slot 1")
-    btnSaveSlot1.OnEvent("Click", (*) => SaveToSlot(1))
-    
-    btnLoadSlot1 := settingsGui.Add("Button", "x125 y190 w80 h25", "Load Slot 1")
-    btnLoadSlot1.OnEvent("Click", (*) => LoadFromSlot(1))
-    
-    ; Slot 2
-    btnSaveSlot2 := settingsGui.Add("Button", "x220 y190 w80 h25", "Save Slot 2")
-    btnSaveSlot2.OnEvent("Click", (*) => SaveToSlot(2))
-    
-    btnLoadSlot2 := settingsGui.Add("Button", "x305 y190 w80 h25", "Load Slot 2")
-    btnLoadSlot2.OnEvent("Click", (*) => LoadFromSlot(2))
-    
-    ; Slot 3
-    btnSaveSlot3 := settingsGui.Add("Button", "x40 y220 w80 h25", "Save Slot 3")
-    btnSaveSlot3.OnEvent("Click", (*) => SaveToSlot(3))
-    
-    btnLoadSlot3 := settingsGui.Add("Button", "x125 y220 w80 h25", "Load Slot 3")
-    btnLoadSlot3.OnEvent("Click", (*) => LoadFromSlot(3))
-    
-    ; Slot 4
-    btnSaveSlot4 := settingsGui.Add("Button", "x220 y220 w80 h25", "Save Slot 4")
-    btnSaveSlot4.OnEvent("Click", (*) => SaveToSlot(4))
-    
-    btnLoadSlot4 := settingsGui.Add("Button", "x305 y220 w80 h25", "Load Slot 4")
-    btnLoadSlot4.OnEvent("Click", (*) => LoadFromSlot(4))
-    
-    ; Clear configuration
-    settingsGui.Add("Text", "x40 y260 w400 h20", "🗑️ Reset Options:")
-    
-    btnClearConfig := settingsGui.Add("Button", "x40 y285 w180 h30", "🗑️ Clear All Macros")
-    btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
-    
-    btnResetStats := settingsGui.Add("Button", "x240 y285 w180 h30", "📊 Reset Statistics")
-    btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
-    
-    ; Canvas configuration section
-    settingsGui.Add("Text", "x40 y330 w400 h20", "🖼️ Thumbnail Canvas Configuration:")
-    
-    ; Show canvas status
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    
-    wideStatusText := isWideCanvasCalibrated ? "✅ Wide Canvas Configured" : "❌ Wide Canvas Not Set"
-    narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Canvas Configured" : "❌ Narrow Canvas Not Set"
-    
-    settingsGui.Add("Text", "x60 y355 w180 h15 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
-    settingsGui.Add("Text", "x260 y355 w180 h15 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
-    
-    ; Configuration buttons
-    btnConfigureWide := settingsGui.Add("Button", "x40 y375 w180 h30", "📐 Configure Wide Canvas")
-    btnConfigureWide.OnEvent("Click", (*) => ConfigureWideCanvasFromSettings(settingsGui))
-    
-    btnConfigureNarrow := settingsGui.Add("Button", "x240 y375 w180 h30", "📐 Configure Narrow Canvas")
-    btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
-    
-    ; Help text
-    settingsGui.Add("Text", "x40 y410 w400 h25", "Set up canvas areas for picture-perfect thumbnails:`nWide = landscape/widescreen, Narrow = portrait/square")
-    
-    ; TAB 2: Execution Settings
+    ; TAB 2: Canvas and performance settings
     tabs.UseTab(2)
-    settingsGui.Add("Text", "x40 y95 w400 h20", "⚡ Macro Execution Fine-Tuning:")
+    CreateEfficientCanvasSettings(configGui, menuBase.contentY + 35)
     
-    ; Timing controls
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
+    ; Standard footer
+    CreateStandardMenuFooter(configGui, "Close")
     
-    ; Box drawing delays
-    settingsGui.Add("Text", "x40 y125 w150 h20", "Box Draw Delay (ms):")
-    boxDelayEdit := settingsGui.Add("Edit", "x190 y123 w60 h22", boxDrawDelay)
-    boxDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("boxDrawDelay", boxDelayEdit))
-    settingsGui.boxDelayEdit := boxDelayEdit  ; Store reference for preset updates
+    configGui.Show("w" . standardMenuWidth . " h" . standardMenuHeight)
+}
+
+ShowStatsStandardSize() {
+    ; STATS MENU - Standard size (Python integration button)
+    menuBase := CreateStandardMenuBase("MACROMASTER ANALYTICS", "📊")
+    statsGui := menuBase.gui
     
-    settingsGui.Add("Text", "x40 y155 w150 h20", "Mouse Click Delay (ms):")
-    clickDelayEdit := settingsGui.Add("Edit", "x190 y153 w60 h22", mouseClickDelay)
-    clickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseClickDelay", clickDelayEdit))
-    settingsGui.clickDelayEdit := clickDelayEdit
+    ; Quick stats overview (compact)
+    CreateQuickStatsOverview(statsGui, menuBase.contentY + 10)
     
-    settingsGui.Add("Text", "x40 y185 w150 h20", "Mouse Drag Delay (ms):")
-    dragDelayEdit := settingsGui.Add("Edit", "x190 y183 w60 h22", mouseDragDelay)
-    dragDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseDragDelay", dragDelayEdit))
-    settingsGui.dragDelayEdit := dragDelayEdit
+    ; Python dashboard integration
+    CreatePythonDashboardSection(statsGui, menuBase.contentY + 200)
     
-    settingsGui.Add("Text", "x40 y215 w150 h20", "Mouse Release Delay (ms):")
-    releaseDelayEdit := settingsGui.Add("Edit", "x190 y213 w60 h22", mouseReleaseDelay)
-    releaseDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseReleaseDelay", releaseDelayEdit))
-    settingsGui.releaseDelayEdit := releaseDelayEdit
+    ; Daily reset controls
+    CreateDailyResetControls(statsGui, menuBase.contentY + 350)
     
-    settingsGui.Add("Text", "x270 y125 w150 h20", "Between Box Delay (ms):")
-    betweenDelayEdit := settingsGui.Add("Edit", "x420 y123 w60 h22", betweenBoxDelay)
-    betweenDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("betweenBoxDelay", betweenDelayEdit))
-    settingsGui.betweenDelayEdit := betweenDelayEdit
+    ; Standard footer
+    CreateStandardMenuFooter(statsGui, "Close")
     
-    settingsGui.Add("Text", "x270 y155 w150 h20", "Key Press Delay (ms):")
-    keyDelayEdit := settingsGui.Add("Edit", "x420 y153 w60 h22", keyPressDelay)
-    keyDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("keyPressDelay", keyDelayEdit))
-    settingsGui.keyDelayEdit := keyDelayEdit
+    statsGui.Show("w" . standardMenuWidth . " h" . standardMenuHeight)
+}
+
+CreatePythonDashboardSection(gui, y) {
+    ; PYTHON INTEGRATION SECTION
+    gui.Add("Text", "x40 y" . y . " w800 h25", "📊 ADVANCED ANALYTICS DASHBOARD")
+        .SetFont("s12 Bold", "cNavy")
     
-    settingsGui.Add("Text", "x270 y185 w150 h20", "Focus Delay (ms):")
-    focusDelayEdit := settingsGui.Add("Edit", "x420 y183 w60 h22", focusDelay)
-    focusDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("focusDelay", focusDelayEdit))
-    settingsGui.focusDelayEdit := focusDelayEdit
+    gui.Add("Text", "x60 y" . (y + 35) . " w700 h40", 
+            "Launch professional interactive analytics with timeline filtering, degradation analysis, and performance metrics.")
     
-    ; NEW: Mouse hover delay for click accuracy
-    settingsGui.Add("Text", "x270 y215 w150 h20", "Mouse Hover (ms):")
-    hoverDelayEdit := settingsGui.Add("Edit", "x420 y213 w60 h22", mouseHoverDelay)
-    hoverDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseHoverDelay", hoverDelayEdit))
-    settingsGui.hoverDelayEdit := hoverDelayEdit
+    ; Dashboard launch buttons
+    btnToday := gui.Add("Button", "x60 y" . (y + 85) . " w150 h35", "📅 Today's Dashboard")
+    btnToday.SetFont("s10 Bold")
+    btnToday.OnEvent("Click", (*) => LaunchPythonDashboard("today"))
     
-    ; Description for hover delay
-    settingsGui.Add("Text", "x40 y245 w500 h15 c0x666666", "💡 Mouse Hover: Pause time after moving to target before clicking (improves accuracy)")
+    btnAllTime := gui.Add("Button", "x230 y" . (y + 85) . " w150 h35", "📊 All-Time Dashboard")
+    btnAllTime.SetFont("s10 Bold")
+    btnAllTime.OnEvent("Click", (*) => LaunchPythonDashboard("all"))
     
-    ; Preset buttons (adjusted Y position for new hover control)
-    settingsGui.Add("Text", "x40 y275 w400 h20", "🎚️ Timing Presets:")
+    btnWeek := gui.Add("Button", "x400 y" . (y + 85) . " w150 h35", "📈 Weekly Analysis")
+    btnWeek.SetFont("s10 Bold")
+    btnWeek.OnEvent("Click", (*) => LaunchPythonDashboard("week"))
+}
+
+LaunchPythonDashboard(filterMode) {
+    global masterStatsCSV
     
-    btnFast := settingsGui.Add("Button", "x40 y300 w90 h25", "⚡ Fast")
-    btnFast.OnEvent("Click", (*) => ApplyTimingPreset("fast", settingsGui))
+    ; Python command
+    pythonScript := A_ScriptDir . "\stats_dashboard.py"
+    pythonCmd := 'python "' . pythonScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
     
-    btnDefault := settingsGui.Add("Button", "x140 y300 w90 h25", "🎯 Default")
-    btnDefault.OnEvent("Click", (*) => ApplyTimingPreset("default", settingsGui))
+    try {
+        UpdateStatus("📊 Launching " . filterMode . " analytics dashboard...")
+        Run(pythonCmd, A_ScriptDir)
+        UpdateStatus("📊 " . StrTitle(filterMode) . " dashboard opened in browser")
+    } catch Error as e {
+        MsgBox("Dashboard launch failed: " . e.Message, "Error", "Icon!")
+    }
+}
+
+CreateQuickStatsOverview(gui, y) {
+    ; Compact stats overview for the new menu
+    gui.Add("Text", "x40 y" . y . " w800 h25", "⚡ QUICK OVERVIEW")
+        .SetFont("s12 Bold", "cNavy")
     
-    btnSafe := settingsGui.Add("Button", "x240 y300 w90 h25", "🛡️ Safe")
-    btnSafe.OnEvent("Click", (*) => ApplyTimingPreset("safe", settingsGui))
+    ; Get basic stats
+    try {
+        stats := ReadStatsFromCSV(false)
+        gui.Add("Text", "x60 y" . (y + 35) . " w200 h20", "Total Executions: " . stats["total_executions"])
+        gui.Add("Text", "x280 y" . (y + 35) . " w200 h20", "Total Boxes: " . stats["total_boxes"])
+        gui.Add("Text", "x500 y" . (y + 35) . " w200 h20", "Macro Count: " . stats["macro_executions_count"])
+    } catch {
+        gui.Add("Text", "x60 y" . (y + 35) . " w600 h20", "Stats loading...")
+    }
+}
+
+CreateDailyResetControls(gui, y) {
+    ; Daily reset section
+    gui.Add("Text", "x40 y" . y . " w800 h25", "📅 SESSION MANAGEMENT")
+        .SetFont("s12 Bold", "cNavy")
     
-    btnSlow := settingsGui.Add("Button", "x340 y300 w90 h25", "🐌 Slow")
-    btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
+    btnDailyReset := gui.Add("Button", "x60 y" . (y + 35) . " w150 h35", "📅 Daily Reset")
+    btnDailyReset.OnEvent("Click", (*) => ShowIntuitiveDailyResetDialog())
     
-    ; Instructions
-    settingsGui.Add("Text", "x40 y320 w400 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
+    btnExport := gui.Add("Button", "x230 y" . (y + 35) . " w150 h35", "📄 Export Data")
+    btnExport.OnEvent("Click", (*) => ExportCSVData())
+}
+
+CreateStandardMenuFooter(gui, closeText := "Close") {
+    ; Standard footer for all menus
+    btnClose := gui.Add("Button", "x750 y580 w120 h40", "❌ " . closeText)
+    btnClose.OnEvent("Click", (*) => gui.Destroy())
+}
+
+CreateEfficientHotkeyInterface(gui, y) {
+    ; Compact hotkey configuration
+    gui.Add("Text", "x40 y" . y . " w400 h20", "Main Hotkeys:")
     
-    ; TAB 3: Macro Packs
-    tabs.UseTab(3)
-    settingsGui.Add("Text", "x40 y95 w400 h20", "🎁 Macro Pack Management:")
-    
-    btnBrowsePacks := settingsGui.Add("Button", "x40 y120 w180 h30", "📚 Browse Local Packs")
-    btnBrowsePacks.OnEvent("Click", (*) => BrowseMacroPacks())
-    
-    btnImportPack := settingsGui.Add("Button", "x240 y120 w180 h30", "📥 Import New Pack")
-    btnImportPack.OnEvent("Click", (*) => ImportNewMacroPack())
-    
-    ; Pack sharing info
-    settingsGui.Add("Text", "x40 y165 w400 h80", "📝 Macro Packs are specialized sharing packages that contain:• Selected layers with macros• Degradation tracking data• Optional thumbnails and statistics• Author information and descriptions")
-    
-    settingsGui.Add("Text", "x40 y255 w400 h40", "🌐 Share packs with other users by sending the ZIP files. Recipients can import them via 'Import New Pack' to add macros to their collection.")
-    
-    ; TAB 4: Hotkey Profiles
-    tabs.UseTab(4)
-    global hotkeyProfileActive, wasdHotkeyMap
-    
-    settingsGui.Add("Text", "x40 y95 w400 h20", "🎹 Enhanced WASD Hotkey Profile System:")
-    
-    ; Profile status with better visual indication
-    statusIcon := hotkeyProfileActive ? "🟢" : "🔴"
-    statusText := hotkeyProfileActive ? "ACTIVE - CapsLock + 1 2 3 q w e a s d z x c enabled" : "INACTIVE - Numpad mode active"
-    settingsGui.Add("Text", "x40 y120 w20 h20", statusIcon)
-    settingsGui.Add("Text", "x65 y120 w275 h20", "Status: " . statusText)
-    
-    btnToggleProfile := settingsGui.Add("Button", "x350 y118 w100 h30", hotkeyProfileActive ? "🔴 Disable" : "🟢 Enable")
-    btnToggleProfile.OnEvent("Click", (*) => ToggleHotkeyProfileInSettings(btnToggleProfile, settingsGui))
-    
-    ; Collapsed WASD mapping section
-    settingsGui.Add("Text", "x40 y155 w300 h20", "🔧 WASD Mappings:")
-    
-    ; Quick access buttons in compact layout
-    btnConfigureWASD := settingsGui.Add("Button", "x340 y153 w100 h30", "⚙️ Configure")
-    btnConfigureWASD.OnEvent("Click", (*) => ShowWASDMappingDialog())
-    
-    ; Show current mapping status in one line
-    mappingStatus := hotkeyProfileActive ? "CapsLock + 1 2 3 q w e a s d z x c → Numpad (Active)" : "Standard numpad only"
-    settingsGui.Add("Text", "x40 y180 w400 h15 c0x666666", "Status: " . mappingStatus)
-    
-    ; Main Utility Hotkeys Section
-    y := 210  ; Fixed position after collapsed WASD section
-    settingsGui.Add("Text", "x40 y" . y . " w400 h20", "🎮 Main Utility Hotkeys:")
-    y += 25
-    
-    ; Record Toggle
-    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Record Toggle:")
-    editRecordToggle := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyRecordToggle)
-    y += 25
-    
-    ; Submit/Direct Clear keys
-    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Submit:")
-    editSubmit := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeySubmit)
-    settingsGui.Add("Text", "x255 y" . y . " w80 h20", "Direct Clear:")
-    editDirectClear := settingsGui.Add("Edit", "x340 y" . (y-2) . " w60 h20", hotkeyDirectClear)
-    y += 25
-    
-    ; Stats key (on separate row)
-    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Stats:")
-    editStats := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyStats)
-    y += 25
-    
-    ; Break Mode/Settings keys
-    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Break Mode:")
-    editBreakMode := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyBreakMode)
-    settingsGui.Add("Text", "x255 y" . y . " w60 h20", "Settings:")
-    editSettings := settingsGui.Add("Edit", "x320 y" . (y-2) . " w80 h20", hotkeySettings)
-    y += 25
-    
-    ; Layer Navigation
-    settingsGui.Add("Text", "x40 y" . y . " w120 h20", "Layer Prev:")
-    editLayerPrev := settingsGui.Add("Edit", "x165 y" . (y-2) . " w80 h20", hotkeyLayerPrev)
-    settingsGui.Add("Text", "x255 y" . y . " w60 h20", "Layer Next:")
-    editLayerNext := settingsGui.Add("Edit", "x320 y" . (y-2) . " w80 h20", hotkeyLayerNext)
+    ; Essential hotkeys only
     y += 30
+    gui.Add("Text", "x50 y" . y . " w100 h20", "Record:")
+    gui.Add("Edit", "x160 y" . (y-2) . " w80 h20", hotkeyRecordToggle)
     
-    ; Apply/Reset buttons for hotkeys
-    btnApplyHotkeys := settingsGui.Add("Button", "x40 y" . y . " w90 h25", "🎮 Apply Keys")
-    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui))
+    gui.Add("Text", "x260 y" . y . " w100 h20", "Stats:")
+    gui.Add("Edit", "x360 y" . (y-2) . " w80 h20", hotkeyStats)
     
-    btnResetHotkeys := settingsGui.Add("Button", "x140 y" . y . " w90 h25", "🔄 Reset Keys")
-    btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
+    y += 30
+    gui.Add("Text", "x50 y" . y . " w100 h20", "Settings:")
+    gui.Add("Edit", "x160 y" . (y-2) . " w80 h20", hotkeySettings)
     
-    ; Enhanced Instructions
-    y += 40
-    settingsGui.Add("Text", "x40 y" . y . " w400 h15 c0x0066CC", "📋 Quick Instructions:")
-    y += 20
-    settingsGui.Add("Text", "x40 y" . y . " w400 h75", "• 🟢 Enable profile to use CapsLock + 1 2 3 q w e a s d z x c combinations`n• 🏷️ Enable standalone WASD labels for direct key usage (no CapsLock)`n• 🔧 Customize mappings via Configure button → unique numpad assignments required`n• 💾 Save to persist changes permanently`n• 🧪 Apply to test temporarily without saving`n• ⌨️ Use Ctrl+H to toggle profile quickly")
-    y += 80
-    settingsGui.Add("Text", "x40 y" . y . " w400 h15 c0x666666", "ℹ️ Both modes can be active simultaneously. Access settings via Ctrl+K anytime.")
+    gui.Add("Text", "x260 y" . y . " w100 h20", "Break Mode:")
+    gui.Add("Edit", "x360 y" . (y-2) . " w80 h20", hotkeyBreakMode)
+}
+
+CreateEfficientCanvasSettings(gui, y) {
+    ; Canvas and performance settings
+    gui.Add("Text", "x40 y" . y . " w400 h20", "Canvas & Performance:")
     
-    ; Close button
-    btnClose := settingsGui.Add("Button", "x420 y570 w60 h25", "Close")
-    btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
+    y += 30
+    gui.Add("Text", "x50 y" . y . " w200 h20", "Canvas Type: " . canvasType)
     
-    settingsGui.Show("w500 h620")
+    y += 25
+    btnToggleCanvas := gui.Add("Button", "x50 y" . y . " w120 h30", "Toggle Canvas")
+    btnToggleCanvas.OnEvent("Click", (*) => ToggleCanvasType())
+}
+
+ToggleCanvasType() {
+    global canvasType, canvasWidth, canvasHeight
+    
+    ; Toggle between canvas types
+    if (canvasType = "wide") {
+        canvasType := "narrow"
+    } else {
+        canvasType := "wide"
+    }
+    
+    ; Update canvas dimensions
+    UpdateCanvasDimensions()
+    SaveConfig()
+    UpdateStatus("🖼️ Canvas type: " . canvasType)
+}
+
+UpdateCanvasDimensions() {
+    global canvasType, canvasWidth, canvasHeight
+    
+    ; Set canvas dimensions based on type
+    if (canvasType = "wide") {
+        canvasWidth := 1920
+        canvasHeight := 1080
+    } else {
+        canvasWidth := 1080
+        canvasHeight := 1920
+    }
+}
+
+; Legacy function for backward compatibility
+ShowSettings() {
+    ShowConfigStandardSize()
+}
+
+CreateCondensedWASDTable(gui, startY, width) {
+    ; ULTRA-CONDENSED WASD TABLE - MAXIMUM SPACE EFFICIENCY
+    gui.Add("Text", "x40 y" . startY . " w300 h25", "🔧 WASD → Numpad Mapping")
+        .SetFont("s12 Bold", "cNavy")
+    
+    tableY := startY + 35
+    
+    ; Compact table headers
+    gui.Add("Text", "x60 y" . tableY . " w60 h20", "Key")
+    gui.Add("Text", "x130 y" . tableY . " w60 h20", "→ Numpad")
+    gui.Add("Text", "x210 y" . tableY . " w60 h20", "Key") 
+    gui.Add("Text", "x280 y" . tableY . " w60 h20", "→ Numpad")
+    gui.Add("Text", "x360 y" . tableY . " w60 h20", "Key")
+    gui.Add("Text", "x430 y" . tableY . " w60 h20", "→ Numpad")
+    
+    ; Line separator
+    gui.Add("Text", "x50 y" . (tableY + 25) . " w420 h1 +Background0x808080")
+    
+    ; 3-COLUMN ULTRA-COMPACT LAYOUT (4 rows instead of 12)
+    keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
+    numpadOptions := ["N0", "N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8", "N9", "N.", "N*"]
+    
+    gui.hotkeyDropdowns := Map()
+    
+    rowY := tableY + 35
+    for i, key in keys {
+        col := Mod(i-1, 3)  ; 0, 1, 2
+        row := Floor((i-1) / 3)  ; 0, 1, 2, 3
+        
+        if (col = 0) {
+            ; Column 1
+            keyX := 60
+            dropX := 130
+        } else if (col = 1) {
+            ; Column 2  
+            keyX := 210
+            dropX := 280
+        } else {
+            ; Column 3
+            keyX := 360
+            dropX := 430
+        }
+        
+        y := rowY + (row * 28)
+        
+        ; Compact key display
+        gui.Add("Text", "x" . keyX . " y" . y . " w40 h22 Center +Border", StrUpper(key))
+        
+        ; Ultra-compact dropdown
+        dropdown := gui.Add("DropDownList", "x" . dropX . " y" . y . " w55 h22 Choose1", numpadOptions)
+        
+        ; Set current selection
+        if (wasdHotkeyMap.Has(key)) {
+            currentMapping := wasdHotkeyMap[key]
+            fullNumpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+            for j, option in fullNumpadOptions {
+                if (option = currentMapping) {
+                    dropdown.Choose(j)
+                    break
+                }
+            }
+        }
+        
+        gui.hotkeyDropdowns[key] := dropdown
+    }
+    
+    ; Compact control buttons
+    buttonY := rowY + 120
+    btnSave := gui.Add("Button", "x60 y" . buttonY . " w70 h28", "💾 Save")
+    btnSave.SetFont("s9 Bold")
+    btnSave.OnEvent("Click", (*) => SaveCondensedWASDMappings(gui))
+    
+    btnReset := gui.Add("Button", "x140 y" . buttonY . " w70 h28", "🔄 Reset")
+    btnReset.SetFont("s9 Bold") 
+    btnReset.OnEvent("Click", (*) => ResetCondensedWASDMappings(gui))
+    
+    btnTest := gui.Add("Button", "x220 y" . buttonY . " w70 h28", "🧪 Test")
+    btnTest.SetFont("s9 Bold")
+    btnTest.OnEvent("Click", (*) => TestWASDMappings(gui))
+    
+    return buttonY + 40
+}
+
+
+CreateConfigControlBar(gui, y, width) {
+    ; HORIZONTAL CONTROL BAR
+    btnHelp := gui.Add("Button", "x40 y" . y . " w80 h30", "❓ Help")
+    btnHelp.SetFont("s10")
+    btnHelp.OnEvent("Click", (*) => ShowHotkeyHelp())
+    
+    btnClose := gui.Add("Button", "x" . (width - 120) . " y" . y . " w80 h30", "✖️ Close")
+    btnClose.SetFont("s10 Bold")
+    btnClose.OnEvent("Click", (*) => gui.Destroy())
+}
+
+; ===== HELPER FUNCTION HANDLERS =====
+
+
+ShowHotkeyHelp() {
+    helpText := "
+    (
+    🎮 HOTKEY CONFIGURATION HELP
+    
+    Essential Hotkeys:
+    • Record Toggle: Start/stop macro recording
+    • Submit Image: Confirm and submit current annotations  
+    • Direct Clear: Clear all bounding boxes immediately
+    • Statistics: Show usage statistics and performance data
+    • Break Mode: Toggle work break timer
+    • Settings: Open this configuration dialog
+    
+    WASD Profile System:
+    • Enable/Disable: Toggle CapsLock + WASD combinations
+    • Mapping Table: Customize which WASD keys map to numpad
+    • Preview: See current key assignments at a glance
+    
+    Advanced Features:
+    • Layer Navigation: Switch between macro layers
+    • Custom Mappings: Create unique key combinations
+    • Profile Management: Save/load different configurations
+    
+    💡 Tips:
+    • Use CapsLock + key for WASD profile hotkeys
+    • All changes auto-save when applied
+    • Use Ctrl+H to quickly toggle WASD profile
+    • Test mappings before saving permanently
+    )"
+    
+    MsgBox(helpText, "⌨️ Hotkey Configuration Help", "Icon!")
+}
+
+ToggleProfileInSettings(btnToggle, settingsGui) {
+    ToggleHotkeyProfileInSettings(btnToggle, settingsGui)
+}
+
+SaveCondensedWASDMappings(gui) {
+    global wasdHotkeyMap, hotkeyProfileActive
+    
+    try {
+        ; Get mappings from dropdowns with validation
+        newMappings := Map()
+        keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
+        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+        usedMappings := Map()
+        
+        ; Collect all mappings and check for duplicates
+        for key in keys {
+            if (gui.hotkeyDropdowns.Has(key)) {
+                dropdown := gui.hotkeyDropdowns[key]
+                selectedIndex := dropdown.Value
+                selectedMapping := numpadOptions[selectedIndex]
+                
+                ; Check for duplicate mappings
+                if (usedMappings.Has(selectedMapping)) {
+                    MsgBox("Duplicate mapping detected! Key '" . StrUpper(key) . "' and '" . StrUpper(usedMappings[selectedMapping]) . "' both map to " . selectedMapping . ". Please choose unique mappings.", "Mapping Error", "Icon!")
+                    return
+                }
+                
+                newMappings[key] := selectedMapping
+                usedMappings[selectedMapping] := key
+            }
+        }
+        
+        ; Disable current WASD hotkeys if profile is active
+        wasActive := hotkeyProfileActive
+        if (wasActive) {
+            hotkeyProfileActive := false
+            SetupWASDHotkeys()  ; This will disable current hotkeys
+        }
+        
+        ; Update global mapping
+        wasdHotkeyMap := newMappings
+        SaveWASDMappingsToFile()
+        
+        if (wasActive) {
+            hotkeyProfileActive := true
+            SetupWASDHotkeys()  ; Re-enable with new mappings
+        }
+        
+        UpdateStatus("💾 WASD mappings saved successfully!")
+        UpdateButtonLabelsWithWASD()  ; Refresh button labels
+        
+        MsgBox("✅ WASD Mappings Saved Successfully!`n`n" . keys.Length . " key combinations updated.`nUse Ctrl+H to toggle the profile.", "Settings Saved", "Icon!")
+        
+    } catch Error as e {
+        MsgBox("Error saving WASD mappings: " . e.Message, "Error", "Icon!")
+    }
+}
+
+ResetCondensedWASDMappings(gui) {
+    ; Reset to default mappings
+    defaultMappings := Map(
+        "1", "Num7",
+        "2", "Num8", 
+        "3", "Num9",
+        "q", "Num4",
+        "w", "Num5",
+        "e", "Num6", 
+        "a", "Num1",
+        "s", "Num2",
+        "d", "Num3",
+        "z", "Num0",
+        "x", "NumDot",
+        "c", "NumMult"
+    )
+    
+    ; Update dropdowns
+    keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
+    numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+    
+    for key in keys {
+        if (gui.hotkeyDropdowns.Has(key)) {
+            dropdown := gui.hotkeyDropdowns[key]
+            defaultMapping := defaultMappings[key]
+            
+            for i, option in numpadOptions {
+                if (option = defaultMapping) {
+                    dropdown.Choose(i)
+                    break
+                }
+            }
+        }
+    }
+    
+    UpdateStatus("🔄 WASD mappings reset to defaults")
+}
+
+TestWASDMappings(gui) {
+    ; Apply mappings temporarily for testing (without saving)
+    global wasdHotkeyMap, hotkeyProfileActive
+    
+    try {
+        ; Get current mappings from dropdowns (same logic as save)
+        newMappings := Map()
+        keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
+        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+        usedMappings := Map()
+        
+        for key in keys {
+            if (gui.hotkeyDropdowns.Has(key)) {
+                dropdown := gui.hotkeyDropdowns[key]
+                selectedIndex := dropdown.Value
+                selectedMapping := numpadOptions[selectedIndex]
+                
+                if (usedMappings.Has(selectedMapping)) {
+                    MsgBox("Duplicate mapping detected! Cannot test with duplicate mappings.", "Test Error", "Icon!")
+                    return
+                }
+                
+                newMappings[key] := selectedMapping
+                usedMappings[selectedMapping] := key
+            }
+        }
+        
+        ; Store original mapping for restoration
+        originalMapping := Map()
+        for key, mapping in wasdHotkeyMap {
+            originalMapping[key] := mapping
+        }
+        
+        ; Apply new mappings temporarily
+        wasdHotkeyMap := newMappings
+        if (hotkeyProfileActive) {
+            SetupWASDHotkeys()
+        }
+        
+        UpdateStatus("🧪 Test mappings applied - try CapsLock + WASD keys")
+        MsgBox("🧪 Test Mappings Applied!`n`nTry pressing CapsLock + your WASD keys to test the new mappings.`n`nMappings will revert when you close the settings or save new ones.", "Test Mode Active", "Icon!")
+        
+    } catch Error as e {
+        MsgBox("Error testing WASD mappings: " . e.Message, "Error", "Icon!")
+    }
 }
 
 ; Enhanced hotkey profile functions for settings interface
@@ -8076,91 +8769,8 @@ SaveMetricsToFile(metrics) {
 
 ; Show comprehensive offline stats screen with daily and lifetime data
 ShowOfflineStatsScreen() {
-    global currentUsername, persistentDataFile, dailyStatsFile, offlineLogFile
-    
-    try {
-        ; Check for daily reset before showing stats
-        CheckDailyReset()
-        
-        ; Read the log files to get basic stats
-        dailyStats := GetDailyStats()
-        lifetimeStats := GetLifetimeStats()
-        
-        ; Calculate additional metrics
-        currentTime := FormatTime(, "yyyy-MM-dd HH:mm:ss")
-        nextResetTime := "Today at 6:00 PM CST"
-        
-        ; If it's past 6 PM, next reset is tomorrow
-        currentHour := Integer(FormatTime(, "H"))
-        if (currentHour >= 18) {
-            nextResetTime := "Tomorrow at 6:00 PM CST"
-        }
-        
-        ; Build comprehensive stats display
-        statsText := "📊 MACROMASTER OFFLINE STATISTICS`n"
-        statsText .= "════════════════════════════════════════`n`n"
-        
-        ; User info
-        statsText .= "👤 USER: " . currentUsername . "`n"
-        statsText .= "⏰ CURRENT TIME: " . currentTime . "`n"
-        statsText .= "🔄 NEXT DAILY RESET: " . nextResetTime . "`n`n"
-        
-        ; Daily stats section
-        statsText .= "📅 TODAY'S STATS (Resets at 6 PM CST)`n"
-        statsText .= "────────────────────────────────────────`n"
-        statsText .= "📦 Boxes Processed: " . dailyStats.totalBoxes . "`n"
-        statsText .= "⏱️  Total Time: " . FormatMillisecondsToTime(dailyStats.totalTime) . "`n"
-        statsText .= "🎯 Sessions Completed: " . dailyStats.totalSessions . "`n"
-        if (dailyStats.totalSessions > 0) {
-            avgBoxesPerSession := Round(dailyStats.totalBoxes / dailyStats.totalSessions, 1)
-            avgTimePerSession := FormatMillisecondsToTime(Round(dailyStats.totalTime / dailyStats.totalSessions))
-            statsText .= "📈 Avg Boxes/Session: " . avgBoxesPerSession . "`n"
-            statsText .= "📈 Avg Time/Session: " . avgTimePerSession . "`n"
-        }
-        statsText .= "`n"
-        
-        ; Lifetime stats section
-        statsText .= "🏆 LIFETIME STATS (Never Reset)`n"
-        statsText .= "────────────────────────────────────────`n"
-        statsText .= "📦 Total Boxes: " . lifetimeStats.totalBoxes . "`n"
-        statsText .= "⏱️  Total Time: " . FormatMillisecondsToTime(lifetimeStats.totalTime) . "`n"
-        statsText .= "🎯 Total Sessions: " . lifetimeStats.totalSessions . "`n"
-        if (lifetimeStats.totalSessions > 0) {
-            avgBoxesLifetime := Round(lifetimeStats.totalBoxes / lifetimeStats.totalSessions, 1)
-            avgTimeLifetime := FormatMillisecondsToTime(Round(lifetimeStats.totalTime / lifetimeStats.totalSessions))
-            statsText .= "📈 Avg Boxes/Session: " . avgBoxesLifetime . "`n"
-            statsText .= "📈 Avg Time/Session: " . avgTimeLifetime . "`n"
-        }
-        
-        if (lifetimeStats.totalTime > 0 && lifetimeStats.totalBoxes > 0) {
-            avgTimePerBox := Round(lifetimeStats.totalTime / lifetimeStats.totalBoxes)
-            statsText .= "⚡ Avg Time/Box: " . avgTimePerBox . " ms`n"
-        }
-        statsText .= "`n"
-        
-        ; Data persistence info
-        statsText .= "💾 DATA STORAGE INFO`n"
-        statsText .= "────────────────────────────────────────`n"
-        statsText .= "📁 Persistent Data: " . (FileExist(persistentDataFile) ? "✅ Active" : "❌ Missing") . "`n"
-        statsText .= "📅 Daily Data: " . (FileExist(dailyStatsFile) ? "✅ Active" : "❌ Missing") . "`n"
-        statsText .= "📝 Activity Log: " . (FileExist(offlineLogFile) ? "✅ Active" : "❌ Missing") . "`n`n"
-        
-        ; Footer
-        statsText .= "════════════════════════════════════════`n"
-        statsText .= "🖱️  Press F12 to refresh • ESC to close`n"
-        statsText .= "💾 All data stored locally • No internet required"
-        
-        ; Display the stats in a message box with custom options
-        result := MsgBox(statsText, "MacroMaster Offline Statistics", "OKCancel Icon!")
-        
-        if (result = "OK") {
-            ; Could add export functionality here in the future
-            UpdateStatus("📊 Stats viewed successfully")
-        }
-        
-    } catch Error as e {
-        MsgBox("Failed to display stats: " . e.Message, "Stats Error", "IconX")
-    }
+    ; Redirect to new Python stats system
+    ShowPythonStats()
 }
 
 ; Get daily stats from log file
