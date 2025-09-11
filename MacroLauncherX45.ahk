@@ -2438,29 +2438,25 @@ UpdateButtonAppearance(buttonName) {
             boxes := ExtractBoxEvents(macroEvents[layerMacroName])
             
             if (boxes.Length > 0) {
-                ; Use corporate-safe visualization system
-                vizResult := CreateCorporateSafeVisualization(macroEvents[layerMacroName], buttonSize)
+                ; Enhanced PNG creation with corporate-safe paths
+                vizFile := CreateCorporateSafeVisualizationPNG(macroEvents[layerMacroName], buttonSize)
                 
-                ; Handle different result types
-                if (vizResult && InStr(vizResult, ".png") && FileExist(vizResult)) {
+                if (vizFile && FileExist(vizFile)) {
                     ; PNG file created successfully
                     button.Visible := false
                     picture.Visible := true
                     picture.Text := ""
                     try {
-                        picture.Value := vizResult
+                        picture.Value := vizFile
                         ; Clean up old visualization file after a delay
-                        SetTimer(() => DeleteVisualizationFile(vizResult), -5000)
+                        SetTimer(() => DeleteVisualizationFile(vizFile), -5000)
                     } catch Error as e {
-                        ; Fall back to ASCII text display
-                        ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], "IMG_ERR")
+                        ; PNG creation worked but display failed - show debug info
+                        ShowMacroAsText(button, picture, macroEvents[layerMacroName], "PNG display error")
                     }
-                } else if (vizResult && InStr(vizResult, "┌")) {
-                    ; ASCII visualization returned
-                    ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], vizResult)
                 } else {
-                    ; All methods failed - fall back to ASCII
-                    ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], "VIZ_ERR")
+                    ; PNG creation failed - show diagnostic info
+                    ShowMacroAsText(button, picture, macroEvents[layerMacroName], "PNG creation blocked")
                 }
             } else {
                 ; No boxes found - fall back to text display
@@ -2721,33 +2717,128 @@ DeleteVisualizationFile(filePath) {
     }
 }
 
-; ===== CORPORATE-SAFE VISUALIZATION SYSTEM =====
-CreateCorporateSafeVisualization(macroEvents, buttonSize) {
-    global corpVisualizationMethod, corporateEnvironmentDetected
+; ===== CORPORATE-SAFE PNG VISUALIZATION SYSTEM =====
+CreateCorporateSafeVisualizationPNG(macroEvents, buttonSize) {
+    ; Enhanced PNG creation with aggressive corporate-safe path testing
+    global gdiPlusInitialized, degradationColors
     
-    if (!macroEvents || macroEvents.Length = 0) {
+    if (!gdiPlusInitialized || !macroEvents || macroEvents.Length = 0) {
         return ""
     }
     
-    ; Auto-detect corporate environment on first use
-    if (!corporateEnvironmentDetected) {
-        DetectCorporateEnvironment()
-        corporateEnvironmentDetected := true
+    ; Extract box drawing events
+    boxes := ExtractBoxEvents(macroEvents)
+    if (boxes.Length = 0) {
+        return ""
     }
     
-    ; Try methods in priority order
-    switch corpVisualizationMethod {
-        case 2:  ; HBITMAP Direct (Corporate Safe)
-            return CreateHBITMAPVisualization(macroEvents, buttonSize)
-        case 5:  ; ASCII Text (Always Works)
-            return CreateASCIIVisualization(macroEvents, buttonSize)
-        case 3:  ; Memory Stream (Corporate Safe)
-            return CreateMemoryStreamVisualization(macroEvents, buttonSize)
-        case 4:  ; Alt Paths (User Directories)
-            return CreateAltPathVisualization(macroEvents, buttonSize)
-        default: ; Traditional File Method
-            return CreateMacroVisualization(macroEvents, buttonSize)
+    ; Handle button size format
+    if (IsObject(buttonSize)) {
+        buttonWidth := buttonSize.width
+        buttonHeight := buttonSize.height
+    } else {
+        buttonWidth := buttonSize
+        buttonHeight := buttonSize
     }
+    
+    ; Create visualization bitmap
+    try {
+        bitmap := 0
+        DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+        
+        graphics := 0
+        DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+        
+        ; Clean white background
+        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFFFFFFFF)
+        
+        ; Draw macro boxes
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes)
+        
+        ; Try extensive corporate-safe path list
+        savedFile := SaveVisualizationToCorporatePaths(bitmap, buttonWidth, buttonHeight)
+        
+        ; Cleanup
+        DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+        
+        return savedFile
+        
+    } catch Error as e {
+        return ""
+    }
+}
+
+SaveVisualizationToCorporatePaths(bitmap, width, height) {
+    ; Extensive list of corporate-safe paths to try
+    timestamp := A_TickCount
+    fileName := "macro_viz_" . timestamp . ".png"
+    
+    ; Comprehensive corporate-safe path list
+    corporateSafePaths := [
+        ; User profile paths (most likely to work)
+        EnvGet("USERPROFILE") . "\" . fileName,
+        EnvGet("USERPROFILE") . "\Documents\" . fileName,
+        EnvGet("USERPROFILE") . "\Desktop\" . fileName,
+        EnvGet("USERPROFILE") . "\AppData\Local\" . fileName,
+        EnvGet("USERPROFILE") . "\AppData\Local\Temp\" . fileName,
+        
+        ; My Documents variations
+        A_MyDocuments . "\" . fileName,
+        A_MyDocuments . "\MacroMaster\" . fileName,
+        
+        ; Desktop variations
+        A_Desktop . "\" . fileName,
+        A_Desktop . "\MacroMaster\" . fileName,
+        
+        ; Script directory (if writable)
+        A_ScriptDir . "\" . fileName,
+        A_ScriptDir . "\temp\" . fileName,
+        A_ScriptDir . "\viz\" . fileName,
+        
+        ; Windows temp variations
+        A_Temp . "\" . fileName,
+        EnvGet("TMP") . "\" . fileName,
+        EnvGet("TEMP") . "\" . fileName,
+        
+        ; Program data (if accessible)
+        "C:\ProgramData\MacroMaster\" . fileName,
+        
+        ; Last resort - current directory
+        ".\" . fileName
+    ]
+    
+    ; GDI+ PNG encoder CLSID
+    clsid := Buffer(16)
+    NumPut("UInt", 0x557CF406, clsid, 0)
+    NumPut("UInt", 0x11D31A04, clsid, 4)
+    NumPut("UInt", 0x0000739A, clsid, 8)
+    NumPut("UInt", 0x2EF31EF8, clsid, 12)
+    
+    ; Try each path systematically
+    for testPath in corporateSafePaths {
+        try {
+            ; Ensure directory exists
+            parentDir := RegExReplace(testPath, "\\[^\\]*$", "")
+            if (!DirExist(parentDir)) {
+                DirCreate(parentDir)
+            }
+            
+            ; Attempt PNG creation
+            result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", testPath, "Ptr", clsid, "Ptr", 0)
+            if (result = 0 && FileExist(testPath)) {
+                ; Success! Return the working path
+                return testPath
+            }
+            
+        } catch {
+            ; This path failed, try next one
+            continue
+        }
+    }
+    
+    ; All paths failed
+    return ""
 }
 
 DetectCorporateEnvironment() {
@@ -2770,7 +2861,9 @@ DetectCorporateEnvironment() {
     ; Count corporate indicators
     corporateScore := 0
     for indicator in corporateIndicators {
-        if (indicator) corporateScore++
+        if (indicator) {
+            corporateScore++
+        }
     }
     
     ; If 2 or more indicators, assume corporate environment
