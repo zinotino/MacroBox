@@ -2438,23 +2438,29 @@ UpdateButtonAppearance(buttonName) {
             boxes := ExtractBoxEvents(macroEvents[layerMacroName])
             
             if (boxes.Length > 0) {
-                vizFile := CreateMacroVisualization(macroEvents[layerMacroName], buttonSize)
+                ; Use corporate-safe visualization system
+                vizResult := CreateCorporateSafeVisualization(macroEvents[layerMacroName], buttonSize)
                 
-                if (vizFile && FileExist(vizFile)) {
+                ; Handle different result types
+                if (vizResult && InStr(vizResult, ".png") && FileExist(vizResult)) {
+                    ; PNG file created successfully
                     button.Visible := false
                     picture.Visible := true
                     picture.Text := ""
                     try {
-                        picture.Value := vizFile
+                        picture.Value := vizResult
                         ; Clean up old visualization file after a delay
-                        SetTimer(() => DeleteVisualizationFile(vizFile), -5000)
+                        SetTimer(() => DeleteVisualizationFile(vizResult), -5000)
                     } catch Error as e {
-                        ; Fall back to text display with debug info
-                        ShowMacroAsText(button, picture, macroEvents[layerMacroName], "IMG_ERR")
+                        ; Fall back to ASCII text display
+                        ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], "IMG_ERR")
                     }
+                } else if (vizResult && InStr(vizResult, "┌")) {
+                    ; ASCII visualization returned
+                    ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], vizResult)
                 } else {
-                    ; Fall back to text display if visualization creation fails
-                    ShowMacroAsText(button, picture, macroEvents[layerMacroName], "VIZ_ERR")
+                    ; All methods failed - fall back to ASCII
+                    ShowMacroAsASCII(button, picture, macroEvents[layerMacroName], "VIZ_ERR")
                 }
             } else {
                 ; No boxes found - fall back to text display
@@ -2646,6 +2652,41 @@ ShowMacroAsText(button, picture, events, debugInfo := "viz unavailable") {
     button.Text := "MACRO`n" . events.Length . " events`n(" . debugInfo . ")"
 }
 
+ShowMacroAsASCII(button, picture, events, asciiViz := "") {
+    ; Display ASCII visualization for corporate environments where PNG fails
+    global layerBorderColors, currentLayer
+    
+    ; Create ASCII display based on input
+    if (asciiViz = "IMG_ERR") {
+        asciiText := "📦 MACRO RECORDED`n❌ Corporate restriction`n⬜ ASCII fallback active"
+    } else if (asciiViz = "VIZ_ERR") {
+        asciiText := "📦 MACRO RECORDED`n❌ File access blocked`n⬜ Safe mode enabled"  
+    } else if (InStr(asciiViz, "┌")) {
+        ; Valid ASCII art provided - show first few lines to fit in button
+        lines := StrSplit(asciiViz, "`n")
+        asciiText := ""
+        maxLines := 4  ; Fit in button space
+        for i, line in lines {
+            if (i > maxLines) break
+            if (i > 1) asciiText .= "`n"
+            ; Truncate long lines to fit button width
+            asciiText .= StrLen(line) > 12 ? SubStr(line, 1, 12) : line
+        }
+        if (lines.Length > maxLines) {
+            asciiText .= "`n..."
+        }
+    } else {
+        asciiText := "📦 MACRO`n" . events.Length . " events`n🏢 Corporate-safe mode"
+    }
+    
+    ; Show in picture control with monospace font for better ASCII display
+    picture.Visible := true
+    button.Visible := false
+    picture.Text := asciiText
+    picture.SetFont("s6", "Courier New")  ; Small monospace font for ASCII art
+    picture.Opt("+Background" . layerBorderColors[currentLayer])
+}
+
 ; Helper function to get exact button thumbnail dimensions
 GetButtonThumbnailSize() {
     global windowWidth, windowHeight, scaleFactor
@@ -2712,22 +2753,45 @@ CreateCorporateSafeVisualization(macroEvents, buttonSize) {
 DetectCorporateEnvironment() {
     global corpVisualizationMethod, corpVisualizationMethods, corporateEnvironmentDetected
     
-    ; Test each method and store working ones
+    ; Enhanced corporate environment detection
+    isCorporate := false
     workingMethods := []
     
-    ; Test HBITMAP support
-    if (TestHBITMAPSupport()) {
-        workingMethods.Push(2)
+    ; Test multiple corporate indicators
+    corporateIndicators := [
+        !TestFileAccess(),                    ; Temp directory access blocked
+        !TestDirectoryCreation(),             ; Can't create directories
+        EnvGet("USERDNSDOMAIN") != "",        ; Domain-joined computer
+        InStr(A_ComputerName, "CORP"),        ; Corporate naming pattern
+        InStr(A_ComputerName, "WRK"),         ; Workstation naming
+        InStr(A_UserName, "admin") = 0        ; Not admin user
+    ]
+    
+    ; Count corporate indicators
+    corporateScore := 0
+    for indicator in corporateIndicators {
+        if (indicator) corporateScore++
     }
     
-    ; Test file access in temp directory
-    if (TestFileAccess()) {
-        workingMethods.Push(1)
-        workingMethods.Push(4)
-    }
+    ; If 2 or more indicators, assume corporate environment
+    isCorporate := corporateScore >= 2
     
-    ; ASCII always works as final fallback
-    workingMethods.Push(5)
+    if (isCorporate) {
+        ; Corporate environment - prioritize safe methods
+        UpdateStatus("🏢 Corporate environment detected - using safe visualization")
+        workingMethods := [5, 2, 3]  ; ASCII first, then memory-only methods
+    } else {
+        ; Home/personal environment - use best performance
+        if (TestHBITMAPSupport()) {
+            workingMethods.Push(2)
+        }
+        if (TestFileAccess()) {
+            workingMethods.Push(1)
+            workingMethods.Push(4)
+        }
+        ; ASCII as fallback
+        workingMethods.Push(5)
+    }
     
     ; Set best available method
     corpVisualizationMethod := workingMethods[1]
@@ -2741,7 +2805,30 @@ DetectCorporateEnvironment() {
         }
     }
     
-    UpdateStatus("🖼️ Visualization: " . methodName . " active")
+    environmentType := isCorporate ? "Corporate" : "Personal"
+    UpdateStatus("🖼️ " . environmentType . " environment: " . methodName . " visualization active")
+}
+
+TestDirectoryCreation() {
+    ; Test if we can create directories in various locations
+    testDirs := [
+        A_Temp . "\macromaster_test_" . A_TickCount,
+        A_ScriptDir . "\test_dir_" . A_TickCount,
+        A_MyDocuments . "\macromaster_test_" . A_TickCount
+    ]
+    
+    for testDir in testDirs {
+        try {
+            DirCreate(testDir)
+            if (DirExist(testDir)) {
+                DirDelete(testDir)
+                return true
+            }
+        } catch {
+            continue
+        }
+    }
+    return false
 }
 
 CreateASCIIVisualization(macroEvents, buttonSize) {
