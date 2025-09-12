@@ -268,6 +268,10 @@ global corpVisualizationMethods := [
 global corpVisualizationMethod := 1  ; Default to traditional method
 global corporateEnvironmentDetected := false
 
+; STANDARD MENU DIMENSIONS (both config and stats)
+global standardMenuWidth := 900
+global standardMenuHeight := 650
+
 ; ===== HOTKEY PROFILE SYSTEM =====
 global hotkeyProfileActive := false
 global capsLockPressed := false
@@ -1229,7 +1233,7 @@ SetupHotkeys() {
         } catch {
         }
         
-        Sleep(50)  ; Ensure cleanup
+        ; Sleep(50) - REMOVED for rapid labeling performance
         
         ; Recording control - use configured key (default F9)
         if (hotkeyRecordToggle != "") {
@@ -1603,7 +1607,7 @@ ExecuteMacro(buttonName) {
                            executionTime <= 2000 ? "C" : "D"
         
         ; Add performance info to status (for JSON profiles mainly)
-        if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].type = "jsonAnnotation")) {
+        if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0 && macroEvents[layerMacroName][1].type = "jsonAnnotation")) {
             UpdateStatus("✅ JSON executed (" . executionTime . "ms, Grade: " . performanceGrade . ")")
         }
         
@@ -2012,32 +2016,32 @@ PlayEventsOptimized(recordedEvents) {
             try {
                 if (event.type = "boundingBox") {
                     MouseMove(event.left, event.top, 2)
-                    Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before drawing
-                    Sleep(boxDrawDelay)
+                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
+                    ; Sleep(boxDrawDelay) - REMOVED for rapid labeling performance
                     
                     Send("{LButton Down}")
-                    Sleep(mouseClickDelay)
+                    ; Sleep(mouseClickDelay) - REMOVED for rapid labeling performance
                     
                     MouseMove(event.right, event.bottom, 5)
-                    Sleep(mouseHoverDelay)  ; NEW: Hover to stabilize before release
-                    Sleep(mouseReleaseDelay)
+                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
+                    ; Sleep(mouseReleaseDelay) - REMOVED for rapid labeling performance
                     
                     Send("{LButton Up}")
-                    Sleep(betweenBoxDelay)
+                    ; Sleep(betweenBoxDelay) - REMOVED for rapid labeling performance
                 }
                 else if (event.type = "mouseDown") {
                     MouseMove(event.x, event.y, 2)
-                    Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
+                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
                     Send("{LButton Down}")
                 }
                 else if (event.type = "mouseUp") {
                     MouseMove(event.x, event.y, 2)
-                    Sleep(mouseHoverDelay)  ; NEW: Hover for accuracy
+                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
                     Send("{LButton Up}")
                 }
                 else if (event.type = "keyDown") {
                     Send("{" . event.key . " Down}")
-                    Sleep(keyPressDelay)
+                    ; Sleep(keyPressDelay) - REMOVED for rapid labeling performance
                 }
                 else if (event.type = "keyUp") {
                     Send("{" . event.key . " Up}")
@@ -2078,17 +2082,17 @@ ExecuteJsonAnnotation(jsonEvent) {
         ; OPTIMIZED JSON EXECUTION - 77% speed improvement
         ; Use speed-optimized timing profile for JSON operations
         
-        ; Set clipboard with minimal essential delay  
+        ; Set clipboard with minimal delay  
         A_Clipboard := jsonEvent.annotation
-        Sleep(25)   ; ⬇️ From 50ms - Essential clipboard stability only
+        ; Sleep(25) - REMOVED for rapid labeling performance
         
-        ; Send paste command with reduced delay
+        ; Send paste command immediately
         Send("^v")
-        Sleep(50)   ; ⬇️ From 100ms - Streamlined paste operation
+        ; Sleep(50) - REMOVED for rapid labeling performance
         
         ; Send Shift+Enter to execute the annotation
         Send("+{Enter}")
-        Sleep(50)   ; ⬇️ From 200ms total - Quick post-execution only
+        ; Sleep(50) - REMOVED for rapid labeling performance
         
         UpdateStatus("✅ JSON annotation executed in " . jsonEvent.mode . " mode")
     } catch Error as e {
@@ -2118,23 +2122,23 @@ FocusBrowser() {
             Loop maxRetries {
                 try {
                     WinActivate(browser.exe)
-                    Sleep(retryDelay)
+                    ; Sleep(retryDelay) - REMOVED for rapid labeling performance
                     
                     ; Verify focus succeeded by checking if window is active
                     if (WinActive(browser.exe)) {
-                        Sleep(focusDelay)
+                        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
                         UpdateStatus("🌐 Focused " . browser.name . " browser")
                         return true
                     }
                     
                     ; If not focused, try more aggressive methods
                     WinRestore(browser.exe)  ; Restore if minimized
-                    Sleep(50)
+                    ; Sleep(50) - REMOVED for rapid labeling performance
                     WinActivate(browser.exe)
-                    Sleep(retryDelay)
+                    ; Sleep(retryDelay) - REMOVED for rapid labeling performance
                     
                     if (WinActive(browser.exe)) {
-                        Sleep(focusDelay)
+                        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
                         UpdateStatus("🌐 Focused " . browser.name . " browser (restored)")
                         return true
                     }
@@ -2146,7 +2150,7 @@ FocusBrowser() {
                 
                 ; Wait before retry
                 if (A_Index < maxRetries) {
-                    Sleep(retryDelay * A_Index)  ; Increasing delay
+                    ; Sleep(retryDelay * A_Index) - REMOVED for rapid labeling performance
                 }
             }
         }
@@ -2430,7 +2434,7 @@ UpdateButtonAppearance(buttonName) {
         hasVisualizableMacro := hasMacro && !isJsonAnnotation && macroEvents[layerMacroName].Length > 1
         
         if (hasVisualizableMacro) {
-            ; Generate live macro visualization using exact thumbnail dimensions
+            ; Generate live macro visualization using HBITMAP (no file I/O)
             ; Get actual thumbnail dimensions from button layout
             buttonSize := GetButtonThumbnailSize()
             
@@ -2438,25 +2442,28 @@ UpdateButtonAppearance(buttonName) {
             boxes := ExtractBoxEvents(macroEvents[layerMacroName])
             
             if (boxes.Length > 0) {
-                ; Enhanced PNG creation with corporate-safe paths
-                vizFile := CreateCorporateSafeVisualizationPNG(macroEvents[layerMacroName], buttonSize)
+                ; Create HBITMAP visualization directly in memory
+                hBitmapHandle := CreateHBITMAPVisualization(macroEvents[layerMacroName], buttonSize)
                 
-                if (vizFile && FileExist(vizFile)) {
-                    ; PNG file created successfully
+                if (hBitmapHandle && hBitmapHandle != 0) {
+                    ; HBITMAP created successfully - assign directly to picture control
                     button.Visible := false
                     picture.Visible := true
                     picture.Text := ""
                     try {
-                        picture.Value := vizFile
-                        ; Clean up old visualization file after a delay
-                        SetTimer(() => DeleteVisualizationFile(vizFile), -5000)
+                        picture.Value := "HBITMAP:*" . hBitmapHandle
+                        ; Note: HBITMAP cleanup will be handled by AutoHotkey when control is destroyed
                     } catch Error as e {
-                        ; PNG creation worked but display failed - show debug info
-                        ShowMacroAsText(button, picture, macroEvents[layerMacroName], "PNG display error")
+                        ; HBITMAP creation worked but display failed - show debug info
+                        ShowMacroAsText(button, picture, macroEvents[layerMacroName], "HBITMAP display error")
+                        ; Clean up unused HBITMAP
+                        if (hBitmapHandle) {
+                            DllCall("DeleteObject", "Ptr", hBitmapHandle)
+                        }
                     }
                 } else {
-                    ; PNG creation failed - show diagnostic info
-                    ShowMacroAsText(button, picture, macroEvents[layerMacroName], "PNG creation blocked")
+                    ; HBITMAP creation failed - show diagnostic info
+                    ShowMacroAsText(button, picture, macroEvents[layerMacroName], "HBITMAP creation failed")
                 }
             } else {
                 ; No boxes found - fall back to text display
@@ -2468,7 +2475,14 @@ UpdateButtonAppearance(buttonName) {
             picture.Visible := true
             picture.Text := ""
             try {
-                picture.Value := buttonThumbnails[layerMacroName]
+                thumbnailValue := buttonThumbnails[layerMacroName]
+                if (Type(thumbnailValue) = "Integer" && thumbnailValue > 0) {
+                    ; HBITMAP handle - assign directly
+                    picture.Value := "HBITMAP:*" . thumbnailValue
+                } else {
+                    ; File path - use existing method
+                    picture.Value := thumbnailValue
+                }
             } catch {
                 ShowMacroAsText(button, picture, macroEvents[layerMacroName])
             }
@@ -2663,11 +2677,13 @@ ShowMacroAsASCII(button, picture, events, asciiViz := "") {
         asciiText := ""
         maxLines := 4  ; Fit in button space
         for i, line in lines {
-            if (i > maxLines) break
+            if (i > maxLines) 
+                goto EndASCIILoop
             if (i > 1) asciiText .= "`n"
             ; Truncate long lines to fit button width
             asciiText .= StrLen(line) > 12 ? SubStr(line, 1, 12) : line
         }
+        EndASCIILoop:
         if (lines.Length > maxLines) {
             asciiText .= "`n..."
         }
@@ -3019,8 +3035,78 @@ TestFileAccess() {
 
 CreateHBITMAPVisualization(macroEvents, buttonSize) {
     ; Memory-only visualization using HBITMAP (no file system access)
-    ; This is a placeholder - would need complex HBITMAP to Picture control integration
-    return CreateASCIIVisualization(macroEvents, buttonSize)  ; Fallback to ASCII for now
+    global gdiPlusInitialized, degradationColors
+    
+    if (!gdiPlusInitialized || !macroEvents || macroEvents.Length = 0) {
+        return 0
+    }
+    
+    ; Extract box drawing events
+    boxes := ExtractBoxEvents(macroEvents)
+    if (boxes.Length = 0) {
+        return 0
+    }
+    
+    ; Handle button size format
+    if (IsObject(buttonSize)) {
+        buttonWidth := buttonSize.width
+        buttonHeight := buttonSize.height
+    } else {
+        buttonWidth := buttonSize
+        buttonHeight := buttonSize
+    }
+    
+    ; Create HBITMAP using GDI+
+    bitmap := 0
+    graphics := 0
+    hbitmap := 0
+    
+    try {
+        ; Create GDI+ bitmap
+        result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+        if (result != 0 || !bitmap) {
+            return 0
+        }
+        
+        ; Create graphics context from bitmap
+        result := DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+        if (result != 0 || !graphics) {
+            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+            return 0
+        }
+        
+        ; Fill with black background
+        blackBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
+        
+        ; Draw boxes using same logic as PNG version
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes)
+        
+        ; Convert GDI+ bitmap to HBITMAP
+        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0x00000000)
+        
+        ; Clean up GDI+ objects
+        DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+        
+        if (result = 0 && hbitmap) {
+            return hbitmap
+        } else {
+            return 0
+        }
+        
+    } catch Error as e {
+        ; Clean up on error
+        if (graphics) {
+            DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        }
+        if (bitmap) {
+            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+        }
+        return 0
+    }
 }
 
 CreateMemoryStreamVisualization(macroEvents, buttonSize) {
@@ -3672,464 +3758,264 @@ RestoreNormalUI() {
     }
 }
 
-; ===== CONFIGURATION MENU =====
-ShowConfigMenu() {
-    global hotkeyProfileActive, wasdHotkeyMap
-    
-    configGui := Gui("+Resize", "⚙️ MacroMaster Configuration")
-    configGui.SetFont("s10")
+; ===== COMPREHENSIVE CONFIGURATION SYSTEM =====
+
+ShowSettings() {
+    ; Create settings dialog with tabbed interface
+    settingsGui := Gui("+Resize", "⚙️ Configuration Manager")
+    settingsGui.SetFont("s10")
     
     ; Header
-    configGui.Add("Text", "x20 y20 w660 h30 Center", "MACROMASTER CONFIGURATION")
-    configGui.SetFont("s14 Bold")
+    settingsGui.Add("Text", "x20 y20 w460 h30 Center", "CONFIGURATION MANAGEMENT")
+    settingsGui.SetFont("s12 Bold")
     
     ; Create tabbed interface
-    tabs := configGui.Add("Tab3", "x20 y60 w660 h400", ["🎹 Hotkey Profiles", "⚙️ General Settings", "📊 Performance"])
+    tabs := settingsGui.Add("Tab3", "x20 y60 w460 h500", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
     
-    ; === TAB 1: HOTKEY PROFILES ===
+    ; TAB 1: Configuration Management
     tabs.UseTab(1)
     
-    ; COLLAPSIBLE CAPSLOCK SETTINGS - SPACE SAVING UI
-    CreateCollapsibleCapsLockSettings(configGui, tabs)
+    ; Import/Export section
+    settingsGui.SetFont("s9")
+    settingsGui.Add("Text", "x40 y95 w400 h20", "📦 Import & Export:")
     
-    ; WASD Mapping configuration
-    configGui.Add("Text", "x40 y210 w600 h20", "Customize WASD Mappings:")
-    configGui.SetFont("s9")
+    btnExport := settingsGui.Add("Button", "x40 y120 w120 h30", "📤 Export Config")
+    btnExport.OnEvent("Click", (*) => ExportConfiguration())
     
-    y := 240
-    col1X := 60
-    col2X := 180
-    col3X := 340
-    col4X := 460
+    btnImport := settingsGui.Add("Button", "x170 y120 w120 h30", "📥 Import Config")
+    btnImport.OnEvent("Click", (*) => ImportConfiguration())
     
-    ; Header row
-    configGui.Add("Text", "x" . col1X . " y" . y . " w90 h20 +Border Center", "WASD Key")
-    configGui.Add("Text", "x" . col2X . " y" . y . " w90 h20 +Border Center", "→ Numpad")
-    configGui.Add("Text", "x" . col3X . " y" . y . " w90 h20 +Border Center", "WASD Key")
-    configGui.Add("Text", "x" . col4X . " y" . y . " w90 h20 +Border Center", "→ Numpad")
-    y += 25
+    btnCreatePack := settingsGui.Add("Button", "x300 y120 w120 h30", "📦 Create Pack")
+    btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
     
-    ; Available numpad options for dropdowns
-    numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+    ; Quick save/load slots
+    settingsGui.Add("Text", "x40 y165 w400 h20", "🎛️ Quick Save Slots:")
     
-    ; Store dropdown references for later access
-    configGui.dropdowns := Map()
+    ; Slot 1
+    btnSaveSlot1 := settingsGui.Add("Button", "x40 y190 w80 h25", "Save Slot 1")
+    btnSaveSlot1.OnEvent("Click", (*) => SaveToSlot(1))
     
-    ; Mapping rows with dropdowns - Enhanced with number keys
-    keys := ["1", "2", "3", "q", "w", "e", "a", "s", "d", "z", "x", "c"]
-    for i, key in keys {
-        if (Mod(i-1, 2) = 0) {
-            ; Left column
-            xPos := col1X
-            xPosDropdown := col2X
-        } else {
-            ; Right column
-            xPos := col3X
-            xPosDropdown := col4X
-            y += 25
-        }
-        
-        ; Key label
-        configGui.Add("Text", "x" . xPos . " y" . y . " w90 h22 +Border Center", "CapsLock+" . StrUpper(key))
-        
-        ; Dropdown for numpad selection
-        dropdown := configGui.Add("DropDownList", "x" . xPosDropdown . " y" . y . " w90 h22 Choose1", numpadOptions)
-        
-        ; Set current selection
-        currentMapping := wasdHotkeyMap[key]
-        for j, option in numpadOptions {
-            if (option = currentMapping) {
-                dropdown.Choose(j)
-                break
-            }
-        }
-        
-        ; Store reference with key name
-        configGui.dropdowns[key] := dropdown
-    }
+    btnLoadSlot1 := settingsGui.Add("Button", "x125 y190 w80 h25", "Load Slot 1")
+    btnLoadSlot1.OnEvent("Click", (*) => LoadFromSlot(1))
     
-    ; Control buttons for mappings
-    configGui.SetFont("s10")
-    btnSaveMappings := configGui.Add("Button", "x40 y395 w100 h25", "Save Changes")
-    btnSaveMappings.OnEvent("Click", (*) => SaveWASDMappings(configGui))
+    ; Slot 2
+    btnSaveSlot2 := settingsGui.Add("Button", "x220 y190 w80 h25", "Save Slot 2")
+    btnSaveSlot2.OnEvent("Click", (*) => SaveToSlot(2))
     
-    btnResetMappings := configGui.Add("Button", "x150 y395 w100 h25", "Reset to Default")
-    btnResetMappings.OnEvent("Click", (*) => ResetWASDMappings(configGui))
+    btnLoadSlot2 := settingsGui.Add("Button", "x305 y190 w80 h25", "Load Slot 2")
+    btnLoadSlot2.OnEvent("Click", (*) => LoadFromSlot(2))
     
-    btnApplyMappings := configGui.Add("Button", "x260 y395 w100 h25", "Apply & Test")
-    btnApplyMappings.OnEvent("Click", (*) => ApplyWASDMappings(configGui))
+    ; Slot 3
+    btnSaveSlot3 := settingsGui.Add("Button", "x40 y220 w80 h25", "Save Slot 3")
+    btnSaveSlot3.OnEvent("Click", (*) => SaveToSlot(3))
+    
+    btnLoadSlot3 := settingsGui.Add("Button", "x125 y220 w80 h25", "Load Slot 3")
+    btnLoadSlot3.OnEvent("Click", (*) => LoadFromSlot(3))
+    
+    ; Slot 4
+    btnSaveSlot4 := settingsGui.Add("Button", "x220 y220 w80 h25", "Save Slot 4")
+    btnSaveSlot4.OnEvent("Click", (*) => SaveToSlot(4))
+    
+    btnLoadSlot4 := settingsGui.Add("Button", "x305 y220 w80 h25", "Load Slot 4")
+    btnLoadSlot4.OnEvent("Click", (*) => LoadFromSlot(4))
+    
+    ; Clear configuration
+    settingsGui.Add("Text", "x40 y260 w400 h20", "🗑️ Reset Options:")
+    
+    btnClearConfig := settingsGui.Add("Button", "x40 y285 w180 h30", "🗑️ Clear All Macros")
+    btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
+    
+    btnResetStats := settingsGui.Add("Button", "x240 y285 w180 h30", "📊 Reset Statistics")
+    btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
+    
+    ; Canvas configuration section
+    settingsGui.Add("Text", "x40 y330 w400 h20", "🖼️ Thumbnail Canvas Configuration:")
+    
+    ; Show canvas status
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    
+    wideStatusText := isWideCanvasCalibrated ? "✅ Wide Canvas Configured" : "❌ Wide Canvas Not Set"
+    narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Canvas Configured" : "❌ Narrow Canvas Not Set"
+    
+    settingsGui.Add("Text", "x60 y355 w180 h15 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
+    settingsGui.Add("Text", "x260 y355 w180 h15 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
+    
+    ; Configuration buttons
+    btnConfigureWide := settingsGui.Add("Button", "x40 y375 w180 h30", "📐 Configure Wide Canvas")
+    btnConfigureWide.OnEvent("Click", (*) => ConfigureWideCanvasFromSettings(settingsGui))
+    
+    btnConfigureNarrow := settingsGui.Add("Button", "x240 y375 w180 h30", "📐 Configure Narrow Canvas")
+    btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
+    
+    ; Help text
+    settingsGui.Add("Text", "x40 y410 w400 h25", "Set up canvas areas for picture-perfect thumbnails:`nWide = landscape/widescreen, Narrow = portrait/square")
+    
+    ; TAB 2: Execution Settings
+    tabs.UseTab(2)
+    settingsGui.Add("Text", "x40 y95 w400 h20", "⚡ Macro Execution Fine-Tuning:")
+    
+    ; Timing controls
+    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
+    
+    ; Box drawing delays
+    settingsGui.Add("Text", "x40 y125 w150 h20", "Box Draw Delay (ms):")
+    boxDelayEdit := settingsGui.Add("Edit", "x190 y123 w60 h22", boxDrawDelay)
+    boxDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("boxDrawDelay", boxDelayEdit))
+    settingsGui.boxDelayEdit := boxDelayEdit  ; Store reference for preset updates
+    
+    settingsGui.Add("Text", "x40 y155 w150 h20", "Mouse Click Delay (ms):")
+    clickDelayEdit := settingsGui.Add("Edit", "x190 y153 w60 h22", mouseClickDelay)
+    clickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseClickDelay", clickDelayEdit))
+    settingsGui.clickDelayEdit := clickDelayEdit
+    
+    settingsGui.Add("Text", "x40 y185 w150 h20", "Mouse Drag Delay (ms):")
+    dragDelayEdit := settingsGui.Add("Edit", "x190 y183 w60 h22", mouseDragDelay)
+    dragDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseDragDelay", dragDelayEdit))
+    settingsGui.dragDelayEdit := dragDelayEdit
+    
+    settingsGui.Add("Text", "x40 y215 w150 h20", "Mouse Release Delay (ms):")
+    releaseDelayEdit := settingsGui.Add("Edit", "x190 y213 w60 h22", mouseReleaseDelay)
+    releaseDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseReleaseDelay", releaseDelayEdit))
+    settingsGui.releaseDelayEdit := releaseDelayEdit
+    
+    settingsGui.Add("Text", "x270 y125 w150 h20", "Between Box Delay (ms):")
+    betweenDelayEdit := settingsGui.Add("Edit", "x420 y123 w60 h22", betweenBoxDelay)
+    betweenDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("betweenBoxDelay", betweenDelayEdit))
+    settingsGui.betweenDelayEdit := betweenDelayEdit
+    
+    settingsGui.Add("Text", "x270 y155 w150 h20", "Key Press Delay (ms):")
+    keyDelayEdit := settingsGui.Add("Edit", "x420 y153 w60 h22", keyPressDelay)
+    keyDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("keyPressDelay", keyDelayEdit))
+    settingsGui.keyDelayEdit := keyDelayEdit
+    
+    settingsGui.Add("Text", "x270 y185 w150 h20", "Focus Delay (ms):")
+    focusDelayEdit := settingsGui.Add("Edit", "x420 y183 w60 h22", focusDelay)
+    focusDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("focusDelay", focusDelayEdit))
+    settingsGui.focusDelayEdit := focusDelayEdit
+    
+    ; NEW: Mouse hover delay for click accuracy
+    settingsGui.Add("Text", "x270 y215 w150 h20", "Mouse Hover (ms):")
+    hoverDelayEdit := settingsGui.Add("Edit", "x420 y213 w60 h22", mouseHoverDelay)
+    hoverDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseHoverDelay", hoverDelayEdit))
+    settingsGui.hoverDelayEdit := hoverDelayEdit
+    
+    ; Description for hover delay
+    settingsGui.Add("Text", "x40 y245 w500 h15 c0x666666", "💡 Mouse Hover: Pause time after moving to target before clicking (improves accuracy)")
+    
+    ; Preset buttons (adjusted Y position for new hover control)
+    settingsGui.Add("Text", "x40 y275 w400 h20", "🎚️ Timing Presets:")
+    
+    btnFast := settingsGui.Add("Button", "x40 y300 w90 h25", "⚡ Fast")
+    btnFast.OnEvent("Click", (*) => ApplyTimingPreset("fast", settingsGui))
+    
+    btnDefault := settingsGui.Add("Button", "x140 y300 w90 h25", "🎯 Default")
+    btnDefault.OnEvent("Click", (*) => ApplyTimingPreset("default", settingsGui))
+    
+    btnSafe := settingsGui.Add("Button", "x240 y300 w90 h25", "🛡️ Safe")
+    btnSafe.OnEvent("Click", (*) => ApplyTimingPreset("safe", settingsGui))
+    
+    btnSlow := settingsGui.Add("Button", "x340 y300 w90 h25", "🐌 Slow")
+    btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
     
     ; Instructions
-    configGui.Add("Text", "x40 y425 w600 h30", "Instructions: Customize mappings using dropdowns, then Save Changes. Use Apply & Test to try new mappings.")
+    settingsGui.Add("Text", "x40 y320 w400 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
     
-    ; === TAB 2: GENERAL SETTINGS ===
-    tabs.UseTab(2)
-    configGui.Add("Text", "x40 y100 w600 h20", "General application settings will be added here in future updates.")
-    
-    ; === TAB 3: PERFORMANCE ===
+    ; TAB 3: Macro Packs
     tabs.UseTab(3)
-    configGui.Add("Text", "x40 y100 w600 h20", "Performance monitoring and optimization settings will be added here.")
+    settingsGui.Add("Text", "x40 y95 w400 h20", "🎁 Macro Pack Management:")
     
-    ; Control buttons
-    configGui.Add("Text", "x20 y480 w660 h20", "💡 Access: Right-click any button → ⚙️ Configuration | Hotkeys: Ctrl+K (config), Ctrl+H (toggle profile)")
+    btnBrowsePacks := settingsGui.Add("Button", "x40 y120 w180 h30", "📚 Browse Local Packs")
+    btnBrowsePacks.OnEvent("Click", (*) => BrowseMacroPacks())
     
-    btnClose := configGui.Add("Button", "x580 y510 w80 h30", "Close")
-    btnClose.OnEvent("Click", (*) => configGui.Destroy())
+    btnImportPack := settingsGui.Add("Button", "x240 y120 w180 h30", "📥 Import New Pack")
+    btnImportPack.OnEvent("Click", (*) => ImportNewMacroPack())
     
-    configGui.Show("w700 h570")
-}
-
-ToggleProfileInConfig(configGui, btnToggle) {
-    global hotkeyProfileActive
+    ; Pack sharing info
+    settingsGui.Add("Text", "x40 y165 w400 h80", "📝 Macro Packs are specialized sharing packages that contain:• Selected layers with macros• Degradation tracking data• Optional thumbnails and statistics• Author information and descriptions")
     
-    ; Toggle the profile (this handles all the state management and config saving)
-    ToggleHotkeyProfile()
+    settingsGui.Add("Text", "x40 y255 w400 h40", "🌐 Share packs with other users by sending the ZIP files. Recipients can import them via 'Import New Pack' to add macros to their collection.")
     
-    ; Update button text in the current GUI
-    btnToggle.Text := hotkeyProfileActive ? "Disable Profile" : "Enable Profile"
+    ; TAB 4: Hotkey Profiles
+    tabs.UseTab(4)
+    global hotkeyProfileActive, wasdHotkeyMap, wasdLabelsEnabled
     
-    ; Update status text in the GUI if it exists
-    try {
-        ; Find and update the status text control
-        for control in configGui {
-            if (control.Type = "Text" && InStr(control.Text, "ACTIVE") || InStr(control.Text, "INACTIVE")) {
-                statusText := hotkeyProfileActive ? "🟢 ACTIVE - CapsLock + 1 2 3 q w e a s d z x c enabled" : "🔴 INACTIVE - Numpad mode active"
-                control.Text := statusText
-                break
-            }
-        }
-    } catch {
-        ; If status update fails, it's not critical
+    ; Set WASD labels to always be enabled (silent activation)
+    if (!wasdLabelsEnabled) {
+        ToggleWASDLabels()  ; Enable WASD labels
     }
     
-    ; Force GUI redraw to show updated text
-    configGui.Redraw()
+    ; Header focused on utility functions
+    settingsGui.Add("Text", "x40 y95 w400 h20", "🎮 Hotkey & Utility Configuration:")
+    settingsGui.Add("Text", "x40 y115 w400 h15 c0x666666", "Configure keyboard shortcuts and utility functions")
+    
+    ; WASD Info (no configuration needed)
+    settingsGui.Add("Text", "x40 y140 w400 h15", "🏷️ WASD Labels: Always enabled for optimal workflow")
+    
+    ; Main Utility Hotkeys Section (clean layout without WASD clutter)
+    settingsGui.Add("Text", "x40 y170 w400 h20", "🎮 Main Utility Hotkeys:")
+    hotkeyY := 195
+    
+    ; Record Toggle
+    settingsGui.Add("Text", "x40 y" . hotkeyY . " w120 h20", "Record Toggle:")
+    editRecordToggle := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w80 h20", hotkeyRecordToggle)
+    hotkeyY += 25
+    
+    ; Submit/Direct Clear keys
+    settingsGui.Add("Text", "x40 y" . hotkeyY . " w120 h20", "Submit:")
+    editSubmit := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w80 h20", hotkeySubmit)
+    settingsGui.Add("Text", "x255 y" . hotkeyY . " w80 h20", "Direct Clear:")
+    editDirectClear := settingsGui.Add("Edit", "x340 y" . (hotkeyY-2) . " w60 h20", hotkeyDirectClear)
+    hotkeyY += 25
+    
+    ; Stats key (on separate row)
+    settingsGui.Add("Text", "x40 y" . hotkeyY . " w120 h20", "Stats:")
+    editStats := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w80 h20", hotkeyStats)
+    hotkeyY += 25
+    
+    ; Break Mode/Settings keys
+    settingsGui.Add("Text", "x40 y" . hotkeyY . " w120 h20", "Break Mode:")
+    editBreakMode := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w80 h20", hotkeyBreakMode)
+    settingsGui.Add("Text", "x255 y" . hotkeyY . " w60 h20", "Settings:")
+    editSettings := settingsGui.Add("Edit", "x320 y" . (hotkeyY-2) . " w80 h20", hotkeySettings)
+    hotkeyY += 25
+    
+    ; Layer Navigation
+    settingsGui.Add("Text", "x40 y" . hotkeyY . " w120 h20", "Layer Prev:")
+    editLayerPrev := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w80 h20", hotkeyLayerPrev)
+    settingsGui.Add("Text", "x255 y" . hotkeyY . " w60 h20", "Layer Next:")
+    editLayerNext := settingsGui.Add("Edit", "x320 y" . (hotkeyY-2) . " w80 h20", hotkeyLayerNext)
+    hotkeyY += 30
+    
+    ; Apply/Reset buttons for hotkeys
+    btnApplyHotkeys := settingsGui.Add("Button", "x40 y" . hotkeyY . " w90 h25", "🎮 Apply Keys")
+    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui))
+    
+    btnResetHotkeys := settingsGui.Add("Button", "x140 y" . hotkeyY . " w90 h25", "🔄 Reset Keys")
+    btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
+    
+    ; Enhanced Instructions (focused on utility functions)
+    instructY := hotkeyY + 40
+    settingsGui.Add("Text", "x40 y" . instructY . " w400 h15 c0x0066CC", "📋 Quick Instructions:")
+    instructY += 20
+    settingsGui.Add("Text", "x40 y" . instructY . " w400 h45", "• 🏷️ WASD labels are automatically enabled`n• ⚙️ Configure utility hotkeys above for your workflow`n• 💾 Apply to test changes, save to make permanent`n• ⌨️ All hotkeys work alongside standard numpad keys")
+    instructY += 55
+    settingsGui.Add("Text", "x40 y" . instructY . " w400 h15 c0x666666", "ℹ️ Focus on utility functions - WASD mapping handled automatically.")
+    
+    ; Close button positioned dynamically based on content
+    closeY := instructY + 30
+    btnClose := settingsGui.Add("Button", "x420 y" . closeY . " w60 h25", "Close")
+    btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
+    
+    ; Dynamic window height based on content
+    windowHeight := closeY + 60
+    settingsGui.Show("w500 h" . windowHeight)
 }
 
-SaveWASDMappings(configGui) {
-    global wasdHotkeyMap, hotkeyProfileActive
-    
-    try {
-        ; Get current mappings from dropdowns
-        newMappings := Map()
-        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
-        
-        for key, dropdown in configGui.dropdowns {
-            selectedIndex := dropdown.Value
-            newMappings[key] := numpadOptions[selectedIndex]
-        }
-        
-        ; Validate no duplicate assignments
-        usedMappings := Map()
-        for key, mapping in newMappings {
-            if (usedMappings.Has(mapping)) {
-                MsgBox("Error: " . mapping . " is assigned to multiple keys. Each numpad key can only be mapped once.", "Duplicate Mapping", "Icon!")
-                return
-            }
-            usedMappings[mapping] := key
-        }
-        
-        ; If hotkey profile is active, disable it temporarily
-        wasActive := hotkeyProfileActive
-        if (hotkeyProfileActive) {
-            DisableWASDHotkeys()
-        }
-        
-        ; Update the global mapping
-        wasdHotkeyMap := newMappings
-        
-        ; Save to config file
-        SaveWASDMappingsToFile()
-        
-        ; Re-enable if it was active
-        if (wasActive) {
-            SetupWASDHotkeys()
-        }
-        
-        UpdateStatus("💾 WASD mappings saved successfully")
-        MsgBox("WASD mappings saved successfully!", "Settings Saved", "Icon!")
-        
-    } catch Error as e {
-        UpdateStatus("❌ Failed to save WASD mappings: " . e.Message)
-        MsgBox("Failed to save mappings: " . e.Message, "Save Error", "Icon!")
-    }
+ShowConfigMenu() {
+    ShowSettings()
 }
 
-ResetWASDMappings(configGui) {
-    if (MsgBox("Reset all WASD mappings to default values?", "Reset Mappings", "YesNo Icon?") = "Yes") {
-        ; Reset to default mappings
-        InitializeWASDHotkeys()
-        
-        ; Update dropdowns to reflect default values
-        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
-        
-        for key, dropdown in configGui.dropdowns {
-            currentMapping := wasdHotkeyMap[key]
-            for i, option in numpadOptions {
-                if (option = currentMapping) {
-                    dropdown.Choose(i)
-                    break
-                }
-            }
-        }
-        
-        UpdateStatus("🔄 WASD mappings reset to defaults")
-    }
-}
-
-ApplyWASDMappings(configGui) {
-    global wasdHotkeyMap, hotkeyProfileActive
-    
-    try {
-        ; Get current mappings from dropdowns
-        newMappings := Map()
-        numpadOptions := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
-        
-        for key, dropdown in configGui.dropdowns {
-            selectedIndex := dropdown.Value
-            newMappings[key] := numpadOptions[selectedIndex]
-        }
-        
-        ; Validate no duplicate assignments
-        usedMappings := Map()
-        for key, mapping in newMappings {
-            if (usedMappings.Has(mapping)) {
-                MsgBox("Error: " . mapping . " is assigned to multiple keys. Each numpad key can only be mapped once.", "Duplicate Mapping", "Icon!")
-                return
-            }
-            usedMappings[mapping] := key
-        }
-        
-        ; If hotkey profile is active, disable it temporarily
-        wasActive := hotkeyProfileActive
-        if (hotkeyProfileActive) {
-            DisableWASDHotkeys()
-        }
-        
-        ; Update the global mapping
-        wasdHotkeyMap := newMappings
-        
-        ; Re-enable if it was active
-        if (wasActive) {
-            SetupWASDHotkeys()
-        }
-        
-        UpdateStatus("🧪 WASD mappings applied for testing - Use Ctrl+H to toggle profile")
-        MsgBox("New mappings applied! Use Ctrl+H to toggle the profile and test your new key assignments.", "Mappings Applied", "Icon!")
-        
-    } catch Error as e {
-        UpdateStatus("❌ Failed to apply WASD mappings: " . e.Message)
-        MsgBox("Failed to apply mappings: " . e.Message, "Apply Error", "Icon!")
-    }
-}
-
-; ===== COLLAPSIBLE CAPSLOCK SETTINGS UI =====
-CreateCollapsibleCapsLockSettings(settingsGui, tabs) {
-    global hotkeyProfileActive, wasdHotkeyMap
-    tabs.UseTab(1)
-    
-    ; Main container for collapsible section
-    global capsLockContainer := {
-        collapsed: true,
-        headerHeight: 40,
-        expandedHeight: 200,
-        currentY: 95,
-        settingsGui: settingsGui,
-        contentControls: []
-    }
-    
-    ; Create collapsible header with click handler
-    CreateCapsLockHeader(settingsGui)
-    
-    ; Create expandable content area (initially hidden)
-    CreateCapsLockContent(settingsGui)
-    
-    ; Apply initial collapsed state
-    ApplyCapsLockCollapsedState()
-}
-
-CreateCapsLockHeader(gui) {
-    global capsLockContainer, hotkeyProfileActive
-    
-    ; Header background with subtle border
-    headerBg := gui.Add("Text", 
-        "x40 y" . capsLockContainer.currentY . " w600 h" . capsLockContainer.headerHeight . 
-        " +Background0x3B4A54 +Border")
-    
-    ; Collapse/expand indicator
-    global capsLockExpandIcon := gui.Add("Text", 
-        "x50 y" . (capsLockContainer.currentY + 10) . " w20 h20", 
-        capsLockContainer.collapsed ? "▶" : "▼")
-    capsLockExpandIcon.SetFont("s12 Bold", "cWhite")
-    capsLockExpandIcon.OnEvent("Click", (*) => ToggleCapsLockSection())
-    
-    ; Header title
-    headerTitle := gui.Add("Text", 
-        "x75 y" . (capsLockContainer.currentY + 10) . " w200 h20", 
-        "CapsLock+Key Settings")
-    headerTitle.SetFont("s10 Bold", "cWhite")
-    headerTitle.OnEvent("Click", (*) => ToggleCapsLockSection())
-    
-    ; Status indicator
-    statusIcon := hotkeyProfileActive ? "🟢" : "🔴"
-    statusText := hotkeyProfileActive ? "ACTIVE" : "INACTIVE"
-    statusDesc := hotkeyProfileActive ? "CapsLock+123qweasdzxc" : "Numpad Mode"
-    
-    global capsLockStatusText := gui.Add("Text", 
-        "x300 y" . (capsLockContainer.currentY + 10) . " w300 h20", 
-        statusIcon . " " . statusText . " - " . statusDesc)
-    capsLockStatusText.SetFont("s9", "cWhite")
-    
-    ; Make header clickable
-    headerBg.OnEvent("Click", (*) => ToggleCapsLockSection())
-    
-    ; Store header controls for state management
-    capsLockContainer.headerControls := [headerBg, capsLockExpandIcon, headerTitle, capsLockStatusText]
-}
-
-CreateCapsLockContent(gui) {
-    global capsLockContainer, wasdHotkeyMap
-    
-    contentY := capsLockContainer.currentY + capsLockContainer.headerHeight + 10
-    capsLockContainer.contentControls := []
-    
-    ; Toggle section
-    toggleY := contentY
-    toggleLabel := gui.Add("Text", "x50 y" . toggleY . " w200 h20", "Profile Control:")
-    toggleLabel.SetFont("s10 Bold")
-    capsLockContainer.contentControls.Push(toggleLabel)
-    
-    global capsLockToggleBtn := gui.Add("Button", 
-        "x250 y" . (toggleY - 2) . " w120 h24", 
-        hotkeyProfileActive ? "Disable Profile" : "Enable Profile")
-    capsLockToggleBtn.OnEvent("Click", (*) => ToggleProfileInCollapsible())
-    capsLockContainer.contentControls.Push(capsLockToggleBtn)
-    
-    ; Quick mapping preview (compact)
-    contentY += 35
-    mappingLabel := gui.Add("Text", "x50 y" . contentY . " w500 h15", 
-        "🔧 Quick Mappings Preview:")
-    mappingLabel.SetFont("s9 Bold")
-    capsLockContainer.contentControls.Push(mappingLabel)
-    
-    contentY += 20
-    ; Show first 6 mappings in compact format
-    keys := ["1", "2", "3", "q", "w", "e"]
-    mappingText := ""
-    for i, key in keys {
-        if (wasdHotkeyMap.Has(key)) {
-            mappingText .= "CapsLock+" . StrUpper(key) . "→" . wasdHotkeyMap[key] . "  "
-        }
-        if (Mod(i, 3) = 0) {
-            mappingText .= "`n"
-        }
-    }
-    
-    previewText := gui.Add("Text", "x50 y" . contentY . " w500 h35", mappingText)
-    previewText.SetFont("s8", "c0x666666")
-    capsLockContainer.contentControls.Push(previewText)
-    
-    ; Control buttons (compact row)
-    contentY += 45
-    btnCustomize := gui.Add("Button", "x50 y" . contentY . " w80 h25", "💾 Customize")
-    btnCustomize.OnEvent("Click", (*) => ShowDetailedMappingsDialog())
-    capsLockContainer.contentControls.Push(btnCustomize)
-    
-    btnReset := gui.Add("Button", "x140 y" . contentY . " w80 h25", "🔄 Reset")
-    btnReset.OnEvent("Click", (*) => ResetCapsLockMappings())
-    capsLockContainer.contentControls.Push(btnReset)
-    
-    btnTest := gui.Add("Button", "x230 y" . contentY . " w80 h25", "🧪 Test")
-    btnTest.OnEvent("Click", (*) => TestCapsLockMappings())
-    capsLockContainer.contentControls.Push(btnTest)
-    
-    ; Instruction text
-    contentY += 35
-    instruction := gui.Add("Text", "x50 y" . contentY . " w500 h20", 
-        "💡 Click Customize for full mapping editor. Test applies temporary changes.")
-    instruction.SetFont("s8", "c0x555555")
-    capsLockContainer.contentControls.Push(instruction)
-}
-
-ToggleCapsLockSection() {
-    global capsLockContainer, capsLockExpandIcon
-    
-    ; Toggle state
-    capsLockContainer.collapsed := !capsLockContainer.collapsed
-    
-    ; Update expand icon
-    capsLockExpandIcon.Text := capsLockContainer.collapsed ? "▶" : "▼"
-    
-    ; Show/hide content controls
-    for control in capsLockContainer.contentControls {
-        control.Visible := !capsLockContainer.collapsed
-    }
-    
-    ; Status feedback
-    if (capsLockContainer.collapsed) {
-        UpdateStatus("📐 CapsLock settings collapsed - saved 160px space")
-    } else {
-        UpdateStatus("📐 CapsLock settings expanded - full controls available")
-    }
-}
-
-ApplyCapsLockCollapsedState() {
-    global capsLockContainer
-    
-    ; Initially hide content controls (collapsed state)
-    for control in capsLockContainer.contentControls {
-        control.Visible := false
-    }
-}
-
-ToggleProfileInCollapsible() {
-    global hotkeyProfileActive, capsLockToggleBtn, capsLockStatusText
-    
-    ; Toggle the profile
-    ToggleHotkeyProfile()
-    
-    ; Update toggle button text
-    capsLockToggleBtn.Text := hotkeyProfileActive ? "Disable Profile" : "Enable Profile"
-    
-    ; Update status in header
-    statusIcon := hotkeyProfileActive ? "🟢" : "🔴"
-    statusText := hotkeyProfileActive ? "ACTIVE" : "INACTIVE"
-    statusDesc := hotkeyProfileActive ? "CapsLock+123qweasdzxc" : "Numpad Mode"
-    capsLockStatusText.Text := statusIcon . " " . statusText . " - " . statusDesc
-}
-
-ShowDetailedMappingsDialog() {
-    ; Show the original detailed configuration in a popup
-    UpdateStatus("🔧 Opening detailed CapsLock mapping editor...")
-    ; This could open a separate detailed configuration window
-    ; For now, just give feedback that the feature is available
-    MsgBox("Detailed mapping editor will open here.`n`nFor now, use the main configuration tabs to customize all 12 key mappings (1-3, Q-E, A-D, Z-C)", "Detailed Mappings", "Icon!")
-}
-
-ResetCapsLockMappings() {
-    if (MsgBox("Reset all CapsLock mappings to default values?", "Reset CapsLock Mappings", "YesNo Icon?") = "Yes") {
-        InitializeWASDHotkeys()
-        UpdateStatus("🔄 CapsLock mappings reset to defaults")
-        
-        ; Refresh the collapsed section content
-        if (!capsLockContainer.collapsed) {
-            ToggleCapsLockSection()
-            ToggleCapsLockSection()
-        }
-    }
-}
-
-TestCapsLockMappings() {
-    global hotkeyProfileActive
-    
-    if (!hotkeyProfileActive) {
-        MsgBox("CapsLock profile must be active to test mappings.`n`nClick 'Enable Profile' first, then try testing.", "Profile Inactive", "Icon!")
-        return
-    }
-    
-    UpdateStatus("🧪 CapsLock mappings active - try CapsLock+1,2,3,Q,W,E,A,S,D,Z,X,C")
-    MsgBox("CapsLock profile is active!`n`nTry pressing combinations like:`nCapsLock+Q, CapsLock+W, CapsLock+1, etc.`n`nWatch the status bar for execution feedback.", "Test Mode Active", "Icon!")
-}
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
 ShowPythonStats() {
@@ -5155,206 +5041,9 @@ CreateTimingMetricsTabOriginal(statsGui, tabs) {
     statsGui.editTiming := editTiming
 }
 
-; STANDARD MENU DIMENSIONS (both config and stats)
-global standardMenuWidth := 900
-global standardMenuHeight := 650
 
-CreateStandardMenuBase(title, icon := "⚙️") {
-    ; Standard menu foundation for consistency
-    gui := Gui("+Resize", icon . " " . title)
-    gui.SetFont("s11")
-    
-    ; Standard header
-    gui.Add("Text", "x20 y15 w860 h30 Center", icon . " " . StrUpper(title))
-        .SetFont("s14 Bold", "cNavy")
-    
-    ; Standard content area
-    contentY := 55
-    contentHeight := standardMenuHeight - 100  ; Leave space for footer
-    
-    return {gui: gui, contentY: contentY, contentHeight: contentHeight}
-}
 
-ShowConfigStandardSize() {
-    ; CONFIG MENU - Standard size with efficient layout
-    menuBase := CreateStandardMenuBase("MACROMASTER CONFIGURATION")
-    configGui := menuBase.gui
-    
-    ; Efficient tab layout
-    tabs := configGui.Add("Tab3", "x20 y" . menuBase.contentY . " w860 h" . menuBase.contentHeight, 
-                          ["🎮 Hotkeys", "🎯 Canvas & Performance"])
-    
-    ; TAB 1: Compact hotkey interface
-    tabs.UseTab(1)
-    CreateEfficientHotkeyInterface(configGui, menuBase.contentY + 35)
-    
-    ; TAB 2: Canvas and performance settings
-    tabs.UseTab(2)
-    CreateEfficientCanvasSettings(configGui, menuBase.contentY + 35)
-    
-    ; Standard footer
-    CreateStandardMenuFooter(configGui, "Close")
-    
-    configGui.Show("w" . standardMenuWidth . " h" . standardMenuHeight)
-}
 
-ShowStatsStandardSize() {
-    ; STATS MENU - Standard size (Python integration button)
-    menuBase := CreateStandardMenuBase("MACROMASTER ANALYTICS", "📊")
-    statsGui := menuBase.gui
-    
-    ; Quick stats overview (compact)
-    CreateQuickStatsOverview(statsGui, menuBase.contentY + 10)
-    
-    ; Python dashboard integration
-    CreatePythonDashboardSection(statsGui, menuBase.contentY + 200)
-    
-    ; Daily reset controls
-    CreateDailyResetControls(statsGui, menuBase.contentY + 350)
-    
-    ; Standard footer
-    CreateStandardMenuFooter(statsGui, "Close")
-    
-    statsGui.Show("w" . standardMenuWidth . " h" . standardMenuHeight)
-}
-
-CreatePythonDashboardSection(gui, y) {
-    ; PYTHON INTEGRATION SECTION
-    gui.Add("Text", "x40 y" . y . " w800 h25", "📊 ADVANCED ANALYTICS DASHBOARD")
-        .SetFont("s12 Bold", "cNavy")
-    
-    gui.Add("Text", "x60 y" . (y + 35) . " w700 h40", 
-            "Launch professional interactive analytics with timeline filtering, degradation analysis, and performance metrics.")
-    
-    ; Dashboard launch buttons
-    btnToday := gui.Add("Button", "x60 y" . (y + 85) . " w150 h35", "📅 Today's Dashboard")
-    btnToday.SetFont("s10 Bold")
-    btnToday.OnEvent("Click", (*) => LaunchPythonDashboard("today"))
-    
-    btnAllTime := gui.Add("Button", "x230 y" . (y + 85) . " w150 h35", "📊 All-Time Dashboard")
-    btnAllTime.SetFont("s10 Bold")
-    btnAllTime.OnEvent("Click", (*) => LaunchPythonDashboard("all"))
-    
-    btnWeek := gui.Add("Button", "x400 y" . (y + 85) . " w150 h35", "📈 Weekly Analysis")
-    btnWeek.SetFont("s10 Bold")
-    btnWeek.OnEvent("Click", (*) => LaunchPythonDashboard("week"))
-}
-
-LaunchPythonDashboard(filterMode) {
-    global masterStatsCSV
-    
-    ; Python command
-    pythonScript := A_ScriptDir . "\stats_dashboard.py"
-    pythonCmd := 'python "' . pythonScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
-    
-    try {
-        UpdateStatus("📊 Launching " . filterMode . " analytics dashboard...")
-        Run(pythonCmd, A_ScriptDir)
-        UpdateStatus("📊 " . StrTitle(filterMode) . " dashboard opened in browser")
-    } catch Error as e {
-        MsgBox("Dashboard launch failed: " . e.Message, "Error", "Icon!")
-    }
-}
-
-CreateQuickStatsOverview(gui, y) {
-    ; Compact stats overview for the new menu
-    gui.Add("Text", "x40 y" . y . " w800 h25", "⚡ QUICK OVERVIEW")
-        .SetFont("s12 Bold", "cNavy")
-    
-    ; Get basic stats
-    try {
-        stats := ReadStatsFromCSV(false)
-        gui.Add("Text", "x60 y" . (y + 35) . " w200 h20", "Total Executions: " . stats["total_executions"])
-        gui.Add("Text", "x280 y" . (y + 35) . " w200 h20", "Total Boxes: " . stats["total_boxes"])
-        gui.Add("Text", "x500 y" . (y + 35) . " w200 h20", "Macro Count: " . stats["macro_executions_count"])
-    } catch {
-        gui.Add("Text", "x60 y" . (y + 35) . " w600 h20", "Stats loading...")
-    }
-}
-
-CreateDailyResetControls(gui, y) {
-    ; Daily reset section
-    gui.Add("Text", "x40 y" . y . " w800 h25", "📅 SESSION MANAGEMENT")
-        .SetFont("s12 Bold", "cNavy")
-    
-    btnDailyReset := gui.Add("Button", "x60 y" . (y + 35) . " w150 h35", "📅 Daily Reset")
-    btnDailyReset.OnEvent("Click", (*) => ShowIntuitiveDailyResetDialog())
-    
-    btnExport := gui.Add("Button", "x230 y" . (y + 35) . " w150 h35", "📄 Export Data")
-    btnExport.OnEvent("Click", (*) => ExportCSVData())
-}
-
-CreateStandardMenuFooter(gui, closeText := "Close") {
-    ; Standard footer for all menus
-    btnClose := gui.Add("Button", "x750 y580 w120 h40", "❌ " . closeText)
-    btnClose.OnEvent("Click", (*) => gui.Destroy())
-}
-
-CreateEfficientHotkeyInterface(gui, y) {
-    ; Compact hotkey configuration
-    gui.Add("Text", "x40 y" . y . " w400 h20", "Main Hotkeys:")
-    
-    ; Essential hotkeys only
-    y += 30
-    gui.Add("Text", "x50 y" . y . " w100 h20", "Record:")
-    gui.Add("Edit", "x160 y" . (y-2) . " w80 h20", hotkeyRecordToggle)
-    
-    gui.Add("Text", "x260 y" . y . " w100 h20", "Stats:")
-    gui.Add("Edit", "x360 y" . (y-2) . " w80 h20", hotkeyStats)
-    
-    y += 30
-    gui.Add("Text", "x50 y" . y . " w100 h20", "Settings:")
-    gui.Add("Edit", "x160 y" . (y-2) . " w80 h20", hotkeySettings)
-    
-    gui.Add("Text", "x260 y" . y . " w100 h20", "Break Mode:")
-    gui.Add("Edit", "x360 y" . (y-2) . " w80 h20", hotkeyBreakMode)
-}
-
-CreateEfficientCanvasSettings(gui, y) {
-    ; Canvas and performance settings
-    gui.Add("Text", "x40 y" . y . " w400 h20", "Canvas & Performance:")
-    
-    y += 30
-    gui.Add("Text", "x50 y" . y . " w200 h20", "Canvas Type: " . canvasType)
-    
-    y += 25
-    btnToggleCanvas := gui.Add("Button", "x50 y" . y . " w120 h30", "Toggle Canvas")
-    btnToggleCanvas.OnEvent("Click", (*) => ToggleCanvasType())
-}
-
-ToggleCanvasType() {
-    global canvasType, canvasWidth, canvasHeight
-    
-    ; Toggle between canvas types
-    if (canvasType = "wide") {
-        canvasType := "narrow"
-    } else {
-        canvasType := "wide"
-    }
-    
-    ; Update canvas dimensions
-    UpdateCanvasDimensions()
-    SaveConfig()
-    UpdateStatus("🖼️ Canvas type: " . canvasType)
-}
-
-UpdateCanvasDimensions() {
-    global canvasType, canvasWidth, canvasHeight
-    
-    ; Set canvas dimensions based on type
-    if (canvasType = "wide") {
-        canvasWidth := 1920
-        canvasHeight := 1080
-    } else {
-        canvasWidth := 1080
-        canvasHeight := 1920
-    }
-}
-
-; Legacy function for backward compatibility
-ShowSettings() {
-    ShowConfigStandardSize()
-}
 
 CreateCondensedWASDTable(gui, startY, width) {
     ; ULTRA-CONDENSED WASD TABLE - MAXIMUM SPACE EFFICIENCY
@@ -5658,35 +5347,6 @@ ToggleHotkeyProfileInSettings(btnToggle, settingsGui) {
     UpdateStatus(hotkeyProfileActive ? "🎹✅ Profile enabled - labels updated" : "🎹❌ Profile disabled - labels restored")
 }
 
-; Function to toggle standalone WASD labels in settings
-ToggleStandaloneWASDInSettings(btnToggle, settingsGui) {
-    global wasdLabelsEnabled
-    
-    ; Toggle standalone WASD labels (this handles state management and config saving)
-    ToggleWASDLabels()
-    
-    ; Update button text immediately
-    btnToggle.Text := wasdLabelsEnabled ? "🔴 Disable WASD" : "🟢 Enable WASD"
-    
-    ; Find and update the status text in the GUI
-    try {
-        for control in settingsGui {
-            if (control.Type = "Text" && InStr(control.Text, "Standalone WASD Labels:")) {
-                standaloneLabelStatus := wasdLabelsEnabled ? "🟢 ON" : "🔴 OFF"
-                control.Text := "Standalone WASD Labels: " . standaloneLabelStatus
-                break
-            }
-        }
-    } catch {
-        ; If status text update fails, it's not critical
-    }
-    
-    ; Force GUI redraw to show updated elements
-    settingsGui.Redraw()
-    
-    ; Additional status update for immediate feedback
-    UpdateStatus(wasdLabelsEnabled ? "🏷️✅ Standalone WASD labels enabled" : "🏷️❌ Standalone WASD labels disabled")
-}
 
 SaveWASDMappingsInSettings(settingsGui) {
     global wasdHotkeyMap, hotkeyProfileActive
@@ -8786,7 +8446,7 @@ SubmitCurrentImage() {
         ; Track execution start time
         startTime := A_TickCount
         
-        Sleep(focusDelay)
+        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
         Send("+{Enter}")
         UpdateStatus("📤 Submitted")
         
@@ -8817,7 +8477,7 @@ DirectClearExecution() {
     }
     
     if (browserFocused) {
-        Sleep(focusDelay)
+        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
         Send("+{Enter}")
         UpdateStatus("📤 Direct Clear Submitted")
         
@@ -8847,7 +8507,7 @@ ShiftNumpadClearExecution(buttonName) {
     }
     
     if (browserFocused) {
-        Sleep(focusDelay)
+        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
         Send("+{Enter}")
         UpdateStatus("📤 Clear: Shift+" . buttonName)
         

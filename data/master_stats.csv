@@ -6,3 +6,11 @@ timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,
 2025-09-10 08:20:00,sess_20250910_080000,testuser,json_profile,L1_Num4,1,2100,4,glare,medium,wide,3600000,false
 2025-09-11 00:26:01,,,macro,ShiftEnter,1,187,1,clear,No degradation present,submitted,78707531,184734,0,,6,4,2,187,ShiftEnter,1,1,0,0,0,1,1,187,2025-09-11 00:26:01,none,clear,1,19.5,116.9
 2025-09-11 00:26:01,,,macro,ShiftEnter,1,188,1,clear,No degradation present,submitted,78707531,185000,0,,7,5,2,188,ShiftEnter,1,1,0,0,0,1,1,188,2025-09-11 00:26:01,none,clear,2,19.5,136.2
+2025-09-11 08:04:47,,,macro,ShiftEnter,1,250,1,clear,No degradation present,submitted,106383578,33828,0,,8,6,2,250,ShiftEnter,1,1,0,0,0,1,1,250,2025-09-11 08:04:47,none,clear,1,106.4,851.4
+2025-09-11 08:04:51,,,macro,ShiftEnter,1,203,1,clear,No degradation present,submitted,106383578,37578,0,,9,7,2,203,ShiftEnter,1,1,0,0,0,1,1,203,2025-09-11 08:04:51,none,clear,2,95.8,862.2
+2025-09-11 08:09:01,,,json_profile,Num2,1,422,0,partial_blockage,partial_blockage,completed,106600718,70235,0,,10,7,3,422,Num2,1,0,0,0,0,1,0,422,2025-09-11 08:09:01,high,partial_blockage,0,0.0,512.6
+2025-09-11 08:32:39,,,json_profile,Num2,1,422,0,partial_blockage,partial_blockage,completed,108078453,10937,0,,11,7,4,422,Num2,1,0,0,0,0,1,0,422,2025-09-11 08:32:39,high,partial_blockage,0,0.0,3620.7
+2025-09-11 19:20:02,,,macro,Num3,1,15,1,partial_blockage,partial_blockage,completed,146916640,15500,0,,12,8,4,15,Num3,1,1,0,0,0,1,1,15,2025-09-11 19:20:02,,partial_blockage,0,232.3,2787.1
+2025-09-11 19:20:23,,,macro,ShiftEnter,1,125,1,clear,No degradation present,submitted,146916640,36422,0,,13,9,4,125,ShiftEnter,1,1,0,0,0,1,1,125,2025-09-11 19:20:23,none,clear,1,98.8,1284.9
+2025-09-12 07:54:05,,,json_profile,Num1,1,110,0,splashes,splashes,completed,192162828,12375,0,,14,9,5,110,Num1,1,0,0,0,1,1,0,110,2025-09-12 07:54:05,medium,splashes,0,0.0,4072.7
+2025-09-12 07:54:12,,,json_profile,Num1,1,109,0,splashes,splashes,completed,192162828,19593,0,,15,9,6,109,Num1,1,0,0,0,1,1,0,109,2025-09-12 07:54:12,medium,splashes,0,0.0,2756.1
