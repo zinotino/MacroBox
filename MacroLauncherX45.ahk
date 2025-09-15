@@ -1772,15 +1772,15 @@ PerformChromeMemoryCleanup() {
         if (WinExist("ahk_exe chrome.exe")) {
             ; Focus Chrome briefly to allow memory cleanup
             WinActivate("ahk_exe chrome.exe")
-            Sleep(100)
-            
+            ; Sleep(100) - REMOVED: Between-execution delay
+
             ; Send some cleanup keystrokes
             Send("{F5}")  ; Refresh current page
-            Sleep(500)
+            ; Sleep(500) - REMOVED: Between-execution delay
             Send("^+t")  ; Reopen recently closed tab
-            Sleep(100)
+            ; Sleep(100) - REMOVED: Between-execution delay
             Send("^w")   ; Close the reopened tab
-            Sleep(200)
+            ; Sleep(200) - REMOVED: Between-execution delay
         }
         
         UpdateStatus("🧹 Chrome memory cleanup performed")
@@ -2070,8 +2070,8 @@ ExecuteJsonAnnotation(jsonEvent) {
         if (!focusResult) {
             ; Fallback attempt with more aggressive focusing
             UpdateStatus("🔄 Browser focus failed, attempting fallback...")
-            Sleep(200)
-            
+            ; Sleep(200) - REMOVED: Between-execution delay, not internal macro timing
+
             ; Try one more time with extended delay
             focusResult := FocusBrowser()
             if (!focusResult) {
@@ -8423,7 +8423,7 @@ EmergencyStop() {
 SafeExit() {
     UpdateStatus("💾 Saving and exiting...")
     CleanupAndExit()
-    Sleep(500)
+    ; Sleep(500) - REMOVED: Between-execution delay for faster exit
     ExitApp(0)
 }
 
