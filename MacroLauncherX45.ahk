@@ -2016,32 +2016,30 @@ PlayEventsOptimized(recordedEvents) {
             try {
                 if (event.type = "boundingBox") {
                     MouseMove(event.left, event.top, 2)
-                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
-                    ; Sleep(boxDrawDelay) - REMOVED for rapid labeling performance
-                    
+                    Sleep(boxDrawDelay)
+
                     Send("{LButton Down}")
-                    ; Sleep(mouseClickDelay) - REMOVED for rapid labeling performance
-                    
+                    Sleep(mouseClickDelay)
+
                     MouseMove(event.right, event.bottom, 5)
-                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
-                    ; Sleep(mouseReleaseDelay) - REMOVED for rapid labeling performance
-                    
+                    Sleep(mouseReleaseDelay)
+
                     Send("{LButton Up}")
-                    ; Sleep(betweenBoxDelay) - REMOVED for rapid labeling performance
+                    Sleep(betweenBoxDelay)
                 }
                 else if (event.type = "mouseDown") {
                     MouseMove(event.x, event.y, 2)
-                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
+                    Sleep(10)
                     Send("{LButton Down}")
                 }
                 else if (event.type = "mouseUp") {
                     MouseMove(event.x, event.y, 2)
-                    ; Sleep(mouseHoverDelay) - REMOVED for rapid labeling performance
+                    Sleep(10)
                     Send("{LButton Up}")
                 }
                 else if (event.type = "keyDown") {
                     Send("{" . event.key . " Down}")
-                    ; Sleep(keyPressDelay) - REMOVED for rapid labeling performance
+                    Sleep(keyPressDelay)
                 }
                 else if (event.type = "keyUp") {
                     Send("{" . event.key . " Up}")
