@@ -1185,7 +1185,7 @@ CalibrateCanvasArea() {
     ; Get top-left corner
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    ; Sleep(500) - REMOVED for rapid execution performance
+    Sleep(500)
     
     UpdateStatus("📐 Canvas Calibration: Click BOTTOM-RIGHT corner...")
     
@@ -1772,15 +1772,15 @@ PerformChromeMemoryCleanup() {
         if (WinExist("ahk_exe chrome.exe")) {
             ; Focus Chrome briefly to allow memory cleanup
             WinActivate("ahk_exe chrome.exe")
-            ; Sleep(100) - REMOVED for rapid execution performance
-
+            Sleep(100)
+            
             ; Send some cleanup keystrokes
             Send("{F5}")  ; Refresh current page
-            ; Sleep(500) - REMOVED for rapid execution performance
+            Sleep(500)
             Send("^+t")  ; Reopen recently closed tab
-            ; Sleep(100) - REMOVED for rapid execution performance
+            Sleep(100)
             Send("^w")   ; Close the reopened tab
-            ; Sleep(200) - REMOVED for rapid execution performance
+            Sleep(200)
         }
         
         UpdateStatus("🧹 Chrome memory cleanup performed")
@@ -2070,8 +2070,8 @@ ExecuteJsonAnnotation(jsonEvent) {
         if (!focusResult) {
             ; Fallback attempt with more aggressive focusing
             UpdateStatus("🔄 Browser focus failed, attempting fallback...")
-            ; Sleep(200) - REMOVED for rapid execution performance
-
+            Sleep(200)
+            
             ; Try one more time with extended delay
             focusResult := FocusBrowser()
             if (!focusResult) {
@@ -5674,8 +5674,8 @@ CalibrateWideCanvas() {
     
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    ; Sleep(500) - REMOVED for rapid execution performance
-
+    Sleep(500)
+    
     UpdateStatus("🔦 Wide Canvas (16:9): Click BOTTOM-RIGHT corner...")
     
     KeyWait("LButton", "D")
@@ -5718,8 +5718,8 @@ CalibrateNarrowCanvas() {
     
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    ; Sleep(500) - REMOVED for rapid execution performance
-
+    Sleep(500)
+    
     UpdateStatus("📱 Narrow Canvas (4:3): Click BOTTOM-RIGHT corner...")
     
     KeyWait("LButton", "D")
@@ -8423,7 +8423,7 @@ EmergencyStop() {
 SafeExit() {
     UpdateStatus("💾 Saving and exiting...")
     CleanupAndExit()
-    ; Sleep(500) - REMOVED for rapid execution performance
+    Sleep(500)
     ExitApp(0)
 }
 
@@ -8582,8 +8582,8 @@ TestSaveLoad() {
     }
     
     UpdateStatus("🗑️ Cleared macros from memory")
-    ; Sleep(1000) - REMOVED for rapid execution performance
-
+    Sleep(1000)
+    
     ; Force load
     LoadConfig()
     
