@@ -34,7 +34,8 @@
       "Bash(del MacroLauncherX44.txt macrolauncher_dev_session.md claude_code_migration_instructions.md PYTHON_SETUP.md stats_dashboard_all.html metrics_summary_all.json macromaster_optimized_all_empty.html)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_documents_structure.ahk)",
       "Bash(del test_documents_structure.ahk)",
-      "Bash(del test_stats.ahk)"
+      "Bash(del test_stats.ahk)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

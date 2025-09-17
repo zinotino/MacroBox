@@ -4164,28 +4164,53 @@ GetQuickStatsText() {
 }
 
 LaunchDashboard(filterMode, statsMenuGui) {
-    global masterStatsCSV, darkMode
+    global masterStatsCSV, documentsDir
 
-    ; Validate prerequisites - use Documents folder
+    ; Validate CSV file exists
     if (!FileExist(masterStatsCSV)) {
         InitializeCSVFile()
     }
 
+    ; First try the AMAZING HTML dashboard with Python
+    pythonScript := A_ScriptDir . "\macromaster_optimized.py"
+
+    if (FileExist(pythonScript)) {
+        try {
+            ; Launch the beautiful HTML dashboard
+            pythonCmd := 'python "' . pythonScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
+
+            UpdateStatus("📊 Launching amazing HTML analytics dashboard...")
+            Run(pythonCmd, A_ScriptDir)
+
+            ; Close the menu
+            statsMenuGui.Destroy()
+
+            UpdateStatus("🎮 Beautiful HTML dashboard opened in browser!")
+            return
+
+        } catch Error as e {
+            UpdateStatus("⚠️ Python dashboard failed, trying built-in fallback...")
+        }
+    }
+
+    ; Fallback to built-in GUI for workplace restrictions
     try {
+        UpdateStatus("📊 Using built-in analytics (workplace-friendly)")
+
         ; Read stats data using our CSV function
         stats := ReadStatsFromCSV(filterMode = "today")
 
-        ; Create built-in stats dashboard GUI
+        ; Create built-in stats dashboard GUI as fallback
         ShowBuiltInStatsGUI(filterMode, stats)
 
         ; Close the menu
         statsMenuGui.Destroy()
 
-        UpdateStatus("📊 " . (filterMode = "today" ? "Today's" : filterMode = "all" ? "All Time" : "Filtered") . " stats displayed")
+        UpdateStatus("📊 Built-in analytics displayed (no Python required)")
 
     } catch Error as e {
-        MsgBox("❌ Failed to load analytics: " . e.Message . "`n`nUsing Documents folder: " . masterStatsCSV, "Error", "Icon!")
-        UpdateStatus("❌ Stats display failed: " . e.Message)
+        MsgBox("❌ Failed to load analytics: " . e.Message . "`n`nCSV location: " . masterStatsCSV, "Error", "Icon!")
+        UpdateStatus("❌ Analytics failed: " . e.Message)
     }
 }
 
