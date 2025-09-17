@@ -9,6 +9,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import sys
 import os
+import webbrowser
 from datetime import datetime, timedelta
 import argparse
 import json
@@ -170,9 +171,12 @@ class MacroMasterOptimizedAnalytics:
         
         # Save and display
         output_file = f"macromaster_optimized_{filter_mode}.html"
-        fig.write_html(output_file, auto_open=True)
+        fig.write_html(output_file, auto_open=False)
         print(f"MacroMaster Optimized Analytics saved as: {output_file}")
-        
+
+        # Open in browser
+        webbrowser.open(f"file://{os.path.abspath(output_file)}")
+
         # Save metrics
         self.save_optimized_metrics(df_filtered, filter_mode)
     
@@ -681,7 +685,9 @@ class MacroMasterOptimizedAnalytics:
             template="plotly_white",
             height=800
         )
-        fig.write_html(f"macromaster_optimized_{filter_mode}_empty.html", auto_open=True)
+        output_file = f"macromaster_optimized_{filter_mode}_empty.html"
+        fig.write_html(output_file, auto_open=False)
+        webbrowser.open(f"file://{os.path.abspath(output_file)}")
         print(f"Empty MacroMaster dashboard created: macromaster_optimized_{filter_mode}_empty.html")
     
     def save_optimized_metrics(self, df, filter_mode):
