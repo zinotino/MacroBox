@@ -24,7 +24,17 @@
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut MacroLauncherX45.ahv)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_stats.ahk)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_integration.ahk)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut \"C:\\Users\\ajnef\\my-coding-projects\\MacroMasterV555\\MacroLauncherX45.ahk\")",
+      "Bash(where:*)",
+      "Read(//c/Program Files/AutoHotkey/**)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_integer_error.ahk)",
+      "Bash(del test_integer_error.ahk)",
+      "Bash(dir:*)",
+      "Bash(del MacroLauncherX44.txt macrolauncher_dev_session.md claude_code_migration_instructions.md PYTHON_SETUP.md stats_dashboard_all.html metrics_summary_all.json macromaster_optimized_all_empty.html)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_documents_structure.ahk)",
+      "Bash(del test_documents_structure.ahk)",
+      "Bash(del test_stats.ahk)"
     ],
     "deny": [],
     "ask": []

@@ -34,6 +34,27 @@ global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
 
+; ===== PERFORMANCE OPTIMIZATION =====
+global hbitmapCache := Map()  ; Cache for HBITMAP visualizations
+
+ClearHBitmapCacheForMacro(macroName) {
+    global hbitmapCache
+    ; Remove cache entries that contain the macro name
+    keysToDelete := []
+    for cacheKey, hbitmap in hbitmapCache {
+        if (InStr(cacheKey, macroName)) {
+            keysToDelete.Push(cacheKey)
+            ; Clean up the HBITMAP
+            if (hbitmap) {
+                DllCall("DeleteObject", "Ptr", hbitmap)
+            }
+        }
+    }
+    for key in keysToDelete {
+        hbitmapCache.Delete(key)
+    }
+}
+
 ; ===== HOTKEY CONFIGURATION =====
 global hotkeyRecordToggle := "F9"
 global hotkeySubmit := "NumpadEnter"
@@ -68,10 +89,15 @@ global yellowOutlineButtons := Map()  ; Track buttons with yellow outlines
 global wasdLabelsEnabled := false  ; Track if WASD labels should be shown
 global wasdToggleBtn := 0  ; Reference to the WASD toggle button
 
-; ===== FILE SYSTEM PATHS =====
-global workDir := A_ScriptDir "\data"
-global configFile := A_ScriptDir "\config.ini"
-global thumbnailDir := A_ScriptDir "\thumbnails"
+; ===== DOCUMENTS FOLDER CONFIGURATION =====
+; Configure Documents folder first for portable execution
+global documentsDir := A_MyDocuments . "\MacroMaster"
+
+; ===== FILE SYSTEM PATHS - PORTABLE EXECUTION =====
+; All data stored in Documents folder for zipped execution
+global workDir := documentsDir . "\data"
+global configFile := documentsDir . "\config.ini"
+global thumbnailDir := documentsDir . "\thumbnails"
 
 ; ===== THUMBNAIL SUPPORT =====
 global buttonThumbnails := Map()
@@ -113,7 +139,7 @@ global macroStats := Map()
 global severityBreakdown := Map()
 global executionTimeLog := []
 global totalExecutionTime := 0
-global persistentStatsFile := A_ScriptDir . "\persistent_stats.json"
+global persistentStatsFile := documentsDir . "\persistent_stats.json"
 
 ; ===== DEGRADATION TRACKING =====
 global pendingBoxForTagging := ""
@@ -127,9 +153,11 @@ global lastActiveTime := A_TickCount
 global breakMode := false
 global breakStartTime := 0
 
-; ===== CSV STATS SYSTEM =====
-global sessionId := ""
-global masterStatsCSV := A_ScriptDir . "\data\master_stats.csv"
+; ===== CSV STATS SYSTEM - OPTIMIZED FOR PORTABLE EXECUTION =====
+; Configure for Documents folder to work from zipped state
+global sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
+global dataDir := documentsDir . "\data"
+global masterStatsCSV := dataDir . "\master_stats.csv"
 global currentUsername := A_UserName
 global dailyResetActive := false
 global sessionStartTime := 0
@@ -1168,7 +1196,7 @@ CalibrateCanvasArea() {
     ; Get top-left corner
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    Sleep(500)
+    ; Sleep(500) - REMOVED: Non-critical calibration delay
     
     UpdateStatus("📐 Canvas Calibration: Click BOTTOM-RIGHT corner...")
     
@@ -1958,6 +1986,8 @@ AssignToButton(buttonName) {
     
     if (macroEvents.Has(layerMacroName)) {
         macroEvents.Delete(layerMacroName)
+        ; PERFORMANCE: Clear related HBITMAP cache entries
+        ClearHBitmapCacheForMacro(layerMacroName)
     }
     
     macroEvents[layerMacroName] := []
@@ -2370,22 +2400,41 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels
-    
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled
+
+    ; PERFORMANCE: Early return for invalid button names
     if (!buttonGrid.Has(buttonName))
         return
-    
+
     button := buttonGrid[buttonName]
     picture := buttonPictures[buttonName]
     layerMacroName := "L" . currentLayer . "_" . buttonName
-    
+
+    ; PERFORMANCE: Check macro existence once and cache result
     hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
+
+    ; PERFORMANCE: Early return for empty buttons to skip expensive operations
+    if (!hasMacro) {
+        ; Set label text for empty buttons
+        buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
+
+        ; Quick setup for empty button
+        picture.Visible := false
+        button.Visible := true
+        button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
+        button.SetFont("s8", "cGray")
+        button.Text := wasdLabelsEnabled ? "" : "L" . currentLayer
+        return
+    }
+
     hasAutoMode := buttonAutoSettings.Has(layerMacroName) && buttonAutoSettings[layerMacroName].enabled
-    
+
     ; Set label text (this will be shown or hidden based on button content)
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
     
-    hasThumbnail := buttonThumbnails.Has(layerMacroName) && FileExist(buttonThumbnails[layerMacroName])
+    ; PERFORMANCE: Optimize thumbnail check - avoid FileExist() for HBITMAP handles
+    thumbnailValue := buttonThumbnails.Has(layerMacroName) ? buttonThumbnails[layerMacroName] : ""
+    hasThumbnail := thumbnailValue != "" && (Type(thumbnailValue) = "Integer" || FileExist(thumbnailValue))
     
     isJsonAnnotation := false
     jsonInfo := ""
@@ -3007,11 +3056,25 @@ TestFileAccess() {
 }
 
 CreateHBITMAPVisualization(macroEvents, buttonSize) {
-    ; Memory-only visualization using HBITMAP (no file system access)
-    global gdiPlusInitialized, degradationColors
-    
+    ; Memory-only visualization using HBITMAP with caching for performance
+    global gdiPlusInitialized, degradationColors, hbitmapCache
+
     if (!gdiPlusInitialized || !macroEvents || macroEvents.Length = 0) {
         return 0
+    }
+
+    ; PERFORMANCE: Generate cache key based on macro events content
+    cacheKey := ""
+    for event in macroEvents {
+        if (event.type = "boundingBox") {
+            cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
+        }
+    }
+    cacheKey .= buttonSize.width . "x" . buttonSize.height
+
+    ; Check cache first
+    if (hbitmapCache.Has(cacheKey)) {
+        return hbitmapCache[cacheKey]
     }
     
     ; Extract box drawing events
@@ -3065,6 +3128,8 @@ CreateHBITMAPVisualization(macroEvents, buttonSize) {
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
         
         if (result = 0 && hbitmap) {
+            ; PERFORMANCE: Cache the HBITMAP for future use
+            hbitmapCache[cacheKey] := hbitmap
             return hbitmap
         } else {
             return 0
@@ -3185,11 +3250,20 @@ UpdateButtonAppearanceDelayed(buttonName, *) {
 
 UpdateStatus(text) {
     global statusBar
+    static lastTimer := 0
+
     if (IsObject(statusBar)) {
         statusBar.Text := text
-        ; Clear save/config messages after 3 seconds to prevent overlap
+
+        ; PERFORMANCE: Only set timer for specific messages to reduce overhead
         if (InStr(text, "💾") || InStr(text, "📄") || InStr(text, "config")) {
-            SetTimer(() => (statusBar.Text := "✅ Ready - F9 to record"), -3000)
+            ; Clear any existing timer to prevent timer buildup
+            if (lastTimer) {
+                SetTimer(lastTimer, 0)
+            }
+            ; Set new timer and store reference
+            lastTimer := () => (statusBar.Text := "✅ Ready - F9 to record")
+            SetTimer(lastTimer, -3000)
         }
     }
 }
@@ -3992,50 +4066,300 @@ ShowConfigMenu() {
 
 ; ===== COMPREHENSIVE STATS SYSTEM =====
 ShowPythonStats() {
-    global masterStatsCSV, dailyResetActive
+    ShowStatsMenu()
+}
 
-    ; Use optimized MacroMaster analytics dashboard ONLY (no fallbacks)
-    optimizedScript := A_ScriptDir . "\macromaster_optimized.py"
+ShowStatsMenu() {
+    global masterStatsCSV, dailyResetActive, darkMode
 
-    ; Check if CSV file exists, create if needed
+    ; Create modern stats menu matching our interface style
+    statsMenuGui := Gui("+Resize +MinSize300x200", "📊 MacroMaster Analytics")
+    statsMenuGui.BackColor := darkMode ? "0x2A2A2A" : "White"
+    statsMenuGui.SetFont("s10", "Segoe UI")
+
+    ; Header
+    headerText := statsMenuGui.Add("Text", "x20 y20 w360 h30 Center", "📊 Personal Performance Analytics")
+    headerText.SetFont("s12 bold", "Segoe UI")
+    headerText.Opt("c" . (darkMode ? "White" : "Black"))
+
+    ; Quick stats overview
+    quickStatsY := 60
+    quickStats := GetQuickStatsText()
+    quickStatsText := statsMenuGui.Add("Text", "x20 y" . quickStatsY . " w360 h60 Center", quickStats)
+    quickStatsText.SetFont("s9", "Segoe UI")
+    quickStatsText.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Dashboard options
+    btnY := quickStatsY + 80
+    btnWidth := 160
+    btnHeight := 35
+    btnSpacing := 20
+
+    ; Today's Performance
+    btnToday := statsMenuGui.Add("Button", "x20 y" . btnY . " w" . btnWidth . " h" . btnHeight, "📅 Today's Session")
+    btnToday.SetFont("s9 bold")
+    btnToday.OnEvent("Click", (*) => LaunchDashboard("today", statsMenuGui))
+
+    ; All Time Analytics
+    btnAllTime := statsMenuGui.Add("Button", "x" . (20 + btnWidth + btnSpacing) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "🎯 All Time Stats")
+    btnAllTime.SetFont("s9 bold")
+    btnAllTime.OnEvent("Click", (*) => LaunchDashboard("all", statsMenuGui))
+
+    ; This Week
+    btnY += btnHeight + 15
+    btnWeek := statsMenuGui.Add("Button", "x20 y" . btnY . " w" . btnWidth . " h" . btnHeight, "📈 This Week")
+    btnWeek.SetFont("s9 bold")
+    btnWeek.OnEvent("Click", (*) => LaunchDashboard("week", statsMenuGui))
+
+    ; Performance Trends
+    btnTrends := statsMenuGui.Add("Button", "x" . (20 + btnWidth + btnSpacing) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📊 Performance Trends")
+    btnTrends.SetFont("s9 bold")
+    btnTrends.OnEvent("Click", (*) => LaunchDashboard("trends", statsMenuGui))
+
+    ; Data Export
+    btnY += btnHeight + 20
+    btnExport := statsMenuGui.Add("Button", "x20 y" . btnY . " w120 h30", "💾 Export Data")
+    btnExport.SetFont("s8")
+    btnExport.OnEvent("Click", (*) => ExportStatsData(statsMenuGui))
+
+    ; Close button
+    btnClose := statsMenuGui.Add("Button", "x260 y" . btnY . " w120 h30", "❌ Close")
+    btnClose.SetFont("s8")
+    btnClose.OnEvent("Click", (*) => statsMenuGui.Destroy())
+
+    ; Dynamic window height
+    windowHeight := btnY + 70
+    statsMenuGui.Show("w400 h" . windowHeight)
+}
+
+GetQuickStatsText() {
+    global masterStatsCSV
+
     if (!FileExist(masterStatsCSV)) {
-        try {
-            ; Ensure data directory exists
-            dataDir := A_ScriptDir . "\data"
-            if (!DirExist(dataDir)) {
-                DirCreate(dataDir)
-            }
-
-            ; Create CSV with proper header
-            csvHeader := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active`n"
-            FileAppend(csvHeader, masterStatsCSV, "UTF-8")
-            UpdateStatus("📄 Created CSV data file")
-        } catch Error as e {
-            MsgBox("❌ Failed to create CSV file: " . e.Message . "`n`nStats system cannot function without CSV data.", "Error", "Icon!")
-            return
-        }
+        return "📊 No data recorded yet`nStart using macros to see your analytics!"
     }
 
-    ; Check if Python script exists
-    if (!FileExist(optimizedScript)) {
-        MsgBox("❌ Analytics script not found: " . optimizedScript . "`n`nPlease ensure macromaster_optimized.py is in the same folder as the program.", "Error", "Icon!")
+    try {
+        ; Use the updated ReadStatsFromCSV function for comprehensive stats
+        stats := ReadStatsFromCSV(false) ; Get all-time stats
+
+        if (stats["total_executions"] = 0) {
+            return "📊 No executions recorded yet`nStart using macros to see your analytics!"
+        }
+
+        ; Build informative quick stats summary
+        totalExecs := stats["total_executions"]
+        totalBoxes := stats["total_boxes"]
+        avgTime := stats["average_execution_time"]
+        execsPerHour := stats["executions_per_hour"]
+
+        if (totalExecs = 1) {
+            return "📊 1 execution recorded (" . totalBoxes . " boxes)`nAvg: " . avgTime . "ms | Rate: " . execsPerHour . "/hr"
+        } else {
+            return "📊 " . totalExecs . " executions (" . totalBoxes . " total boxes)`nAvg: " . avgTime . "ms | Rate: " . execsPerHour . "/hr"
+        }
+    } catch {
+        return "📊 Analytics ready`nView your performance insights below"
+    }
+}
+
+LaunchDashboard(filterMode, statsMenuGui) {
+    global masterStatsCSV, darkMode
+
+    ; Validate prerequisites - use Documents folder
+    if (!FileExist(masterStatsCSV)) {
+        InitializeCSVFile()
+    }
+
+    try {
+        ; Read stats data using our CSV function
+        stats := ReadStatsFromCSV(filterMode = "today")
+
+        ; Create built-in stats dashboard GUI
+        ShowBuiltInStatsGUI(filterMode, stats)
+
+        ; Close the menu
+        statsMenuGui.Destroy()
+
+        UpdateStatus("📊 " . (filterMode = "today" ? "Today's" : filterMode = "all" ? "All Time" : "Filtered") . " stats displayed")
+
+    } catch Error as e {
+        MsgBox("❌ Failed to load analytics: " . e.Message . "`n`nUsing Documents folder: " . masterStatsCSV, "Error", "Icon!")
+        UpdateStatus("❌ Stats display failed: " . e.Message)
+    }
+}
+
+CreateEmptyCSV() {
+    global masterStatsCSV
+
+    try {
+        ; Use Documents folder - handled by InitializeCSVFile
+        InitializeCSVFile()
+        dataDir := dataDir
+        if (!DirExist(dataDir)) {
+            DirCreate(dataDir)
+        }
+
+        csvHeader := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active`n"
+        FileAppend(csvHeader, masterStatsCSV, "UTF-8")
+        UpdateStatus("📄 Created CSV data file")
+    } catch Error as e {
+        MsgBox("❌ Failed to create CSV file: " . e.Message, "Error", "Icon!")
+    }
+}
+
+; Built-in stats display GUI - no external dependencies
+ShowBuiltInStatsGUI(filterMode, stats) {
+    global darkMode, masterStatsCSV
+
+    ; Create comprehensive stats window
+    statsGui := Gui("+Resize +MinSize600x400", "📊 MacroMaster Analytics - " . (filterMode = "today" ? "Today's Session" : filterMode = "all" ? "All Time" : "Filtered Data"))
+    statsGui.BackColor := darkMode ? "0x2A2A2A" : "White"
+    statsGui.SetFont("s10", "Segoe UI")
+
+    ; Title section
+    titleText := statsGui.Add("Text", "x20 y20 w560 h30 Center", "📊 Performance Analytics Dashboard")
+    titleText.SetFont("s14 bold", "Segoe UI")
+    titleText.Opt("c" . (darkMode ? "White" : "Black"))
+
+    ; Summary stats section
+    summaryY := 60
+    summaryText := "📈 EXECUTION SUMMARY`n"
+    summaryText .= "Total Executions: " . stats["total_executions"] . "`n"
+    summaryText .= "Total Boxes: " . stats["total_boxes"] . "`n"
+    summaryText .= "Average Time: " . stats["average_execution_time"] . "ms`n"
+    summaryText .= "Executions/Hour: " . stats["executions_per_hour"] . "`n"
+    summaryText .= "Boxes/Hour: " . stats["boxes_per_hour"] . "`n"
+    summaryText .= "Most Used Button: " . stats["most_used_button"] . "`n"
+    summaryText .= "Most Active Layer: " . stats["most_active_layer"] . "`n"
+
+    summaryControl := statsGui.Add("Text", "x20 y" . summaryY . " w280 h150", summaryText)
+    summaryControl.SetFont("s9", "Consolas")
+    summaryControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Degradation breakdown section
+    degradationY := summaryY
+    degradationText := "🎯 DEGRADATION ANALYSIS`n"
+    degradationText .= "Smudge: " . stats["smudge_total"] . "`n"
+    degradationText .= "Glare: " . stats["glare_total"] . "`n"
+    degradationText .= "Splashes: " . stats["splashes_total"] . "`n"
+    degradationText .= "Partial Block: " . stats["partial_blockage_total"] . "`n"
+    degradationText .= "Full Block: " . stats["full_blockage_total"] . "`n"
+    degradationText .= "Light Flare: " . stats["light_flare_total"] . "`n"
+    degradationText .= "Rain: " . stats["rain_total"] . "`n"
+    degradationText .= "Haze: " . stats["haze_total"] . "`n"
+    degradationText .= "Snow: " . stats["snow_total"] . "`n"
+    degradationText .= "Clear: " . stats["clear_total"] . "`n"
+
+    degradationControl := statsGui.Add("Text", "x320 y" . degradationY . " w260 h150", degradationText)
+    degradationControl.SetFont("s9", "Consolas")
+    degradationControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Execution type breakdown
+    typeY := summaryY + 160
+    typeText := "⚡ EXECUTION TYPES`n"
+    typeText .= "Macro Executions: " . stats["macro_executions_count"] . "`n"
+    typeText .= "JSON Profiles: " . stats["json_profile_executions_count"] . "`n"
+    typeText .= "Clear Executions: " . stats["clear_executions_count"] . "`n"
+    typeText .= "Session Time: " . FormatMilliseconds(stats["session_active_time"]) . "`n"
+
+    typeControl := statsGui.Add("Text", "x20 y" . typeY . " w280 h100", typeText)
+    typeControl.SetFont("s9", "Consolas")
+    typeControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Data source info
+    sourceY := typeY
+    sourceText := "📁 DATA SOURCE`n"
+    sourceText .= "CSV File: " . masterStatsCSV . "`n"
+    sourceText .= "Filter: " . (filterMode = "today" ? "Current Session" : filterMode = "all" ? "All Time" : "Custom") . "`n"
+
+    sourceControl := statsGui.Add("Text", "x320 y" . sourceY . " w260 h80", sourceText)
+    sourceControl.SetFont("s8", "Consolas")
+    sourceControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Buttons
+    btnY := typeY + 120
+    btnExport := statsGui.Add("Button", "x20 y" . btnY . " w120 h30", "💾 Export Data")
+    btnExport.SetFont("s9")
+    btnExport.OnEvent("Click", (*) => ExportStatsToFile())
+
+    btnRefresh := statsGui.Add("Button", "x160 y" . btnY . " w120 h30", "🔄 Refresh")
+    btnRefresh.SetFont("s9")
+    btnRefresh.OnEvent("Click", (*) => RefreshStatsGUI(statsGui, filterMode))
+
+    btnClose := statsGui.Add("Button", "x460 y" . btnY . " w120 h30", "❌ Close")
+    btnClose.SetFont("s9")
+    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
+
+    ; Show the window
+    windowHeight := btnY + 70
+    statsGui.Show("w600 h" . windowHeight)
+}
+
+; Helper function to format milliseconds to readable time
+FormatMilliseconds(ms) {
+    if (!IsNumber(ms) || ms < 0) {
+        return "0s"
+    }
+
+    seconds := ms // 1000
+    minutes := seconds // 60
+    hours := minutes // 60
+
+    if (hours > 0) {
+        remainingMinutes := minutes - (hours * 60)
+        return hours . "h " . remainingMinutes . "m"
+    } else if (minutes > 0) {
+        remainingSeconds := seconds - (minutes * 60)
+        return minutes . "m " . remainingSeconds . "s"
+    } else {
+        return seconds . "s"
+    }
+}
+
+; Helper function to refresh stats GUI
+RefreshStatsGUI(statsGui, filterMode) {
+    try {
+        stats := ReadStatsFromCSV(filterMode = "today")
+        statsGui.Destroy()
+        ShowBuiltInStatsGUI(filterMode, stats)
+        UpdateStatus("📊 Stats refreshed")
+    } catch Error as e {
+        UpdateStatus("❌ Refresh failed: " . e.Message)
+    }
+}
+
+; Helper function to export stats
+ExportStatsToFile() {
+    global masterStatsCSV, documentsDir
+
+    try {
+        exportPath := documentsDir . "\MacroMaster_Stats_Export_" . FormatTime(A_Now, "yyyyMMdd_HHmmss") . ".csv"
+        FileCopy(masterStatsCSV, exportPath)
+        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel.", "Export Complete", "Icon!")
+        UpdateStatus("💾 Stats exported to Documents folder")
+    } catch Error as e {
+        MsgBox("❌ Export failed: " . e.Message, "Error", "Icon!")
+    }
+}
+
+ExportStatsData(statsMenuGui) {
+    global masterStatsCSV
+
+    if (!FileExist(masterStatsCSV)) {
+        MsgBox("📊 No data to export yet`n`nStart using macros to generate performance data!", "Info", "Icon!")
         return
     }
 
-    ; Determine filter mode based on daily reset state
-    filterMode := dailyResetActive ? "today" : "all"
-
-    ; Launch optimized dashboard - NO FALLBACKS
-    pythonCmd := 'python "' . optimizedScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
+    ; Export to Documents folder for accessibility from zipped execution
+    exportPath := documentsDir . "\MacroMaster_Stats_Export_" . FormatTime(A_Now, "yyyyMMdd_HHmmss") . ".csv"
 
     try {
-        UpdateStatus("📊 Launching MacroMaster Analytics Dashboard...")
-        Run(pythonCmd, A_ScriptDir)
-        UpdateStatus("🎮 MacroMaster Analytics Dashboard opened in browser")
-
+        FileCopy(masterStatsCSV, exportPath)
+        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel or other analytics tools.", "Export Complete", "Icon!")
+        UpdateStatus("💾 Stats data exported to " . exportPath)
     } catch Error as e {
-        MsgBox("❌ Failed to launch analytics dashboard: " . e.Message . "`n`nPlease ensure Python is installed and accessible from command line.", "Error", "Icon!")
-        UpdateStatus("❌ Analytics dashboard failed")
+        MsgBox("❌ Export failed: " . e.Message, "Error", "Icon!")
     }
 }
 
@@ -4138,51 +4462,23 @@ GetTodayStats() {
 }
 
 GetTodayExecutionCount() {
-    global masterStatsCSV, sessionId
-    count := 0
     try {
-        if (FileExist(masterStatsCSV)) {
-            content := FileRead(masterStatsCSV, "UTF-8")
-            lines := StrSplit(content, "`n")
-            today := FormatTime(, "yyyy-MM-dd")
-            for i, line in lines {
-                if (i = 1 || Trim(line) = "") {
-                    continue
-                }
-                cols := StrSplit(line, ",")
-                if (cols.Length >= 1 && InStr(cols[1], today)) {
-                    count++
-                }
-            }
-        }
+        ; Use the streamlined ReadStatsFromCSV with session filtering
+        stats := ReadStatsFromCSV(true) ; Filter by current session (today)
+        return stats["total_executions"]
     } catch {
-        ; Fallback to 0
+        return 0
     }
-    return count
 }
 
 GetTodayBoxCount() {
-    global masterStatsCSV
-    count := 0
     try {
-        if (FileExist(masterStatsCSV)) {
-            content := FileRead(masterStatsCSV, "UTF-8")
-            lines := StrSplit(content, "`n")
-            today := FormatTime(, "yyyy-MM-dd")
-            for i, line in lines {
-                if (i = 1 || Trim(line) = "") {
-                    continue
-                }
-                cols := StrSplit(line, ",")
-                if (cols.Length >= 7 && InStr(cols[1], today) && IsNumber(cols[7])) {
-                    count += Integer(cols[7])
-                }
-            }
-        }
+        ; Use the streamlined ReadStatsFromCSV with session filtering
+        stats := ReadStatsFromCSV(true) ; Filter by current session (today)
+        return stats["total_boxes"]
     } catch {
-        ; Fallback to 0
+        return 0
     }
-    return count
 }
 
 GetTodayActiveTime() {
@@ -4191,27 +4487,13 @@ GetTodayActiveTime() {
 }
 
 GetTodayJSONDegradationCount() {
-    global masterStatsCSV
-    count := 0
     try {
-        if (FileExist(masterStatsCSV)) {
-            content := FileRead(masterStatsCSV, "UTF-8")
-            lines := StrSplit(content, "`n")
-            today := FormatTime(, "yyyy-MM-dd")
-            for i, line in lines {
-                if (i = 1 || Trim(line) = "") {
-                    continue
-                }
-                cols := StrSplit(line, ",")
-                if (cols.Length >= 4 && InStr(cols[1], today) && cols[4] = "json_profile") {
-                    count++
-                }
-            }
-        }
+        ; Use the streamlined ReadStatsFromCSV with session filtering
+        stats := ReadStatsFromCSV(true) ; Filter by current session (today)
+        return stats["json_profile_executions_count"]
     } catch {
-        ; Fallback to 0
+        return 0
     }
-    return count
 }
 
 ViewHistoricalStats() {
@@ -4999,8 +5281,8 @@ CalibrateWideCanvas() {
     
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    Sleep(500)
-    
+    ; Sleep(500) - REMOVED: Non-critical calibration delay
+
     UpdateStatus("🔦 Wide Canvas (16:9): Click BOTTOM-RIGHT corner...")
     
     KeyWait("LButton", "D")
@@ -5043,8 +5325,8 @@ CalibrateNarrowCanvas() {
     
     KeyWait("LButton", "D")
     MouseGetPos(&x1, &y1)
-    Sleep(500)
-    
+    ; Sleep(500) - REMOVED: Non-critical calibration delay
+
     UpdateStatus("📱 Narrow Canvas (4:3): Click BOTTOM-RIGHT corner...")
     
     KeyWait("LButton", "D")
@@ -5817,26 +6099,18 @@ MacroExecutionAnalysis(buttonName, events, executionTime) {
             boxDegradationName := "smudge"
             isTagged := false
             
-            ; Look for the NEXT keypress event after this bounding box
-            Loop events.Length - eventIndex {
-                nextIndex := eventIndex + A_Index
-                if (nextIndex > events.Length)
-                    break
-                    
-                nextEvent := events[nextIndex]
-                
-                ; Stop at next bounding box - keypress should be immediately after current box
-                if (nextEvent.type = "boundingBox")
-                    break
-                
-                ; Found a keypress after this box - this assigns the degradation type
+            ; Look for the IMMEDIATE NEXT keypress event after this bounding box
+            ; SIMPLIFIED: Only look at the very next event for degradation assignment
+            if (eventIndex < events.Length) {
+                nextEvent := events[eventIndex + 1]
+
+                ; Found a keypress immediately after this box - this assigns the degradation type
                 if (nextEvent.type = "keyDown" && RegExMatch(nextEvent.key, "^\d$")) {
                     keyNumber := Integer(nextEvent.key)
                     if (keyNumber >= 1 && keyNumber <= 9 && degradationTypes.Has(keyNumber)) {
                         boxDegradationType := keyNumber
                         boxDegradationName := degradationTypes[keyNumber]
                         isTagged := true
-                        break  ; Found the assignment keypress, stop looking
                     }
                 }
             }
@@ -5941,6 +6215,11 @@ MacroExecutionAnalysis(buttonName, events, executionTime) {
             assignmentParts.Push(box.degradationName)
         }
         degradationAssignments := Join(assignmentParts, ",")
+
+        ; VALIDATION: Check for overly complex macros that should be simplified
+        if (detailedBoxes.Length > 3) {
+            UpdateStatus("⚠️ WARNING: " . detailedBoxes.Length . " boxes recorded - consider simpler workflow (1 box = 1 degradation)")
+        }
     }
     
     ; Store degradation assignments in execution record for retrieval
@@ -7074,23 +7353,30 @@ StrTitle(str) {
 
 ; ===== CSV STATS FUNCTIONS =====
 InitializeCSVFile() {
-    global masterStatsCSV
-    
+    global masterStatsCSV, documentsDir, dataDir, sessionId
+
     try {
-        ; Create data directory if doesn't exist
-        SplitPath(masterStatsCSV,, &dataDir)
+        ; Create full directory structure in Documents for portable execution
+        if (!DirExist(documentsDir)) {
+            DirCreate(documentsDir)
+            UpdateStatus("💾 Created MacroMaster folder in Documents")
+        }
+
         if (!DirExist(dataDir)) {
             DirCreate(dataDir)
+            UpdateStatus("💾 Created data directory in Documents")
         }
-        
-        ; Create CSV with exact 33-column header if file doesn't exist
+
+        ; Create CSV with streamlined header optimized for tracking and display
         if (!FileExist(masterStatsCSV)) {
-            header := "timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour`n"
+            header := "timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
+
+            UpdateStatus("📊 CSV stats initialized: " . masterStatsCSV)
         }
     } catch as e {
-        ; Handle error gracefully without breaking the app
-        ; Could add logging here if needed
+        ; Handle error gracefully - critical for portable execution
+        UpdateStatus("⚠️ Documents folder setup failed: " . e.Message)
     }
 }
 
@@ -7146,188 +7432,213 @@ CleanCorruptedTimeStats() {
 }
 
 AppendToCSV(executionData) {
-    global masterStatsCSV, sessionId, currentUsername, applicationStartTime, totalActiveTime, breakMode, clearDegradationCount
-    global macroExecutionLog
-    
+    global masterStatsCSV, sessionId, currentUsername, totalActiveTime, breakMode
+
     try {
-        ; Calculate cumulative statistics
-        csvStats := ReadStatsFromCSV(false)
-        totalExecs := csvStats["total_executions"] + 1
-        macroExecCount := csvStats["macro_executions_count"] + (executionData["execution_type"] = "macro" ? 1 : 0)
-        jsonExecCount := csvStats["json_profile_executions_count"] + (executionData["execution_type"] = "json_profile" ? 1 : 0)
-        clearExecCount := csvStats.Has("clear_executions_count") ? csvStats["clear_executions_count"] + (executionData["execution_type"] = "clear" ? 1 : 0) : (executionData["execution_type"] = "clear" ? 1 : 0)
-        
-        ; Calculate degradation breakdown
-        smudgeCount := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
-        glareCount := executionData.Has("glare_count") ? executionData["glare_count"] : 0  
-        splashesCount := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
-        
-        ; Calculate rates per hour - require at least 5 seconds for meaningful rates
-        if (totalActiveTime > 5000) { ; At least 5 seconds of active time
-            activeTimeHours := totalActiveTime / 3600000
-            boxesPerHour := Round(executionData["total_boxes"] / activeTimeHours, 1)
-            execsPerHour := Round(totalExecs / activeTimeHours, 1)
-        } else {
-            ; Not enough active time for meaningful hourly rates
-            boxesPerHour := 0
-            execsPerHour := 0
+        ; Ensure CSV file exists and is properly initialized
+        if (!FileExist(masterStatsCSV)) {
+            InitializeCSVFile()
         }
-        
-        ; Build complete 34-column CSV row to match header
-        csvRow := executionData["timestamp"] . ","
-                . sessionId . ","
-                . currentUsername . ","
-                . executionData["execution_type"] . ","
-                . executionData["macro_name"] . ","
-                . executionData["layer"] . ","
-                . executionData["execution_time_ms"] . ","
-                . executionData["total_boxes"] . ","
-                . executionData["degradation_types"] . ","
-                . executionData["degradation_summary"] . ","
-                . executionData["status"] . ","
-                . applicationStartTime . ","
-                . totalActiveTime . ","
-                . (breakMode ? "1" : "0") . ","
-                . "" . ","  ; break_start_time
-                . totalExecs . ","
-                . macroExecCount . ","
-                . jsonExecCount . ","
-                . executionData["execution_time_ms"] . ","  ; average_execution_time_ms
-                . executionData["macro_name"] . ","  ; most_used_button
-                . executionData["layer"] . ","  ; most_active_layer
-                . executionData["total_boxes"] . ","  ; recorded_total_boxes
-                . smudgeCount . ","
-                . glareCount . ","
-                . splashesCount . ","
-                . "1" . ","  ; macro_usage_execution_count
-                . executionData["total_boxes"] . ","  ; macro_usage_total_boxes
-                . executionData["execution_time_ms"] . ","  ; macro_usage_average_time_ms
-                . executionData["timestamp"] . ","  ; macro_usage_last_used
-                . (executionData.Has("severity_level") ? executionData["severity_level"] : "") . ","  ; json_severity_breakdown_by_level
-                . executionData["degradation_types"] . ","  ; json_degradation_type_breakdown
-                . clearDegradationCount . ","  ; clear_degradation_count
-                . boxesPerHour . ","
-                . execsPerHour . "`n"
-        
-        ; Append to CSV file
+
+        ; Build comprehensive CSV row with all tracking data
+        ; Headers: timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
+
+        ; Build CSV row with proper escaping
+        csvRow := executionData["timestamp"]
+        csvRow .= "," . sessionId
+        csvRow .= "," . currentUsername
+        csvRow .= "," . executionData["execution_type"]
+        csvRow .= "," . executionData["macro_name"]
+        csvRow .= "," . executionData["layer"]
+        csvRow .= "," . executionData["execution_time_ms"]
+        csvRow .= "," . executionData["total_boxes"]
+        csvRow .= "," . Chr(34) . executionData["degradation_types"] . Chr(34)
+        csvRow .= "," . (executionData.Has("severity_level") ? executionData["severity_level"] : "medium")
+        csvRow .= "," . (executionData.Has("canvas_mode") ? executionData["canvas_mode"] : "wide")
+        csvRow .= "," . (executionData.Has("performance_grade") ? executionData["performance_grade"] : "C")
+        csvRow .= "," . totalActiveTime
+        csvRow .= "," . (breakMode ? "true" : "false")
+        csvRow .= "," . (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0)
+        csvRow .= "," . (executionData.Has("glare_count") ? executionData["glare_count"] : 0)
+        csvRow .= "," . (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0)
+        csvRow .= "," . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0)
+        csvRow .= "," . (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0)
+        csvRow .= "," . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0)
+        csvRow .= "," . (executionData.Has("rain_count") ? executionData["rain_count"] : 0)
+        csvRow .= "," . (executionData.Has("haze_count") ? executionData["haze_count"] : 0)
+        csvRow .= "," . (executionData.Has("snow_count") ? executionData["snow_count"] : 0)
+        csvRow .= "," . (executionData.Has("clear_count") ? executionData["clear_count"] : 0)
+        csvRow .= "," . Chr(34) . (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . Chr(34)
+        csvRow .= "," . (executionData.Has("execution_success") ? executionData["execution_success"] : "true")
+        csvRow .= "," . Chr(34) . (executionData.Has("error_details") ? executionData["error_details"] : "") . Chr(34)
+        csvRow .= "`n"
+
+        ; Append to CSV file with UTF-8 encoding
         FileAppend(csvRow, masterStatsCSV, "UTF-8")
+
+        ; Provide user feedback on successful tracking
+        UpdateStatus("📊 " . executionData["execution_type"] . " " . executionData["macro_name"] . " (" . executionData["execution_time_ms"] . "ms, " . executionData["total_boxes"] . " boxes)")
+
     } catch as e {
-        ; Handle file access errors gracefully
-        ; Could add error logging if needed
+        ; Log error details for debugging while not breaking the application
+        UpdateStatus("⚠️ Stats tracking error: " . e.Message)
     }
 }
 
 RecordExecutionStats(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
-    global breakMode, recording, playback, currentLayer, canvasType
-    
-    ; Skip if breakMode is true (don't track during break) - return early
+    global breakMode, recording, currentLayer, canvasType, annotationMode
+
+    ; Skip if breakMode is true (don't track during break)
     if (breakMode) {
         return
     }
-    
-    ; Note: We DO want to track completed executions, so removed playback check
-    ; Only skip if recording to avoid tracking during macro recording
-    
-    ; Calculate execution_time_ms
-    execution_time_ms := A_TickCount - executionStartTime
-    
-    ; Get current layer from existing layer variable
-    layer := currentLayer
-    
-    ; Get canvas_mode from existing wide/narrow toggle variable
-    canvas_mode := canvasType
-    
-    ; Get current timestamp
-    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-    
-    ; Initialize default values
-    bbox_count := 0
-    degradation_assignments := ""
-    severity_level := ""
-    
-    ; Process based on execution type
-    if (executionType = "macro") {
-        ; Get data from analysis record if available
-        if (IsObject(analysisRecord)) {
-            bbox_count := analysisRecord.boundingBoxCount
-            degradation_assignments := analysisRecord.HasOwnProp("degradationAssignments") ? analysisRecord.degradationAssignments : ""
-        } else {
-            ; Fallback: Count bounding boxes from events
-            for event in events {
-                if (event.type = "drag" || event.type = "bbox" || event.type = "boundingBox") {
-                    bbox_count++
-                }
-            }
-            degradation_assignments := "smudge" ; Default fallback
-        }
-    } else if (executionType = "json_profile") {
-        ; For JSON profiles: get data from analysis record
-        if (IsObject(analysisRecord)) {
-            bbox_count := 0
-            ; Get degradation type from JSON annotation - try multiple sources
-            if (analysisRecord.HasOwnProp("jsonDegradationName")) {
-                degradation_assignments := analysisRecord.jsonDegradationName
-            } else if (analysisRecord.HasOwnProp("degradationAssignments") && analysisRecord.degradationAssignments != "") {
-                degradation_assignments := analysisRecord.degradationAssignments
-            } else {
-                degradation_assignments := "unknown"
-            }
-            severity_level := analysisRecord.HasOwnProp("severity") ? analysisRecord.severity : "medium"
-        } else {
-            bbox_count := 0
-            degradation_assignments := "unknown"
-            severity_level := "medium" ; Default fallback
-        }
+
+    ; Skip if recording to avoid tracking during macro recording
+    if (recording) {
+        return
     }
-    
-    ; Create execution data structure for 31-column CSV
+
+    ; Calculate execution metrics
+    execution_time_ms := A_TickCount - executionStartTime
+    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+
+    ; Initialize comprehensive data structure
     executionData := Map()
     executionData["timestamp"] := timestamp
     executionData["execution_type"] := executionType
     executionData["macro_name"] := macroKey
-    executionData["layer"] := layer
+    executionData["layer"] := currentLayer
     executionData["execution_time_ms"] := execution_time_ms
-    executionData["total_boxes"] := bbox_count
-    executionData["degradation_types"] := degradation_assignments
-    executionData["degradation_summary"] := degradation_assignments  ; simplified for now
-    executionData["status"] := "completed"
-    executionData["severity_level"] := severity_level
-    
-    ; PERFORMANCE GRADING - Add execution performance grade
-    executionData["performance_grade"] := execution_time_ms <= 500 ? "A" : 
-                                         execution_time_ms <= 1000 ? "B" : 
+    executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
+
+    ; Calculate performance grade
+    executionData["performance_grade"] := execution_time_ms <= 500 ? "A" :
+                                         execution_time_ms <= 1000 ? "B" :
                                          execution_time_ms <= 2000 ? "C" : "D"
-    
-    ; Add degradation counts (mapping 1=smudge, 2=glare, 3=splashes, etc.)
+
+    ; Initialize all degradation counts to zero
     executionData["smudge_count"] := 0
     executionData["glare_count"] := 0
     executionData["splashes_count"] := 0
-    
-    ; Parse degradation assignments to count each type
-    if (degradation_assignments != "") {
-        degradationTypes := StrSplit(degradation_assignments, ",")
-        for degradationType in degradationTypes {
-            degradationType := Trim(degradationType)
-            if (degradationType = "smudge") {
-                executionData["smudge_count"]++
-            } else if (degradationType = "glare") {
-                executionData["glare_count"]++  
-            } else if (degradationType = "splashes") {
-                executionData["splashes_count"]++
+    executionData["partial_blockage_count"] := 0
+    executionData["full_blockage_count"] := 0
+    executionData["light_flare_count"] := 0
+    executionData["rain_count"] := 0
+    executionData["haze_count"] := 0
+    executionData["snow_count"] := 0
+    executionData["clear_count"] := 0
+
+    ; Initialize other fields
+    executionData["total_boxes"] := 0
+    executionData["degradation_types"] := ""
+    executionData["severity_level"] := "medium"
+    executionData["annotation_details"] := ""
+    executionData["execution_success"] := "true"
+    executionData["error_details"] := ""
+
+    ; Process data based on execution type
+    if (executionType = "macro") {
+        ; For macro executions: analyze events and analysis record
+        if (IsObject(analysisRecord)) {
+            executionData["total_boxes"] := analysisRecord.boundingBoxCount
+            if (analysisRecord.HasOwnProp("degradationAssignments")) {
+                executionData["degradation_types"] := analysisRecord.degradationAssignments
+                ProcessDegradationCounts(executionData, analysisRecord.degradationAssignments)
+            }
+        } else {
+            ; Fallback: analyze events directly
+            bbox_count := 0
+            degradation_list := []
+
+            for event in events {
+                if (event.type = "drag" || event.type = "bbox" || event.type = "boundingBox") {
+                    bbox_count++
+                }
+                ; Extract degradation assignments from events if available
+                if (event.HasOwnProp("degradation") && event.degradation != "") {
+                    degradation_list.Push(event.degradation)
+                }
+            }
+
+            executionData["total_boxes"] := bbox_count
+            if (degradation_list.Length > 0) {
+                degradation_string := ""
+                for i, deg in degradation_list {
+                    degradation_string .= (i > 1 ? "," : "") . deg
+                }
+                executionData["degradation_types"] := degradation_string
+                ProcessDegradationCounts(executionData, degradation_string)
             }
         }
+
+    } else if (executionType = "json_profile") {
+        ; For JSON executions: extract data from analysis record
+        if (IsObject(analysisRecord)) {
+            if (analysisRecord.HasOwnProp("jsonDegradationName")) {
+                executionData["degradation_types"] := analysisRecord.jsonDegradationName
+                ProcessDegradationCounts(executionData, analysisRecord.jsonDegradationName)
+            }
+            if (analysisRecord.HasOwnProp("severity")) {
+                executionData["severity_level"] := analysisRecord.severity
+            }
+            if (analysisRecord.HasOwnProp("annotationDetails")) {
+                executionData["annotation_details"] := analysisRecord.annotationDetails
+            }
+        }
+
+    } else if (executionType = "clear") {
+        ; For clear executions
+        executionData["clear_count"] := 1
+        executionData["degradation_types"] := "clear"
     }
-    
-    ; Update active time before recording to CSV to ensure accurate time tracking
+
+    ; Update active time tracking before recording
     UpdateActiveTime()
-    
-    ; Call updated AppendToCSV with data structure
+
+    ; Record to CSV with comprehensive data
     AppendToCSV(executionData)
+}
+
+; Helper function to process degradation assignments and update counts
+ProcessDegradationCounts(executionData, degradationString) {
+    if (degradationString = "" || degradationString = "none") {
+        return
+    }
+
+    ; Split by comma and process each degradation type
+    degradationTypes := StrSplit(degradationString, ",")
+    for degradationType in degradationTypes {
+        degradationType := Trim(StrReplace(StrReplace(degradationType, Chr(34), ""), Chr(39), ""))
+
+        ; Map degradation types to counts (1=smudge, 2=glare, etc.)
+        switch StrLower(degradationType) {
+            case "smudge", "1":
+                executionData["smudge_count"]++
+            case "glare", "2":
+                executionData["glare_count"]++
+            case "splashes", "3":
+                executionData["splashes_count"]++
+            case "partial_blockage", "4":
+                executionData["partial_blockage_count"]++
+            case "full_blockage", "5":
+                executionData["full_blockage_count"]++
+            case "light_flare", "6":
+                executionData["light_flare_count"]++
+            case "rain", "7":
+                executionData["rain_count"]++
+            case "haze", "8":
+                executionData["haze_count"]++
+            case "snow", "9":
+                executionData["snow_count"]++
+            case "clear", "none":
+                executionData["clear_count"]++
+        }
+    }
 }
 
 ; Record clear execution stats (NumpadEnter and Shift+Enter)
 RecordClearDegradationExecution(buttonName, executionStartTime) {
-    global breakMode, currentLayer, canvasType, clearDegradationCount
+    global breakMode, currentLayer, canvasType, clearDegradationCount, annotationMode
     
     ; Skip if breakMode is true (don't track during break)
     if (breakMode) {
@@ -7352,6 +7663,7 @@ RecordClearDegradationExecution(buttonName, executionStartTime) {
     executionData["degradation_summary"] := "No degradation present"
     executionData["status"] := "submitted"
     executionData["severity_level"] := "none"
+    executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
     
     ; Clear degradation counts (all zeros except clear count)
     executionData["smudge_count"] := 0
@@ -7370,21 +7682,35 @@ RecordClearDegradationExecution(buttonName, executionStartTime) {
 
 ReadStatsFromCSV(filterBySession := false) {
     global masterStatsCSV, sessionId, totalActiveTime
-    
+
+    ; Initialize comprehensive stats structure
     stats := Map()
     stats["total_executions"] := 0
     stats["macro_executions_count"] := 0
     stats["json_profile_executions_count"] := 0
     stats["clear_executions_count"] := 0
-    stats["clear_degradation_count"] := 0
     stats["total_boxes"] := 0
+    stats["total_execution_time"] := 0
+    stats["average_execution_time"] := 0
+    stats["session_active_time"] := totalActiveTime
     stats["boxes_per_hour"] := 0
     stats["executions_per_hour"] := 0
-    stats["average_execution_time"] := 0
-    stats["total_execution_time"] := 0
     stats["most_used_button"] := ""
     stats["most_active_layer"] := ""
-    stats["degradation_breakdown"] := Map()
+    stats["performance_grades"] := Map()
+    stats["degradation_totals"] := Map()
+
+    ; Initialize degradation type counters
+    stats["smudge_total"] := 0
+    stats["glare_total"] := 0
+    stats["splashes_total"] := 0
+    stats["partial_blockage_total"] := 0
+    stats["full_blockage_total"] := 0
+    stats["light_flare_total"] := 0
+    stats["rain_total"] := 0
+    stats["haze_total"] := 0
+    stats["snow_total"] := 0
+    stats["clear_total"] := 0
     
     try {
         if (!FileExist(masterStatsCSV)) {
@@ -7398,166 +7724,138 @@ ReadStatsFromCSV(filterBySession := false) {
             return stats ; No data rows
         }
         
-        ; Process data rows (skip header) - Updated for 31-column format
+        ; Process data rows for new streamlined schema
+        ; Headers: timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
+
         executionTimes := []
         buttonCount := Map()
         layerCount := Map()
-        degradationCount := Map()
-        totalBoxes := 0
-        sessionActiveTime := 0
-        
+        gradeCount := Map()
+        latestActiveTime := 0
+
         Loop lines.Length - 1 {
             lineIndex := A_Index + 1 ; Skip header
             if (lineIndex > lines.Length || Trim(lines[lineIndex]) = "") {
                 continue
             }
-            
+
             fields := StrSplit(lines[lineIndex], ",")
-            if (fields.Length < 10) {
-                continue ; Skip malformed rows - need at least basic fields
+            if (fields.Length < 14) { ; Minimum required fields for new schema
+                continue
             }
-            
-            ; Process data based on filter setting
+
+            ; Filter by session if requested
             if (!filterBySession || fields[2] = sessionId) {
-                stats["total_executions"]++
-                
-                ; Parse fields from 34-column format
-                ; timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,degradation_summary,status,application_start_time,total_active_time_ms,break_mode_active,break_start_time,total_executions,macro_executions_count,json_profile_executions_count,average_execution_time_ms,most_used_button,most_active_layer,recorded_total_boxes,degradation_breakdown_by_type_smudge,degradation_breakdown_by_type_glare,degradation_breakdown_by_type_splashes,macro_usage_execution_count,macro_usage_total_boxes,macro_usage_average_time_ms,macro_usage_last_used,json_severity_breakdown_by_level,json_degradation_type_breakdown,clear_degradation_count,boxes_per_hour,executions_per_hour
-                ; Parse basic fields with error handling
                 try {
-                    execution_type := fields[4]           ; execution_type
-                    macro_name := fields[5]               ; macro_name
+                    ; Parse core fields (1-indexed)
+                    execution_type := Trim(fields[4])
+                    macro_name := Trim(fields[5])
                     layer := IsNumber(fields[6]) ? Integer(fields[6]) : 1
                     execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
                     total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
-                    degradation_assignments := fields[9]  ; degradation_types
-                    
-                    ; For session time, try to use field 13 if available (shifted by 1), otherwise use execution_time
-                    session_time := (fields.Length > 13 && IsNumber(fields[13])) ? Integer(fields[13]) : execution_time
-                } catch {
-                    continue ; Skip this row if parsing fails
-                }
-                
-                ; Accumulate data
-                executionTimes.Push(execution_time)
-                totalBoxes += total_boxes
-                stats["total_execution_time"] += execution_time
-                
-                ; For session-specific stats, use latest total active time from CSV
-                ; For all-time stats, get the latest total active time (most recent record)
-                if (filterBySession) {
-                    ; For session filtering, use total_active_time_ms from current session
-                    if (fields.Length > 12 && IsNumber(fields[12])) {
-                        sessionActiveTime := Integer(fields[12]) ; total_active_time_ms from CSV
+                    performance_grade := Trim(fields[12])
+                    session_active_time := IsNumber(fields[13]) ? Integer(fields[13]) : 0
+
+                    ; Track latest active time for rate calculations
+                    if (session_active_time > latestActiveTime) {
+                        latestActiveTime := session_active_time
                     }
-                } else {
-                    ; For all-time stats, use the latest total_active_time_ms value
-                    if (fields.Length > 12 && IsNumber(fields[12])) {
-                        sessionActiveTime := Integer(fields[12]) ; Use latest total active time
+
+                    ; Accumulate basic stats
+                    stats["total_executions"]++
+                    stats["total_boxes"] += total_boxes
+                    stats["total_execution_time"] += execution_time
+                    executionTimes.Push(execution_time)
+
+                    ; Count execution types
+                    if (execution_type = "clear") {
+                        stats["clear_executions_count"]++
+                    } else if (execution_type = "json_profile") {
+                        stats["json_profile_executions_count"]++
+                    } else {
+                        stats["macro_executions_count"]++
                     }
-                }
-                
-                ; Count buttons
-                if (!buttonCount.Has(macro_name)) {
-                    buttonCount[macro_name] := 0
-                }
-                buttonCount[macro_name]++
-                
-                ; Count layers
-                if (!layerCount.Has(layer)) {
-                    layerCount[layer] := 0
-                }
-                layerCount[layer]++
-                
-                ; Count execution types using the actual execution_type field
-                if (execution_type = "clear") {
-                    stats["clear_executions_count"]++
-                } else if (execution_type = "json_profile") {
-                    stats["json_profile_executions_count"]++
-                } else {
-                    stats["macro_executions_count"]++
-                }
-                
-                ; Process degradation assignments
-                if (degradation_assignments != "" && degradation_assignments != '""') {
-                    assignments := StrSplit(degradation_assignments, ",")
-                    for assignment in assignments {
-                        assignment := Trim(assignment)
-                        if (assignment != "") {
-                            if (!degradationCount.Has(assignment)) {
-                                degradationCount[assignment] := 0
-                            }
-                            degradationCount[assignment]++
+
+                    ; Count buttons and layers
+                    if (!buttonCount.Has(macro_name)) {
+                        buttonCount[macro_name] := 0
+                    }
+                    buttonCount[macro_name]++
+
+                    if (!layerCount.Has(layer)) {
+                        layerCount[layer] := 0
+                    }
+                    layerCount[layer]++
+
+                    ; Count performance grades
+                    if (performance_grade != "") {
+                        if (!gradeCount.Has(performance_grade)) {
+                            gradeCount[performance_grade] := 0
                         }
+                        gradeCount[performance_grade]++
                     }
+
+                    ; Parse degradation counts (fields 15-24)
+                    if (fields.Length >= 24) {
+                        stats["smudge_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
+                        stats["glare_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
+                        stats["splashes_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
+                        stats["partial_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
+                        stats["full_blockage_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
+                        stats["light_flare_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
+                        stats["rain_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
+                        stats["haze_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
+                        stats["snow_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
+                        stats["clear_total"] += IsNumber(fields[24]) ? Integer(fields[24]) : 0
+                    }
+
+                } catch {
+                    continue ; Skip malformed rows
                 }
             }
         }
-        
-        ; Get latest clear degradation count from last CSV row (field 31)
-        if (lines.Length > 1) {
-            lastLine := lines[lines.Length]
-            if (Trim(lastLine) != "") {
-                lastFields := StrSplit(lastLine, ",")
-                if (lastFields.Length >= 31 && IsNumber(lastFields[31])) {
-                    stats["clear_degradation_count"] := Integer(lastFields[31])
-                }
-            }
+
+        ; Update session active time
+        if (latestActiveTime > 0) {
+            stats["session_active_time"] := latestActiveTime
         }
-        
-        ; Calculate final stats
-        stats["total_boxes"] := totalBoxes
-        
-        ; Calculate rates (boxes and executions per hour)
-        ; Use the current session's total active time for accurate calculation
-        if (sessionActiveTime > 5000) { ; Require at least 5 seconds of active time
-            hoursActive := sessionActiveTime / 3600000 ; Convert ms to hours
-            stats["boxes_per_hour"] := Round(totalBoxes / hoursActive, 1)
-            stats["executions_per_hour"] := Round(stats["total_executions"] / hoursActive, 1)
-        } else {
-            ; Not enough active time for meaningful hourly rates
-            stats["boxes_per_hour"] := 0
-            stats["executions_per_hour"] := 0
+                
+        ; Calculate derived stats
+        if (stats["total_executions"] > 0) {
+            stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
         }
-        
-        ; Calculate average execution time
-        if (executionTimes.Length > 0) {
-            totalTime := 0
-            for time in executionTimes {
-                totalTime += time
-            }
-            stats["average_execution_time"] := Round(totalTime / executionTimes.Length, 1)
+
+        ; Calculate hourly rates if we have active time
+        if (stats["session_active_time"] > 5000) { ; At least 5 seconds
+            activeTimeHours := stats["session_active_time"] / 3600000
+            stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
+            stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
         }
-        
-        ; Find most used button
-        maxCount := 0
-        mostButton := ""
+
+        ; Find most used button and layer
+        maxButtonCount := 0
+        maxLayerCount := 0
         for button, count in buttonCount {
-            if (count > maxCount) {
-                maxCount := count
-                mostButton := button
+            if (count > maxButtonCount) {
+                maxButtonCount := count
+                stats["most_used_button"] := button
             }
         }
-        stats["most_used_button"] := mostButton
-        
-        ; Find most active layer
-        maxCount := 0
-        mostLayer := ""
         for layer, count in layerCount {
-            if (count > maxCount) {
-                maxCount := count
-                mostLayer := "L" . layer
+            if (count > maxLayerCount) {
+                maxLayerCount := count
+                stats["most_active_layer"] := layer
             }
         }
-        stats["most_active_layer"] := mostLayer
-        
-        ; Store degradation breakdown
-        stats["degradation_breakdown"] := degradationCount
-        
+
+        ; Store performance grades
+        stats["performance_grades"] := gradeCount
+
     } catch as e {
-        ; Return empty stats on error
+        ; Handle file read errors gracefully
+        UpdateStatus("📊 Stats read warning: " . e.Message)
     }
-    
+
     return stats
 }
 
@@ -7898,7 +8196,7 @@ TestSaveLoad() {
     }
     
     UpdateStatus("🗑️ Cleared macros from memory")
-    Sleep(1000)
+    ; Sleep(1000) - REMOVED: Non-critical status display delay
     
     ; Force load
     LoadConfig()
@@ -8031,11 +8329,11 @@ ResetHotkeySettings(settingsGui) {
     }
 }
 
-; ===== OFFLINE DATA STORAGE SYSTEM =====
-global currentUsername := ""
-global persistentDataFile := A_ScriptDir . "\data\persistent_user_data.json"
-global dailyStatsFile := A_ScriptDir . "\data\daily_stats.json"
-global offlineLogFile := A_ScriptDir . "\data\offline_log.txt"
+; ===== OFFLINE DATA STORAGE SYSTEM - DOCUMENTS FOLDER =====
+; Updated for portable execution from zipped state
+global persistentDataFile := documentsDir . "\data\persistent_user_data.json"
+global dailyStatsFile := documentsDir . "\data\daily_stats.json"
+global offlineLogFile := documentsDir . "\data\offline_log.txt"
 global dataQueue := []
 global lastSaveTime := 0
 
@@ -8062,9 +8360,12 @@ InitializeOfflineDataFiles() {
     global persistentDataFile, dailyStatsFile, offlineLogFile
     
     try {
-        ; Create data directory if it doesn't exist
-        if (!DirExist(A_ScriptDir . "\data")) {
-            DirCreate(A_ScriptDir . "\data")
+        ; Create data directory in Documents for portable execution
+        if (!DirExist(dataDir)) {
+            DirCreate(dataDir)
+        }
+        if (!DirExist(thumbnailDir)) {
+            DirCreate(thumbnailDir)
         }
         
         ; Initialize persistent data file if it doesn't exist
