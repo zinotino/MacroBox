@@ -11,7 +11,7 @@ MACROMASTER OFFLINE - Comprehensive macro recording and playback system
 
 /*
 CSV STRUCTURE: data/master_stats.csv
-timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,bbox_count,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active
+timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
 */
 
 ; ===== CORE VARIABLES & CONFIGURATION =====
@@ -129,9 +129,10 @@ global userCanvasTop := 0
 global userCanvasRight := 1920
 global userCanvasBottom := 1080
 
-global isCanvasCalibrated := false
-global isWideCanvasCalibrated := false
-global isNarrowCanvasCalibrated := false
+global isCanvasCalibrated := true
+global isWideCanvasCalibrated := true
+global isNarrowCanvasCalibrated := true
+global lastCanvasDetection := ""
 
 ; ===== ENHANCED STATS SYSTEM =====
 global macroExecutionLog := []
@@ -162,6 +163,13 @@ global currentUsername := A_UserName
 global dailyResetActive := false
 global sessionStartTime := 0
 global clearDegradationCount := 0
+
+; ===== PRODUCTION STATS SYSTEM GLOBALS =====
+global statsQueue := []
+global statsWorkerActive := false
+global statsErrorCount := 0
+global lastHealthCheck := 0
+global systemHealthStatus := "healthy"
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -738,15 +746,23 @@ InitializeDirectories() {
 ; ===== MACRO VISUALIZATION SYSTEM INITIALIZATION =====
 InitializeVisualizationSystem() {
     global gdiPlusInitialized, gdiPlusToken, canvasWidth, canvasHeight, canvasType
-    
+
     ; Initialize GDI+
     if (!gdiPlusInitialized) {
-        si := Buffer(24, 0)
-        NumPut("UInt", 1, si, 0)
-        result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiPlusToken, "Ptr", si, "Ptr", 0)
-        if (result = 0) {
-            gdiPlusInitialized := true
-            UpdateStatus("🎨 Visualization system initialized")
+        try {
+            si := Buffer(24, 0)
+            NumPut("UInt", 1, si, 0)
+            result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiPlusToken, "Ptr", si, "Ptr", 0)
+            if (result = 0) {
+                gdiPlusInitialized := true
+                UpdateStatus("Visualization system initialized")
+            } else {
+                UpdateStatus("Warning: GDI+ initialization failed (code: " . result . ")")
+                gdiPlusInitialized := false
+            }
+        } catch Error as e {
+            UpdateStatus("Error: GDI+ startup failed - " . e.Message)
+            gdiPlusInitialized := false
         }
     }
     
@@ -957,13 +973,106 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
     recordedHeight := maxY - minY
     recordedAspectRatio := recordedWidth / recordedHeight
     
-    ; Determine which canvas configuration to use based on recorded macro characteristics
-    ; Wide macros (aspect ratio > 1.5) use wide canvas, narrow macros use narrow canvas
-    ; Always fall back to legacy if no canvas is configured
-    useWideCanvas := (recordedAspectRatio > 1.5) && isWideCanvasCalibrated
-    useNarrowCanvas := (recordedAspectRatio <= 1.5) && isNarrowCanvasCalibrated
-    useLegacyCanvas := !useWideCanvas && !useNarrowCanvas
+    ; INTELLIGENT CANVAS DETECTION: Check both aspect ratio and coordinate boundaries
+    ; to determine the most appropriate canvas configuration
+
+    ; PRECISION CANVAS DETECTION: Enhanced boundary checking with tolerance
+    wideCanvasW := wideCanvasRight - wideCanvasLeft
+    wideCanvasH := wideCanvasBottom - wideCanvasTop
+    narrowCanvasW := narrowCanvasRight - narrowCanvasLeft
+    narrowCanvasH := narrowCanvasBottom - narrowCanvasTop
+
+    ; Use small tolerance for edge cases (1 pixel tolerance)
+    edgeTolerance := 1
+
+    ; Precise boundary checking with tolerance for edge coordinates
+    fitsInWideCanvas := (minX >= (wideCanvasLeft - edgeTolerance) &&
+                         maxX <= (wideCanvasRight + edgeTolerance) &&
+                         minY >= (wideCanvasTop - edgeTolerance) &&
+                         maxY <= (wideCanvasBottom + edgeTolerance))
+
+    fitsInNarrowCanvas := (minX >= (narrowCanvasLeft - edgeTolerance) &&
+                           maxX <= (narrowCanvasRight + edgeTolerance) &&
+                           minY >= (narrowCanvasTop - edgeTolerance) &&
+                           maxY <= (narrowCanvasBottom + edgeTolerance))
+
+    ; Calculate coverage percentages for better canvas selection
+    wideCoverage := 0
+    narrowCoverage := 0
+
+    if (fitsInWideCanvas) {
+        ; Calculate what percentage of the wide canvas is actually used
+        usedWideW := maxX - minX
+        usedWideH := maxY - minY
+        wideCoverage := (usedWideW * usedWideH) / (wideCanvasW * wideCanvasH)
+    }
+
+    if (fitsInNarrowCanvas) {
+        ; Calculate what percentage of the narrow canvas is actually used
+        usedNarrowW := maxX - minX
+        usedNarrowH := maxY - minY
+        narrowCoverage := (usedNarrowW * usedNarrowH) / (narrowCanvasW * narrowCanvasH)
+    }
+
+    ; SMART CANVAS SELECTION: Use the canvas that provides the best fit
+    if (fitsInWideCanvas && fitsInNarrowCanvas) {
+        ; Both canvases can accommodate the content - choose based on efficiency and aspect ratio
+        if (recordedAspectRatio > 1.3) {
+            ; Wide aspect ratio content - prefer wide canvas
+            useWideCanvas := true
+            useNarrowCanvas := false
+        } else if (narrowCoverage > wideCoverage * 1.5) {
+            ; Narrow canvas provides significantly better space utilization
+            useWideCanvas := false
+            useNarrowCanvas := true
+        } else {
+            ; Default to wide canvas for flexibility
+            useWideCanvas := true
+            useNarrowCanvas := false
+        }
+        useLegacyCanvas := false
+    } else if (fitsInWideCanvas) {
+        ; Only wide canvas fits
+        useWideCanvas := true
+        useNarrowCanvas := false
+        useLegacyCanvas := false
+    } else if (fitsInNarrowCanvas) {
+        ; Only narrow canvas fits
+        useWideCanvas := false
+        useNarrowCanvas := true
+        useLegacyCanvas := false
+    } else {
+        ; Neither canvas fits - use legacy fallback
+        useWideCanvas := false
+        useNarrowCanvas := false
+        useLegacyCanvas := true
+    }
     
+    ; ENHANCED DIAGNOSTIC: Log detailed canvas detection metrics
+    debugInfo := "Canvas Detection: "
+    debugInfo .= "Recorded(" . Round(minX) . "," . Round(minY) . " to " . Round(maxX) . "," . Round(maxY) . ") "
+    debugInfo .= "Aspect:" . Round(recordedAspectRatio, 2) . " "
+
+    if (fitsInWideCanvas) {
+        debugInfo .= "WideOK(" . Round(wideCoverage * 100, 1) . "%) "
+    }
+    if (fitsInNarrowCanvas) {
+        debugInfo .= "NarrowOK(" . Round(narrowCoverage * 100, 1) . "%) "
+    }
+
+    if (useWideCanvas) {
+        debugInfo .= "→ WIDE canvas selected"
+    } else if (useNarrowCanvas) {
+        debugInfo .= "→ NARROW canvas selected"
+    } else {
+        debugInfo .= "→ LEGACY fallback (coordinates exceed canvas bounds)"
+    }
+    ; Temporarily update status with diagnostic info (comment out in production)
+    ; UpdateStatus(debugInfo)
+
+    ; Store diagnostic info globally for testing
+    global lastCanvasDetection := debugInfo
+
     ; Choose appropriate canvas configuration based on recorded macro characteristics
     if (useWideCanvas) {
         ; Use WIDE canvas configuration for wide-aspect recorded macros
@@ -1006,24 +1115,61 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
     DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF606060)
     
     if (useWideCanvas) {
-        ; WIDE MACRO: Stretch to fill entire thumbnail area (no black bars)
-        scale := Min(buttonWidth / canvasW, buttonHeight / canvasH)
-        scaledCanvasW := buttonWidth
-        scaledCanvasH := buttonHeight
-        offsetX := 0
-        offsetY := 0
-        ; Use stretch scaling for wide macros to fill thumbnail
-        scaleX := buttonWidth / canvasW
-        scaleY := buttonHeight / canvasH
+        ; WIDE MACRO: Use configured wide canvas dimensions for accurate aspect ratio
+        configuredWideAspectRatio := wideCanvasW / wideCanvasH
+        buttonAspectRatio := buttonWidth / buttonHeight
+
+        if (configuredWideAspectRatio > buttonAspectRatio) {
+            ; Canvas is wider than button - fit to width, add top/bottom bars
+            scaledCanvasW := buttonWidth
+            scaledCanvasH := buttonWidth / configuredWideAspectRatio
+            offsetX := 0
+            offsetY := (buttonHeight - scaledCanvasH) / 2
+        } else {
+            ; Canvas is taller than button - fit to height, add left/right bars
+            scaledCanvasW := buttonHeight * configuredWideAspectRatio
+            scaledCanvasH := buttonHeight
+            offsetX := (buttonWidth - scaledCanvasW) / 2
+            offsetY := 0
+        }
+
+        scaleX := scaledCanvasW / canvasW
+        scaleY := scaledCanvasH / canvasH
+
+        ; Add black bars if needed to maintain aspect ratio
+        if (offsetX > 0) {
+            ; Add left/right black bars
+            blackBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", offsetX, "Float", buttonHeight)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", offsetX + scaledCanvasW, "Float", 0, "Float", offsetX, "Float", buttonHeight)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
+        } else if (offsetY > 0) {
+            ; Add top/bottom black bars
+            blackBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", offsetY)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", offsetY + scaledCanvasH, "Float", buttonWidth, "Float", offsetY)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
+        }
         
     } else if (useNarrowCanvas) {
         ; NARROW MACRO: Use the configured narrow canvas dimensions to create proper aspect ratio visualization
         ; Get the CONFIGURED narrow canvas aspect ratio (not the recorded macro aspect ratio)
         configuredNarrowCanvasW := narrowCanvasRight - narrowCanvasLeft
         configuredNarrowCanvasH := narrowCanvasBottom - narrowCanvasTop
+
+        ; Protect against divide by zero
+        if (configuredNarrowCanvasH = 0) {
+            return  ; Skip drawing if canvas not properly configured
+        }
+
         configuredNarrowAspectRatio := configuredNarrowCanvasW / configuredNarrowCanvasH
         
-        ; Calculate button aspect ratio
+        ; Calculate button aspect ratio with protection
+        if (buttonHeight = 0) {
+            return  ; Skip drawing if button dimensions invalid
+        }
         buttonAspectRatio := buttonWidth / buttonHeight
         
         ; Scale the configured narrow canvas aspect ratio to fit in the thumbnail
@@ -1076,30 +1222,75 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
         scaleY := scale
     }
     
-    ; Draw the boxes with proper scaling and enhanced visibility
+    ; Draw the boxes with enhanced precision and accuracy
     for box in boxes {
-        ; Scale box coordinates from canvas space to thumbnail space
-        x1 := ((box.left - canvasLeft) * scaleX) + offsetX
-        y1 := ((box.top - canvasTop) * scaleY) + offsetY
-        x2 := ((box.right - canvasLeft) * scaleX) + offsetX
-        y2 := ((box.bottom - canvasTop) * scaleY) + offsetY
-        
-        ; Calculate box dimensions
+        ; PRECISE COORDINATE TRANSFORMATION: Canvas space → Thumbnail space
+        ; Use floating-point arithmetic for sub-pixel accuracy
+        rawX1 := ((box.left - canvasLeft) * scaleX) + offsetX
+        rawY1 := ((box.top - canvasTop) * scaleY) + offsetY
+        rawX2 := ((box.right - canvasLeft) * scaleX) + offsetX
+        rawY2 := ((box.bottom - canvasTop) * scaleY) + offsetY
+
+        ; Calculate raw dimensions with floating-point precision
+        rawW := rawX2 - rawX1
+        rawH := rawY2 - rawY1
+
+        ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
+        minSize := 1.5  ; Minimum dimension in pixels
+
+        if (rawW < minSize || rawH < minSize) {
+            ; Calculate original aspect ratio
+            originalAspect := (box.right - box.left) / (box.bottom - box.top)
+
+            if (rawW < minSize && rawH < minSize) {
+                ; Both dimensions too small - scale proportionally
+                if (originalAspect > 1) {
+                    ; Wider box - set width to minimum, scale height proportionally
+                    w := minSize
+                    h := minSize / originalAspect
+                } else {
+                    ; Taller box - set height to minimum, scale width proportionally
+                    h := minSize
+                    w := minSize * originalAspect
+                }
+            } else if (rawW < minSize) {
+                ; Width too small - adjust while preserving aspect ratio
+                w := minSize
+                h := minSize / originalAspect
+            } else {
+                ; Height too small - adjust while preserving aspect ratio
+                h := minSize
+                w := minSize * originalAspect
+            }
+
+            ; Center the adjusted box on the original position
+            centerX := (rawX1 + rawX2) / 2
+            centerY := (rawY1 + rawY2) / 2
+            x1 := centerX - w / 2
+            y1 := centerY - h / 2
+            x2 := x1 + w
+            y2 := y1 + h
+        } else {
+            ; Dimensions are adequate - use precise floating-point coordinates
+            x1 := rawX1
+            y1 := rawY1
+            x2 := rawX2
+            y2 := rawY2
+            w := rawW
+            h := rawH
+        }
+
+        ; BOUNDS VALIDATION: Ensure coordinates are within thumbnail area
+        x1 := Max(0, Min(x1, buttonWidth))
+        y1 := Max(0, Min(y1, buttonHeight))
+        x2 := Max(0, Min(x2, buttonWidth))
+        y2 := Max(0, Min(y2, buttonHeight))
         w := x2 - x1
         h := y2 - y1
-        
-        ; Ensure minimum size for visibility (at least 2x2 pixels)
-        if (w < 2) {
-            centerX := (x1 + x2) / 2
-            x1 := centerX - 1
-            x2 := centerX + 1
-            w := 2
-        }
-        if (h < 2) {
-            centerY := (y1 + y2) / 2
-            y1 := centerY - 1
-            y2 := centerY + 1
-            h := 2
+
+        ; Skip boxes that are completely outside the thumbnail area
+        if (w <= 0 || h <= 0) {
+            continue
         }
         
         ; Get degradation type color
@@ -1109,14 +1300,23 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
             color := degradationColors[1]
         }
         
-        ; PURE COLOR - No borders, full opacity for clean appearance
+        ; ENHANCED RENDERING: Pure color with sub-pixel precision
         fillColor := 0xFF000000 | color  ; Full opacity (FF = 255)
-        
-        ; Draw pure color fill only
+
+        ; Enable high-quality rendering for fractional coordinates
+        ; Set graphics to use high-quality smoothing mode for precise rendering
+        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)  ; HighQuality
+        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 4) ; HighQuality
+
+        ; Draw with sub-pixel precision using floating-point coordinates
         brush := 0
         DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+
+        ; Reset to default rendering for other elements
+        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)  ; Default
+        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0) ; Default
     }
     
 }
@@ -3059,7 +3259,16 @@ CreateHBITMAPVisualization(macroEvents, buttonSize) {
     ; Memory-only visualization using HBITMAP with caching for performance
     global gdiPlusInitialized, degradationColors, hbitmapCache
 
-    if (!gdiPlusInitialized || !macroEvents || macroEvents.Length = 0) {
+    ; Early validation
+    if (!gdiPlusInitialized) {
+        ; Attempt to initialize if not already done
+        InitializeVisualizationSystem()
+        if (!gdiPlusInitialized) {
+            return 0
+        }
+    }
+
+    if (!macroEvents || macroEvents.Length = 0) {
         return 0
     }
 
@@ -3098,6 +3307,11 @@ CreateHBITMAPVisualization(macroEvents, buttonSize) {
     hbitmap := 0
     
     try {
+        ; Validate dimensions
+        if (buttonWidth <= 0 || buttonHeight <= 0 || buttonWidth > 4096 || buttonHeight > 4096) {
+            return 0
+        }
+
         ; Create GDI+ bitmap
         result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
         if (result != 0 || !bitmap) {
@@ -4133,33 +4347,37 @@ ShowStatsMenu() {
 }
 
 GetQuickStatsText() {
-    global masterStatsCSV
+    global masterStatsCSV, systemHealthStatus
 
     if (!FileExist(masterStatsCSV)) {
-        return "📊 No data recorded yet`nStart using macros to see your analytics!"
+        return "📊 No data recorded yet`nStart using macros to see raw statistics!"
     }
 
     try {
-        ; Use the updated ReadStatsFromCSV function for comprehensive stats
+        ; Get raw statistical data
         stats := ReadStatsFromCSV(false) ; Get all-time stats
 
         if (stats["total_executions"] = 0) {
-            return "📊 No executions recorded yet`nStart using macros to see your analytics!"
+            return "📊 No executions recorded yet`nStart using macros to see raw statistics!"
         }
 
-        ; Build informative quick stats summary
+        ; Raw data display - no AI inference
         totalExecs := stats["total_executions"]
         totalBoxes := stats["total_boxes"]
         avgTime := stats["average_execution_time"]
         execsPerHour := stats["executions_per_hour"]
+        totalTime := stats.Has("total_time") ? stats["total_time"] : 0
+
+        ; System status (technical only)
+        statusIcon := systemHealthStatus = "healthy" ? "🟢" : systemHealthStatus = "degraded" ? "🟡" : "🔴"
 
         if (totalExecs = 1) {
-            return "📊 1 execution recorded (" . totalBoxes . " boxes)`nAvg: " . avgTime . "ms | Rate: " . execsPerHour . "/hr"
+            return statusIcon . " System: " . systemHealthStatus . " | Data: " . totalExecs . " record`n📊 " . totalBoxes . " boxes | " . avgTime . "ms avg | " . execsPerHour . "/hr rate`n⏱️ Total time: " . FormatMilliseconds(totalTime)
         } else {
-            return "📊 " . totalExecs . " executions (" . totalBoxes . " total boxes)`nAvg: " . avgTime . "ms | Rate: " . execsPerHour . "/hr"
+            return statusIcon . " System: " . systemHealthStatus . " | Data: " . totalExecs . " records`n📊 " . totalBoxes . " boxes | " . avgTime . "ms avg | " . execsPerHour . "/hr rate`n⏱️ Total time: " . FormatMilliseconds(totalTime)
         }
     } catch {
-        return "📊 Analytics ready`nView your performance insights below"
+        return "📊 Raw data ready | System status: " . systemHealthStatus . "`nView detailed statistics below"
     }
 }
 
@@ -4235,90 +4453,497 @@ CreateEmptyCSV() {
 
 ; Built-in stats display GUI - no external dependencies
 ShowBuiltInStatsGUI(filterMode, stats) {
-    global darkMode, masterStatsCSV
+    global darkMode, masterStatsCSV, systemHealthStatus
 
-    ; Create comprehensive stats window
-    statsGui := Gui("+Resize +MinSize600x400", "📊 MacroMaster Analytics - " . (filterMode = "today" ? "Today's Session" : filterMode = "all" ? "All Time" : "Filtered Data"))
-    statsGui.BackColor := darkMode ? "0x2A2A2A" : "White"
+    ; Create data-focused statistics window
+    statsGui := Gui("+Resize +MinSize900x700", "📊 MacroMaster Statistics - " . (filterMode = "today" ? "Today's Session" : filterMode = "all" ? "All Time" : "Filtered Data"))
+    statsGui.BackColor := darkMode ? "0x1E1E1E" : "0xF5F5F5"
     statsGui.SetFont("s10", "Segoe UI")
 
-    ; Title section
-    titleText := statsGui.Add("Text", "x20 y20 w560 h30 Center", "📊 Performance Analytics Dashboard")
-    titleText.SetFont("s14 bold", "Segoe UI")
+    ; Generate professional charts using Python
+    chartFiles := GenerateDataCharts(stats, filterMode)
+
+    ; Header
+    titleText := statsGui.Add("Text", "x20 y15 w860 h35 Center", "📊 Raw Data Analytics Dashboard")
+    titleText.SetFont("s16 bold", "Segoe UI")
     titleText.Opt("c" . (darkMode ? "White" : "Black"))
 
-    ; Summary stats section
-    summaryY := 60
-    summaryText := "📈 EXECUTION SUMMARY`n"
-    summaryText .= "Total Executions: " . stats["total_executions"] . "`n"
-    summaryText .= "Total Boxes: " . stats["total_boxes"] . "`n"
-    summaryText .= "Average Time: " . stats["average_execution_time"] . "ms`n"
-    summaryText .= "Executions/Hour: " . stats["executions_per_hour"] . "`n"
-    summaryText .= "Boxes/Hour: " . stats["boxes_per_hour"] . "`n"
-    summaryText .= "Most Used Button: " . stats["most_used_button"] . "`n"
-    summaryText .= "Most Active Layer: " . stats["most_active_layer"] . "`n"
+    ; System status row
+    statusY := 55
+    statusIcon := systemHealthStatus = "healthy" ? "🟢" : systemHealthStatus = "degraded" ? "🟡" : "🔴"
 
-    summaryControl := statsGui.Add("Text", "x20 y" . summaryY . " w280 h150", summaryText)
-    summaryControl.SetFont("s9", "Consolas")
-    summaryControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+    statusText := statsGui.Add("Text", "x20 y" . statusY . " w200 h25", statusIcon . " System: " . systemHealthStatus)
+    statusText.SetFont("s9 bold", "Segoe UI")
+    statusText.Opt("c" . (systemHealthStatus = "healthy" ? "Green" : systemHealthStatus = "degraded" ? "Orange" : "Red"))
 
-    ; Degradation breakdown section
-    degradationY := summaryY
-    degradationText := "🎯 DEGRADATION ANALYSIS`n"
-    degradationText .= "Smudge: " . stats["smudge_total"] . "`n"
-    degradationText .= "Glare: " . stats["glare_total"] . "`n"
-    degradationText .= "Splashes: " . stats["splashes_total"] . "`n"
-    degradationText .= "Partial Block: " . stats["partial_blockage_total"] . "`n"
-    degradationText .= "Full Block: " . stats["full_blockage_total"] . "`n"
-    degradationText .= "Light Flare: " . stats["light_flare_total"] . "`n"
-    degradationText .= "Rain: " . stats["rain_total"] . "`n"
-    degradationText .= "Haze: " . stats["haze_total"] . "`n"
-    degradationText .= "Snow: " . stats["snow_total"] . "`n"
-    degradationText .= "Clear: " . stats["clear_total"] . "`n"
+    dataCountText := statsGui.Add("Text", "x240 y" . statusY . " w200 h25", "📊 Records: " . stats["total_executions"])
+    dataCountText.SetFont("s9 bold", "Segoe UI")
+    dataCountText.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
 
-    degradationControl := statsGui.Add("Text", "x320 y" . degradationY . " w260 h150", degradationText)
-    degradationControl.SetFont("s9", "Consolas")
-    degradationControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+    filterText := statsGui.Add("Text", "x460 y" . statusY . " w150 h25", "📅 Filter: " . (filterMode = "today" ? "Today" : filterMode = "all" ? "All Time" : "Custom"))
+    filterText.SetFont("s9", "Segoe UI")
+    filterText.Opt("c" . (darkMode ? "0xCCCCCC" : "0x555555"))
 
-    ; Execution type breakdown
-    typeY := summaryY + 160
-    typeText := "⚡ EXECUTION TYPES`n"
-    typeText .= "Macro Executions: " . stats["macro_executions_count"] . "`n"
-    typeText .= "JSON Profiles: " . stats["json_profile_executions_count"] . "`n"
-    typeText .= "Clear Executions: " . stats["clear_executions_count"] . "`n"
-    typeText .= "Session Time: " . FormatMilliseconds(stats["session_active_time"]) . "`n"
+    ; Raw data metrics cards
+    cardY := 85
+    cardHeight := 90
+    cardWidth := 210
 
-    typeControl := statsGui.Add("Text", "x20 y" . typeY . " w280 h100", typeText)
-    typeControl.SetFont("s9", "Consolas")
-    typeControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+    ; Card 1: Core Statistics
+    card1 := statsGui.Add("GroupBox", "x20 y" . cardY . " w" . cardWidth . " h" . cardHeight, "📈 CORE STATISTICS")
+    card1.SetFont("s9 bold", "Segoe UI")
+    card1.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
 
-    ; Data source info
-    sourceY := typeY
-    sourceText := "📁 DATA SOURCE`n"
-    sourceText .= "CSV File: " . masterStatsCSV . "`n"
-    sourceText .= "Filter: " . (filterMode = "today" ? "Current Session" : filterMode = "all" ? "All Time" : "Custom") . "`n"
+    execText := "Total Executions: " . stats["total_executions"] . "`n"
+    execText .= "Total Boxes: " . stats["total_boxes"] . "`n"
+    execText .= "Execution Rate: " . stats["executions_per_hour"] . "/hour`n"
+    execText .= "Avg Execution Time: " . stats["average_execution_time"] . "ms`n"
+    execText .= "Total Session Time: " . FormatMilliseconds(stats.Has("session_active_time") ? stats["session_active_time"] : 0)
 
-    sourceControl := statsGui.Add("Text", "x320 y" . sourceY . " w260 h80", sourceText)
-    sourceControl.SetFont("s8", "Consolas")
-    sourceControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+    execControl := statsGui.Add("Text", "x30 y" . (cardY + 20) . " w" . (cardWidth - 20) . " h" . (cardHeight - 25), execText)
+    execControl.SetFont("s8", "Consolas")
+    execControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
 
-    ; Buttons
-    btnY := typeY + 120
-    btnExport := statsGui.Add("Button", "x20 y" . btnY . " w120 h30", "💾 Export Data")
-    btnExport.SetFont("s9")
+    ; Card 2: Time Analysis
+    card2 := statsGui.Add("GroupBox", "x" . (30 + cardWidth) . " y" . cardY . " w" . cardWidth . " h" . cardHeight, "⏱️ TIME ANALYSIS")
+    card2.SetFont("s9 bold", "Segoe UI")
+    card2.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    totalTime := stats.Has("total_time") ? stats["total_time"] : 0
+    avgBoxTime := stats["total_boxes"] > 0 ? Round(totalTime / stats["total_boxes"], 1) : 0
+    minTime := stats.Has("min_execution_time") ? stats["min_execution_time"] : 0
+    maxTime := stats.Has("max_execution_time") ? stats["max_execution_time"] : 0
+
+    timeText := "Total Processing: " . FormatMilliseconds(totalTime) . "`n"
+    timeText .= "Avg Time/Box: " . avgBoxTime . "ms`n"
+    timeText .= "Fastest Execution: " . minTime . "ms`n"
+    timeText .= "Slowest Execution: " . maxTime . "ms`n"
+    timeText .= "Boxes/Hour: " . (stats.Has("boxes_per_hour") ? stats["boxes_per_hour"] : "0")
+
+    timeControl := statsGui.Add("Text", "x" . (40 + cardWidth) . " y" . (cardY + 20) . " w" . (cardWidth - 20) . " h" . (cardHeight - 25), timeText)
+    timeControl.SetFont("s8", "Consolas")
+    timeControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Card 3: Usage Distribution
+    card3 := statsGui.Add("GroupBox", "x" . (40 + cardWidth * 2) . " y" . cardY . " w" . cardWidth . " h" . cardHeight, "📊 USAGE DISTRIBUTION")
+    card3.SetFont("s9 bold", "Segoe UI")
+    card3.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    usageText := "Most Used Button: " . (stats.Has("most_used_button") ? stats["most_used_button"] : "None") . "`n"
+    usageText .= "Most Active Layer: " . (stats.Has("most_active_layer") ? stats["most_active_layer"] : "None") . "`n"
+    usageText .= "Macro Executions: " . (stats.Has("macro_executions_count") ? stats["macro_executions_count"] : 0) . "`n"
+    usageText .= "JSON Executions: " . (stats.Has("json_profile_executions_count") ? stats["json_profile_executions_count"] : 0) . "`n"
+    usageText .= "Clear Actions: " . (stats.Has("clear_executions_count") ? stats["clear_executions_count"] : 0)
+
+    usageControl := statsGui.Add("Text", "x" . (50 + cardWidth * 2) . " y" . (cardY + 20) . " w" . (cardWidth - 20) . " h" . (cardHeight - 25), usageText)
+    usageControl.SetFont("s8", "Consolas")
+    usageControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Professional charts section
+    chartsY := cardY + cardHeight + 20
+    chartsBox := statsGui.Add("GroupBox", "x20 y" . chartsY . " w860 h200", "📈 INTERACTIVE DATA VISUALIZATIONS")
+    chartsBox.SetFont("s10 bold", "Segoe UI")
+    chartsBox.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Chart buttons for opening interactive visualizations
+    btnChartsY := chartsY + 30
+
+    btnDegradationChart := statsGui.Add("Button", "x40 y" . btnChartsY . " w250 h50", "📊 Degradation Distribution Chart`nInteractive Plotly Visualization")
+    btnDegradationChart.SetFont("s9 bold")
+    btnDegradationChart.OnEvent("Click", (*) => OpenChart(chartFiles.degradation))
+
+    btnTimeChart := statsGui.Add("Button", "x310 y" . btnChartsY . " w250 h50", "⏱️ Execution Time Analysis`nTiming Performance Dashboard")
+    btnTimeChart.SetFont("s9 bold")
+    btnTimeChart.OnEvent("Click", (*) => OpenChart(chartFiles.timing))
+
+    btnUsageChart := statsGui.Add("Button", "x580 y" . btnChartsY . " w250 h50", "📈 Layer Usage Trends`nUsage Pattern Analysis")
+    btnUsageChart.SetFont("s9 bold")
+    btnUsageChart.OnEvent("Click", (*) => OpenChart(chartFiles.usage))
+
+    ; Chart status and info
+    chartInfoY := btnChartsY + 60
+    chartInfo := "Charts generated using pandas & plotly for professional data visualization`n"
+    chartInfo .= "Click buttons above to open interactive HTML charts in your browser`n"
+    chartInfo .= "Charts saved to: " . (chartFiles.Has("directory") ? chartFiles.directory : "Documents/MacroMaster/charts/")
+
+    chartInfoControl := statsGui.Add("Text", "x40 y" . chartInfoY . " w780 h80", chartInfo)
+    chartInfoControl.SetFont("s8", "Segoe UI")
+    chartInfoControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x666666"))
+
+    ; Detailed raw data section
+    detailsY := chartsY + 190
+    detailsBox := statsGui.Add("GroupBox", "x20 y" . detailsY . " w860 h140", "📋 RAW DATA BREAKDOWN")
+    detailsBox.SetFont("s10 bold", "Segoe UI")
+    detailsBox.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Left column - Complete degradation counts
+    leftDetailText := "🎯 DEGRADATION COUNTS:`n"
+    leftDetailText .= "Smudge: " . (stats.Has("smudge_total") ? stats["smudge_total"] : 0) . " | "
+    leftDetailText .= "Glare: " . (stats.Has("glare_total") ? stats["glare_total"] : 0) . " | "
+    leftDetailText .= "Splashes: " . (stats.Has("splashes_total") ? stats["splashes_total"] : 0) . "`n"
+    leftDetailText .= "Partial Block: " . (stats.Has("partial_blockage_total") ? stats["partial_blockage_total"] : 0) . " | "
+    leftDetailText .= "Full Block: " . (stats.Has("full_blockage_total") ? stats["full_blockage_total"] : 0) . "`n"
+    leftDetailText .= "Light Flare: " . (stats.Has("light_flare_total") ? stats["light_flare_total"] : 0) . " | "
+    leftDetailText .= "Rain: " . (stats.Has("rain_total") ? stats["rain_total"] : 0) . " | "
+    leftDetailText .= "Haze: " . (stats.Has("haze_total") ? stats["haze_total"] : 0) . " | "
+    leftDetailText .= "Snow: " . (stats.Has("snow_total") ? stats["snow_total"] : 0) . "`n"
+    leftDetailText .= "Clear: " . (stats.Has("clear_total") ? stats["clear_total"] : 0)
+
+    leftDetailControl := statsGui.Add("Text", "x30 y" . (detailsY + 25) . " w410 h105", leftDetailText)
+    leftDetailControl.SetFont("s8", "Consolas")
+    leftDetailControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Right column - System metrics
+    rightDetailText := "⚡ SYSTEM METRICS:`n"
+    rightDetailText .= "CSV File Size: " . GetFileSize(masterStatsCSV) . "`n"
+    rightDetailText .= "Error Count: " . statsErrorCount . " (last hour)`n"
+    rightDetailText .= "Queue Status: " . (statsWorkerActive ? "Processing" : "Ready") . "`n"
+    rightDetailText .= "System Uptime: " . FormatMilliseconds(A_TickCount - (applicationStartTime ? applicationStartTime : A_TickCount)) . "`n"
+    rightDetailText .= "Data Source: " . (FileExist(masterStatsCSV) ? "Available" : "Missing") . "`n"
+    rightDetailText .= "Filter Applied: " . (filterMode = "today" ? "Current Session Only" : "All Historical Data")
+
+    rightDetailControl := statsGui.Add("Text", "x450 y" . (detailsY + 25) . " w420 h105", rightDetailText)
+    rightDetailControl.SetFont("s8", "Consolas")
+    rightDetailControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Action buttons
+    btnY := detailsY + 150
+    btnExport := statsGui.Add("Button", "x20 y" . btnY . " w130 h35", "💾 Export CSV")
+    btnExport.SetFont("s9 bold")
     btnExport.OnEvent("Click", (*) => ExportStatsToFile())
 
-    btnRefresh := statsGui.Add("Button", "x160 y" . btnY . " w120 h30", "🔄 Refresh")
-    btnRefresh.SetFont("s9")
+    btnRefresh := statsGui.Add("Button", "x170 y" . btnY . " w130 h35", "🔄 Refresh Data")
+    btnRefresh.SetFont("s9 bold")
     btnRefresh.OnEvent("Click", (*) => RefreshStatsGUI(statsGui, filterMode))
 
-    btnClose := statsGui.Add("Button", "x460 y" . btnY . " w120 h30", "❌ Close")
-    btnClose.SetFont("s9")
+    btnBackup := statsGui.Add("Button", "x320 y" . btnY . " w130 h35", "💿 Backup Data")
+    btnBackup.SetFont("s9 bold")
+    btnBackup.OnEvent("Click", (*) => DataProtection.CreateBackup())
+
+    btnHealth := statsGui.Add("Button", "x470 y" . btnY . " w130 h35", "🔍 System Status")
+    btnHealth.SetFont("s9 bold")
+    btnHealth.OnEvent("Click", (*) => ShowSystemHealthDialog())
+
+    btnClose := statsGui.Add("Button", "x750 y" . btnY . " w130 h35", "❌ Close")
+    btnClose.SetFont("s9 bold")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
 
     ; Show the window
-    windowHeight := btnY + 70
-    statsGui.Show("w600 h" . windowHeight)
+    windowHeight := btnY + 55
+    statsGui.Show("w900 h" . windowHeight)
+}
+
+; Professional Chart Generation using Python pandas & plotly
+GenerateDataCharts(stats, filterMode) {
+    global masterStatsCSV, documentsDir
+
+    ; Create charts directory for portable execution
+    chartsDir := documentsDir . "\charts"
+    if !DirExist(chartsDir)
+        DirCreate(chartsDir)
+
+    ; Create Python script for chart generation
+    pythonScript := CreateChartGenerationScript(chartsDir, filterMode)
+
+    ; Check Python dependencies first
+    if !CheckPythonDependencies() {
+        return {
+            degradation: "",
+            timing: "",
+            usage: "",
+            directory: chartsDir,
+            error: "Dependencies not available"
+        }
+    }
+
+    ; Execute Python script to generate charts
+    try {
+        pythonCmd := 'python "' . pythonScript . '" "' . masterStatsCSV . '"'
+        RunWait(pythonCmd, chartsDir, "Hide")
+
+        ; Return chart file paths
+        return {
+            degradation: chartsDir . "\degradation_chart.html",
+            timing: chartsDir . "\timing_chart.html",
+            usage: chartsDir . "\usage_chart.html",
+            directory: chartsDir
+        }
+    } catch Error as e {
+        ; Fallback if execution fails
+        UpdateStatus("⚠️ Chart generation failed - check Python installation")
+        return {
+            degradation: "",
+            timing: "",
+            usage: "",
+            directory: chartsDir,
+            error: e.Message
+        }
+    }
+}
+
+CreateChartGenerationScript(chartsDir, filterMode) {
+    scriptPath := chartsDir . "\generate_charts.py"
+
+    ; Build Python script content line by line
+    scriptContent := ""
+    scriptContent .= "import pandas as pd`n"
+    scriptContent .= "import plotly.express as px`n"
+    scriptContent .= "import plotly.graph_objects as go`n"
+    scriptContent .= "from plotly.subplots import make_subplots`n"
+    scriptContent .= "import sys`n"
+    scriptContent .= "import os`n"
+    scriptContent .= "from datetime import datetime`n`n"
+
+    scriptContent .= "def main():`n"
+    scriptContent .= "    if len(sys.argv) < 2:`n"
+    scriptContent .= "        print('Usage: python generate_charts.py <csv_file>')`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    csv_file = sys.argv[1]`n`n"
+
+    scriptContent .= "    if not os.path.exists(csv_file):`n"
+    scriptContent .= "        print(f'CSV file not found: {csv_file}')`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    try:`n"
+    scriptContent .= "        df = pd.read_csv(csv_file)`n"
+    scriptContent .= "        if df.empty:`n"
+    scriptContent .= "            print('No data in CSV file')`n"
+    scriptContent .= "            return`n`n"
+
+    scriptContent .= "        create_degradation_chart(df)`n"
+    scriptContent .= "        create_timing_chart(df)`n"
+    scriptContent .= "        create_usage_chart(df)`n"
+    scriptContent .= "        print('Charts generated successfully')`n`n"
+
+    scriptContent .= "    except Exception as e:`n"
+    scriptContent .= "        print(f'Error generating charts: {e}')`n`n"
+
+    scriptContent .= "def create_degradation_chart(df):`n"
+    scriptContent .= "    degradation_cols = [col for col in df.columns if col.endswith('_count') and col != 'total_boxes']`n"
+    scriptContent .= "    if not degradation_cols:`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    degradation_data = []`n"
+    scriptContent .= "    for col in degradation_cols:`n"
+    scriptContent .= "        total = df[col].sum()`n"
+    scriptContent .= "        if total > 0:`n"
+    scriptContent .= "            degradation_data.append({'Type': col.replace('_count', '').replace('_', ' ').title(), 'Count': total})`n`n"
+
+    scriptContent .= "    if not degradation_data:`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    deg_df = pd.DataFrame(degradation_data)`n"
+    scriptContent .= "    fig = px.bar(deg_df, x='Type', y='Count', title='Degradation Distribution Analysis', color='Count', color_continuous_scale='viridis')`n"
+    scriptContent .= "    fig.update_layout(showlegend=False, xaxis_title='Degradation Type', yaxis_title='Total Count', template='plotly_white')`n"
+    scriptContent .= "    fig.write_html('degradation_chart.html')`n`n"
+
+    scriptContent .= "def create_timing_chart(df):`n"
+    scriptContent .= "    if 'execution_time_ms' not in df.columns:`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    fig = make_subplots(rows=2, cols=2, subplot_titles=('Execution Time Histogram', 'Time vs Boxes', 'Daily Count', 'Time Trend'))`n"
+    scriptContent .= "    fig.add_trace(go.Histogram(x=df['execution_time_ms'], name='Execution Time', nbinsx=20), row=1, col=1)`n"
+    scriptContent .= "    if 'total_boxes' in df.columns:`n"
+    scriptContent .= "        fig.add_trace(go.Scatter(x=df['total_boxes'], y=df['execution_time_ms'], mode='markers', name='Time vs Boxes'), row=1, col=2)`n"
+    scriptContent .= "    fig.update_layout(title_text='Execution Timing Analysis Dashboard', showlegend=False, template='plotly_white')`n"
+    scriptContent .= "    fig.write_html('timing_chart.html')`n`n"
+
+    scriptContent .= "def create_usage_chart(df):`n"
+    scriptContent .= "    if 'layer' not in df.columns:`n"
+    scriptContent .= "        return`n`n"
+
+    scriptContent .= "    fig = make_subplots(rows=2, cols=2, subplot_titles=('Layer Usage', 'Button Usage', 'Execution Types', 'Hourly Activity'), specs=[[{'type': 'pie'}, {'type': 'bar'}], [{'type': 'pie'}, {'type': 'bar'}]])`n"
+    scriptContent .= "    layer_counts = df['layer'].value_counts()`n"
+    scriptContent .= "    fig.add_trace(go.Pie(labels=[f'Layer {x}' for x in layer_counts.index], values=layer_counts.values, name='Layer Usage'), row=1, col=1)`n"
+    scriptContent .= "    fig.update_layout(title_text='Usage Patterns & Activity Analysis', showlegend=False, template='plotly_white')`n"
+    scriptContent .= "    fig.write_html('usage_chart.html')`n`n"
+
+    scriptContent .= "if __name__ == '__main__':`n"
+    scriptContent .= "    main()`n"
+
+    try {
+        if FileExist(scriptPath)
+            FileDelete(scriptPath)
+        FileAppend(scriptContent, scriptPath, "UTF-8")
+        return scriptPath
+    } catch {
+        return ""
+    }
+}
+
+CheckPythonDependencies() {
+    ; Check if Python is available
+    try {
+        RunWait("python --version", , "Hide")
+    } catch {
+        result := MsgBox("Python not found. Install Python to enable interactive charts?`n`nWithout Python, only raw data will be displayed.", "Python Required", "YesNo Icon?")
+        if result = "Yes"
+            Run("https://www.python.org/downloads/")
+        return false
+    }
+
+    ; Check if pandas and plotly are available
+    try {
+        RunWait('python -c "import pandas, plotly"', , "Hide")
+        return true
+    } catch {
+        result := MsgBox("Required packages missing. Install pandas & plotly for charts?`n`nClick Yes to run automatic installer.", "Chart Dependencies", "YesNo Icon?")
+        if result = "Yes" {
+            try {
+                installerScript := A_ScriptDir . "\install_chart_dependencies.py"
+                if FileExist(installerScript) {
+                    Run('python "' . installerScript . '"')
+                    MsgBox("Package installer launched. Restart MacroMaster after installation completes.", "Installing Dependencies", "Icon!")
+                } else {
+                    Run("pip install pandas plotly")
+                }
+            } catch {
+                MsgBox("Manual installation required:`n`npip install pandas plotly", "Manual Install", "Icon!")
+            }
+        }
+        return false
+    }
+}
+
+OpenChart(chartPath) {
+    if (chartPath = "" || !FileExist(chartPath)) {
+        result := MsgBox("Chart not available. Generate charts first?`n`nThis requires Python with pandas & plotly installed.", "Chart Not Found", "YesNo Icon?")
+        if result = "Yes" {
+            ; Close current stats GUI and reopen to regenerate charts
+            try {
+                if (WinExist("MacroMaster Stats Dashboard")) {
+                    WinClose("MacroMaster Stats Dashboard")
+                }
+            } catch {
+                ; Ignore if window doesn't exist
+            }
+            ShowPythonStats()
+        }
+        return
+    }
+
+    try {
+        ; Open HTML file in default browser
+        Run('"' . chartPath . '"')
+        UpdateStatus("Opened interactive " . GetChartType(chartPath) . " chart in browser")
+    } catch Error as e {
+        MsgBox("Failed to open chart: " . e.Message . "`n`nFile: " . chartPath, "Error", "Icon!")
+    }
+}
+
+GetChartType(chartPath) {
+    if InStr(chartPath, "degradation")
+        return "degradation"
+    else if InStr(chartPath, "timing")
+        return "timing"
+    else if InStr(chartPath, "usage")
+        return "usage"
+    else
+        return "data"
+}
+
+; Helper function to get file size
+GetFileSize(filePath) {
+    if !FileExist(filePath)
+        return "0 bytes"
+
+    try {
+        size := FileGetSize(filePath)
+        if size < 1024
+            return size . " bytes"
+        else if size < 1048576
+            return Round(size / 1024, 1) . " KB"
+        else
+            return Round(size / 1048576, 1) . " MB"
+    } catch {
+        return "Unknown"
+    }
+}
+
+; System Health Dialog
+ShowSystemHealthDialog() {
+    global systemHealthStatus, statsErrorCount, masterStatsCSV, statsWorkerActive, darkMode
+
+    healthGui := Gui("+AlwaysOnTop", "🔍 System Health Monitor")
+    healthGui.BackColor := darkMode ? "0x2A2A2A" : "White"
+    healthGui.SetFont("s10", "Segoe UI")
+
+    ; Check current system health
+    currentHealth := CheckStatsSystemHealth()
+
+    ; Health status display
+    healthIcon := currentHealth = "healthy" ? "🟢" : currentHealth = "degraded" ? "🟡" : "🔴"
+    healthColor := currentHealth = "healthy" ? "Green" : currentHealth = "degraded" ? "Orange" : "Red"
+
+    titleText := healthGui.Add("Text", "x20 y20 w360 h30 Center", healthIcon . " System Health: " . StrUpper(currentHealth))
+    titleText.SetFont("s12 bold", "Segoe UI")
+    titleText.Opt("c" . healthColor)
+
+    ; Detailed health metrics
+    healthY := 60
+    healthDetails := "📊 SYSTEM METRICS:`n"
+    healthDetails .= "Error Count (Last Hour): " . statsErrorCount . "`n"
+    healthDetails .= "CSV File Status: " . (FileExist(masterStatsCSV) ? "✅ Available" : "❌ Missing") . "`n"
+    healthDetails .= "Queue Status: " . (statsWorkerActive ? "🔄 Processing" : "✅ Ready") . "`n"
+    healthDetails .= "Data Protection: " . (DataProtection.backupDir != "" ? "✅ Active" : "⚠️ Initializing") . "`n"
+    healthDetails .= "Error Logging: " . (StatsSystemError.LOG_FILE != "" ? "✅ Active" : "⚠️ Initializing") . "`n`n"
+
+    if currentHealth = "critical"
+        healthDetails .= "🚨 CRITICAL ISSUES DETECTED:`n• CSV file may be corrupted or missing`n• Immediate attention required"
+    else if currentHealth = "degraded"
+        healthDetails .= "⚠️ PERFORMANCE DEGRADED:`n• High error rate detected`n• System will auto-recover"
+    else
+        healthDetails .= "✅ ALL SYSTEMS OPERATIONAL:`n• Performance within normal parameters`n• Data integrity maintained"
+
+    healthControl := healthGui.Add("Text", "x20 y" . healthY . " w360 h180", healthDetails)
+    healthControl.SetFont("s9", "Consolas")
+    healthControl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    ; Action buttons
+    btnY := healthY + 190
+    if currentHealth = "critical" {
+        btnRecover := healthGui.Add("Button", "x20 y" . btnY . " w120 h30", "🔧 Auto Repair")
+        btnRecover.SetFont("s9 bold")
+        btnRecover.OnEvent("Click", (*) => AttemptSystemRecovery(healthGui))
+    }
+
+    btnRefresh := healthGui.Add("Button", "x160 y" . btnY . " w100 h30", "🔄 Refresh")
+    btnRefresh.SetFont("s9")
+    btnRefresh.OnEvent("Click", (*) => RefreshHealthDialog(healthGui))
+
+    btnClose := healthGui.Add("Button", "x280 y" . btnY . " w100 h30", "❌ Close")
+    btnClose.SetFont("s9")
+    btnClose.OnEvent("Click", (*) => healthGui.Destroy())
+
+    ; Show the health dialog
+    windowHeight := btnY + 50
+    healthGui.Show("w400 h" . windowHeight)
+}
+
+; Attempt system recovery
+AttemptSystemRecovery(healthGui) {
+    try {
+        ; Attempt CSV recovery
+        if StatsSystemError.RecoverFromCorruption() {
+            MsgBox("✅ System recovery successful!`n`nCSV file has been repaired and system is operational.", "Recovery Complete", "Icon!")
+            UpdateStatus("✅ System recovered successfully")
+        } else {
+            MsgBox("⚠️ Automatic recovery failed.`n`nPlease manually check the CSV file or restart the application.", "Recovery Failed", "Icon!")
+            UpdateStatus("⚠️ Recovery attempt failed")
+        }
+
+        healthGui.Destroy()
+
+    } catch Error as e {
+        MsgBox("❌ Recovery error: " . e.Message, "Error", "Icon!")
+    }
+}
+
+; Refresh health dialog
+RefreshHealthDialog(healthGui) {
+    healthGui.Destroy()
+    ShowSystemHealthDialog()
 }
 
 ; Helper function to format milliseconds to readable time
@@ -5320,11 +5945,17 @@ CalibrateWideCanvas() {
     wideCanvasBottom := Max(y1, y2)
     isWideCanvasCalibrated := true
     
-    ; Validate aspect ratio
+    ; Validate aspect ratio with divide-by-zero protection
     canvasW := wideCanvasRight - wideCanvasLeft
     canvasH := wideCanvasBottom - wideCanvasTop
+
+    if (canvasH = 0) {
+        UpdateStatus("⚠️ Wide canvas height is zero - invalid configuration")
+        return
+    }
+
     aspectRatio := canvasW / canvasH
-    
+
     if (Abs(aspectRatio - 1.777) > 0.1) {
         UpdateStatus("⚠️ Wide canvas aspect ratio is " . Round(aspectRatio, 2) . " (expected ~1.78 for 16:9)")
     } else {
@@ -5364,11 +5995,17 @@ CalibrateNarrowCanvas() {
     narrowCanvasBottom := Max(y1, y2)
     isNarrowCanvasCalibrated := true
     
-    ; Validate aspect ratio
+    ; Validate aspect ratio with divide-by-zero protection
     canvasW := narrowCanvasRight - narrowCanvasLeft
     canvasH := narrowCanvasBottom - narrowCanvasTop
+
+    if (canvasH = 0) {
+        UpdateStatus("⚠️ Narrow canvas height is zero - invalid configuration")
+        return
+    }
+
     aspectRatio := canvasW / canvasH
-    
+
     if (Abs(aspectRatio - 1.333) > 0.1) {
         UpdateStatus("⚠️ Narrow canvas aspect ratio is " . Round(aspectRatio, 2) . " (expected ~1.33 for 4:3)")
     } else {
@@ -5579,15 +6216,34 @@ class JSON {
 
 InitializeStatsSystem() {
     global thumbnailDir
-    
+
     ; Create thumbnail directory
     if !DirExist(thumbnailDir)
         DirCreate(thumbnailDir)
-    
-    LoadStatsData()
-    
-    ; Initialize offline data storage system
-    ; InitializeOfflineStorage()  ; DISABLED - CSV only approach
+
+    ; Initialize production-grade stats system components
+    try {
+        ; Initialize error logging system for portable execution
+        StatsSystemError.Initialize()
+
+        ; Initialize automated backup system with Documents folder support
+        DataProtection.InitializeAutoBackup()
+
+        ; Stats system variables are already declared globally at top of script
+
+        ; Perform initial health check
+        CheckStatsSystemHealth()
+
+        ; Load existing stats data
+        LoadStatsData()
+
+        UpdateStatus("🔧 Production stats system initialized - Health: " . systemHealthStatus)
+
+    } catch Error as e {
+        ; Graceful fallback if production systems fail
+        UpdateStatus("⚠️ Stats system warning: " . e.Message)
+        LoadStatsData()  ; Still try to load basic stats
+    }
 }
 
 InitializeJsonAnnotations() {
@@ -7394,7 +8050,7 @@ InitializeCSVFile() {
 
         ; Create CSV with streamlined header optimized for tracking and display
         if (!FileExist(masterStatsCSV)) {
-            header := "timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
+            header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
 
             UpdateStatus("📊 CSV stats initialized: " . masterStatsCSV)
@@ -7456,58 +8112,424 @@ CleanCorruptedTimeStats() {
     }
 }
 
-AppendToCSV(executionData) {
-    global masterStatsCSV, sessionId, currentUsername, totalActiveTime, breakMode
+; Data validation schema
+ValidateStatsRecord(record) {
+    required := ["timestamp", "execution_type", "macro_name", "layer", "execution_time_ms", "total_boxes"]
+
+    for field in required {
+        if !record.Has(field) || record[field] = ""
+            throw Error("Missing required field: " . field)
+    }
+
+    ; Validate data types and ranges
+    if !IsInteger(record["execution_time_ms"]) || record["execution_time_ms"] < 0
+        throw Error("Invalid execution_time_ms: " . record["execution_time_ms"])
+
+    if !IsInteger(record["total_boxes"]) || record["total_boxes"] < 0
+        throw Error("Invalid total_boxes: " . record["total_boxes"])
+
+    return true
+}
+
+; Atomic write operations with backup and recovery
+WriteStatsAtomic(csvRow) {
+    global masterStatsCSV
+
+    tempFile := masterStatsCSV . ".tmp"
+    backupFile := masterStatsCSV . ".bak"
 
     try {
-        ; Ensure CSV file exists and is properly initialized
-        if (!FileExist(masterStatsCSV)) {
-            InitializeCSVFile()
+        ; Create backup before modification
+        if FileExist(masterStatsCSV)
+            FileCopy(masterStatsCSV, backupFile, 1)
+
+        ; Write to temporary file first
+        FileAppend(csvRow, tempFile, "UTF-8")
+
+        ; Atomic move operation
+        if FileExist(masterStatsCSV) {
+            ; Append to existing file
+            existingContent := FileRead(masterStatsCSV, "UTF-8")
+            FileDelete(tempFile)
+            FileAppend(existingContent . csvRow, tempFile, "UTF-8")
         }
 
-        ; Build comprehensive CSV row with all tracking data
-        ; Headers: timestamp,session_id,username,execution_type,macro_name,layer,execution_time_ms,total_boxes,degradation_types,severity_level,canvas_mode,performance_grade,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
+        FileMove(tempFile, masterStatsCSV, 1)
 
-        ; Build CSV row with proper escaping
-        csvRow := executionData["timestamp"]
-        csvRow .= "," . sessionId
-        csvRow .= "," . currentUsername
-        csvRow .= "," . executionData["execution_type"]
-        csvRow .= "," . executionData["macro_name"]
-        csvRow .= "," . executionData["layer"]
-        csvRow .= "," . executionData["execution_time_ms"]
-        csvRow .= "," . executionData["total_boxes"]
-        csvRow .= "," . Chr(34) . executionData["degradation_types"] . Chr(34)
-        csvRow .= "," . (executionData.Has("severity_level") ? executionData["severity_level"] : "medium")
-        csvRow .= "," . (executionData.Has("canvas_mode") ? executionData["canvas_mode"] : "wide")
-        csvRow .= "," . (executionData.Has("performance_grade") ? executionData["performance_grade"] : "C")
-        csvRow .= "," . totalActiveTime
-        csvRow .= "," . (breakMode ? "true" : "false")
-        csvRow .= "," . (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0)
-        csvRow .= "," . (executionData.Has("glare_count") ? executionData["glare_count"] : 0)
-        csvRow .= "," . (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0)
-        csvRow .= "," . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0)
-        csvRow .= "," . (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0)
-        csvRow .= "," . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0)
-        csvRow .= "," . (executionData.Has("rain_count") ? executionData["rain_count"] : 0)
-        csvRow .= "," . (executionData.Has("haze_count") ? executionData["haze_count"] : 0)
-        csvRow .= "," . (executionData.Has("snow_count") ? executionData["snow_count"] : 0)
-        csvRow .= "," . (executionData.Has("clear_count") ? executionData["clear_count"] : 0)
-        csvRow .= "," . Chr(34) . (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . Chr(34)
-        csvRow .= "," . (executionData.Has("execution_success") ? executionData["execution_success"] : "true")
-        csvRow .= "," . Chr(34) . (executionData.Has("error_details") ? executionData["error_details"] : "") . Chr(34)
-        csvRow .= "`n"
+        ; Cleanup successful - remove backup after delay
+        SetTimer(CleanupBackupFile.Bind(backupFile), -5000)
 
-        ; Append to CSV file with UTF-8 encoding
-        FileAppend(csvRow, masterStatsCSV, "UTF-8")
-
-        ; Provide user feedback on successful tracking
-        UpdateStatus("📊 " . executionData["execution_type"] . " " . executionData["macro_name"] . " (" . executionData["execution_time_ms"] . "ms, " . executionData["total_boxes"] . " boxes)")
-
-    } catch as e {
-        ; Log error details for debugging while not breaking the application
-        UpdateStatus("⚠️ Stats tracking error: " . e.Message)
+    } catch Error as e {
+        ; Restore from backup on failure
+        if FileExist(backupFile)
+            FileCopy(backupFile, masterStatsCSV, 1)
+        FileDelete(tempFile)
+        StatsSystemReportError()
+        throw e
     }
+}
+
+; Asynchronous stats recording queue
+QueueStatsRecord(executionData) {
+    global statsQueue, statsWorkerActive
+
+    try {
+        ; Validate before queuing
+        ValidateStatsRecord(executionData)
+
+        statsQueue.Push(executionData)
+
+        if !statsWorkerActive {
+            statsWorkerActive := true
+            SetTimer(ProcessStatsQueue, -1) ; Immediate async execution
+        }
+
+        return true
+    } catch Error as e {
+        UpdateStatus("⚠️ Stats validation failed: " . e.Message)
+        return false
+    }
+}
+
+; Helper function for cleaning up backup files
+CleanupBackupFile(filePath) {
+    if FileExist(filePath) {
+        try {
+            FileDelete(filePath)
+        } catch {
+            ; Silent fail - backup cleanup is not critical
+        }
+    }
+}
+
+; Process queued stats records asynchronously
+ProcessStatsQueue() {
+    global statsQueue, statsWorkerActive, masterStatsCSV, sessionId, currentUsername, totalActiveTime, breakMode
+
+    while statsQueue.Length > 0 {
+        executionData := statsQueue.RemoveAt(1)
+
+        try {
+            ; Ensure CSV file exists
+            if (!FileExist(masterStatsCSV)) {
+                InitializeCSVFile()
+            }
+
+            ; Build CSV row with comprehensive data
+            ; Create streamlined CSV row matching Python script expectations
+            csvRow := executionData["timestamp"]
+            csvRow .= "," . sessionId
+            csvRow .= "," . currentUsername
+            csvRow .= "," . executionData["execution_type"]
+            csvRow .= "," . executionData["button_key"]
+            csvRow .= "," . executionData["layer"]
+            csvRow .= "," . executionData["execution_time_ms"]
+            csvRow .= "," . executionData["total_boxes"]
+            csvRow .= "," . Chr(34) . (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . Chr(34)
+            csvRow .= "," . (executionData.Has("severity_level") ? executionData["severity_level"] : "medium")
+            csvRow .= "," . (executionData.Has("canvas_mode") ? executionData["canvas_mode"] : "wide")
+            csvRow .= "," . totalActiveTime
+            csvRow .= "," . (breakMode ? "true" : "false")
+            csvRow .= "`n"
+
+            ; Write atomically
+            WriteStatsAtomic(csvRow)
+
+            ; Provide user feedback
+            UpdateStatus("📊 " . executionData["execution_type"] . " " . executionData["button_key"] . " (" . executionData["execution_time_ms"] . "ms, " . executionData["total_boxes"] . " boxes)")
+
+        } catch Error as e {
+            UpdateStatus("⚠️ Stats write failed: " . e.Message)
+            StatsSystemReportError()
+        }
+    }
+
+    statsWorkerActive := false
+}
+
+; Error tracking and health monitoring
+StatsSystemReportError() {
+    global statsErrorCount
+    statsErrorCount++
+    ; Reset error count every hour
+    SetTimer(ResetStatsErrorCount, -3600000)
+}
+
+ResetStatsErrorCount() {
+    global statsErrorCount
+    statsErrorCount := 0
+}
+
+CheckStatsSystemHealth() {
+    global lastHealthCheck, systemHealthStatus, statsErrorCount, masterStatsCSV
+
+    currentTime := A_TickCount
+    if currentTime - lastHealthCheck < 60000 ; Check every minute
+        return systemHealthStatus
+
+    lastHealthCheck := currentTime
+
+    ; Check file accessibility
+    if !FileExist(masterStatsCSV) {
+        systemHealthStatus := "critical"
+        return "critical"
+    }
+
+    ; Check error rate
+    if statsErrorCount > 10 {
+        systemHealthStatus := "degraded"
+        return "degraded"
+    }
+
+    systemHealthStatus := "healthy"
+    return "healthy"
+}
+
+; PRODUCTION ERROR HANDLING & RECOVERY SYSTEM
+class StatsSystemError {
+    static LOG_FILE := ""
+
+    static Initialize() {
+        ; Use Documents folder for portable/zipped execution
+        global documentsDir
+        this.LOG_FILE := documentsDir . "\stats_system_errors.log"
+    }
+
+    static LogError(operation, error, context := "") {
+        if this.LOG_FILE = ""
+            this.Initialize()
+
+        timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+        logEntry := timestamp . " | " . operation . " | " . error.Message
+        if context != ""
+            logEntry .= " | Context: " . context
+
+        try {
+            FileAppend(logEntry . "`n", this.LOG_FILE, "UTF-8")
+        } catch {
+            ; Silent fail - don't break system if logging fails
+        }
+    }
+
+    static RecoverFromCorruption() {
+        global masterStatsCSV
+
+        backupFile := masterStatsCSV . ".bak"
+        if FileExist(backupFile) {
+            try {
+                FileCopy(backupFile, masterStatsCSV, 1)
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        ; Attempt CSV repair
+        return this.RepairCSVStructure()
+    }
+
+    static RepairCSVStructure() {
+        global masterStatsCSV
+
+        if !FileExist(masterStatsCSV)
+            return false
+
+        repairedFile := masterStatsCSV . ".repaired"
+        validRecords := 0
+
+        try {
+            file := FileOpen(masterStatsCSV, "r", "UTF-8")
+            output := FileOpen(repairedFile, "w", "UTF-8")
+
+            ; Write header
+            header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active"
+            output.WriteLine(header)
+
+            while !file.AtEOF {
+                line := Trim(file.ReadLine())
+                if line = "" || InStr(line, "timestamp") ; Skip header/empty
+                    continue
+
+                fields := StrSplit(line, ",")
+                if fields.Length >= 8 { ; Minimum required fields
+                    output.WriteLine(line)
+                    validRecords++
+                }
+            }
+
+            file.Close()
+            output.Close()
+
+            if validRecords > 0 {
+                FileMove(repairedFile, masterStatsCSV, 1)
+                return true
+            }
+
+        } catch {
+            FileDelete(repairedFile)
+        }
+
+        return false
+    }
+}
+
+; RAW DATA ANALYTICS - NO AI INFERENCE
+class DataAnalytics {
+    static CalculateBasicMetrics(stats) {
+        metrics := {}
+
+        if stats.total_executions > 0 {
+            metrics.boxes_per_execution := Round(stats.total_boxes / stats.total_executions, 2)
+            metrics.avg_time_per_box := stats.total_boxes > 0 ? Round(stats.total_time / stats.total_boxes, 1) : 0
+            metrics.execution_rate := stats.executions_per_hour
+            metrics.total_processing_time := stats.total_time
+        }
+
+        return metrics
+    }
+
+    static GetTopDegradations(stats, limit := 5) {
+        degradations := [
+            {name: "Smudge", count: stats.Has("smudge_total") ? stats["smudge_total"] : 0},
+            {name: "Glare", count: stats.Has("glare_total") ? stats["glare_total"] : 0},
+            {name: "Splashes", count: stats.Has("splashes_total") ? stats["splashes_total"] : 0},
+            {name: "Partial Block", count: stats.Has("partial_blockage_total") ? stats["partial_blockage_total"] : 0},
+            {name: "Full Block", count: stats.Has("full_blockage_total") ? stats["full_blockage_total"] : 0},
+            {name: "Light Flare", count: stats.Has("light_flare_total") ? stats["light_flare_total"] : 0},
+            {name: "Rain", count: stats.Has("rain_total") ? stats["rain_total"] : 0},
+            {name: "Haze", count: stats.Has("haze_total") ? stats["haze_total"] : 0},
+            {name: "Snow", count: stats.Has("snow_total") ? stats["snow_total"] : 0},
+            {name: "Clear", count: stats.Has("clear_total") ? stats["clear_total"] : 0}
+        ]
+
+        ; Sort by count (highest first)
+        for i in 1..degradations.Length {
+            for j in i+1..degradations.Length {
+                if degradations[j].count > degradations[i].count {
+                    temp := degradations[i]
+                    degradations[i] := degradations[j]
+                    degradations[j] := temp
+                }
+            }
+        }
+
+        ; Return top entries
+        result := []
+        Loop Min(limit, degradations.Length) {
+            if degradations[A_Index].count > 0
+                result.Push(degradations[A_Index])
+        }
+
+        return result
+    }
+
+    static GetTimeDistribution(stats) {
+        return {
+            min_time: stats.Has("min_execution_time") ? stats["min_execution_time"] : 0,
+            max_time: stats.Has("max_execution_time") ? stats["max_execution_time"] : 0,
+            avg_time: stats.Has("average_execution_time") ? stats["average_execution_time"] : 0,
+            total_time: stats.Has("total_time") ? stats["total_time"] : 0
+        }
+    }
+}
+
+; AUTOMATED BACKUP SYSTEM FOR PORTABLE/ZIPPED EXECUTION
+class DataProtection {
+    static BACKUP_RETENTION_DAYS := 30
+    static BACKUP_INTERVAL_HOURS := 6
+    static backupDir := ""
+
+    static Initialize() {
+        global documentsDir
+        this.backupDir := documentsDir . "\backups"
+        DirCreate(this.backupDir)
+    }
+
+    static InitializeAutoBackup() {
+        this.Initialize()
+        ; Schedule periodic backups
+        SetTimer(this.CreateBackup.Bind(this), this.BACKUP_INTERVAL_HOURS * 3600000)
+        ; Cleanup old backups daily
+        SetTimer(this.CleanupOldBackups.Bind(this), 86400000)
+    }
+
+    static CreateBackup() {
+        global masterStatsCSV
+
+        if !FileExist(masterStatsCSV)
+            return
+
+        if this.backupDir = ""
+            this.Initialize()
+
+        timestamp := FormatTime(A_Now, "yyyyMMdd_HHmmss")
+        backupFile := this.backupDir . "\stats_backup_" . timestamp . ".csv"
+
+        try {
+            FileCopy(masterStatsCSV, backupFile)
+            ; Keep only last 10 backups to save space in portable environment
+            this.LimitBackupCount(10)
+        } catch Error as e {
+            StatsSystemError.LogError("Backup", e, "File: " . backupFile)
+        }
+    }
+
+    static LimitBackupCount(maxBackups) {
+        if this.backupDir = ""
+            return
+
+        backupFiles := []
+        Loop Files, this.backupDir . "\stats_backup_*.csv" {
+            backupFiles.Push({path: A_LoopFileFullPath, time: A_LoopFileTimeModified})
+        }
+
+        if backupFiles.Length <= maxBackups
+            return
+
+        ; Sort by time (newest first)
+        for i, file1 in backupFiles {
+            for j, file2 in backupFiles {
+                if j > i && file1.time < file2.time {
+                    temp := backupFiles[i]
+                    backupFiles[i] := backupFiles[j]
+                    backupFiles[j] := temp
+                }
+            }
+        }
+
+        ; Delete oldest files
+        Loop backupFiles.Length - maxBackups {
+            i := maxBackups + A_Index
+            try {
+                FileDelete(backupFiles[i].path)
+            } catch {
+                ; Continue if delete fails
+            }
+        }
+    }
+
+    static CleanupOldBackups() {
+        if this.backupDir = ""
+            return
+
+        cutoffTime := A_Now
+        DateAdd(cutoffTime, -this.BACKUP_RETENTION_DAYS, "Days")
+
+        Loop Files, this.backupDir . "\*.csv" {
+            if A_LoopFileTimeModified < cutoffTime {
+                try {
+                    FileDelete(A_LoopFileFullPath)
+                } catch {
+                    ; Continue if delete fails
+                }
+            }
+        }
+    }
+}
+
+; Legacy compatibility function - now uses new async system
+AppendToCSV(executionData) {
+    return QueueStatsRecord(executionData)
 }
 
 RecordExecutionStats(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
@@ -7531,7 +8553,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     executionData := Map()
     executionData["timestamp"] := timestamp
     executionData["execution_type"] := executionType
-    executionData["macro_name"] := macroKey
+    executionData["button_key"] := macroKey
     executionData["layer"] := currentLayer
     executionData["execution_time_ms"] := execution_time_ms
     executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
@@ -7555,7 +8577,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
     ; Initialize other fields
     executionData["total_boxes"] := 0
-    executionData["degradation_types"] := ""
+    executionData["degradation_assignments"] := ""
     executionData["severity_level"] := "medium"
     executionData["annotation_details"] := ""
     executionData["execution_success"] := "true"
@@ -7567,7 +8589,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         if (IsObject(analysisRecord)) {
             executionData["total_boxes"] := analysisRecord.boundingBoxCount
             if (analysisRecord.HasOwnProp("degradationAssignments")) {
-                executionData["degradation_types"] := analysisRecord.degradationAssignments
+                executionData["degradation_assignments"] := analysisRecord.degradationAssignments
                 ProcessDegradationCounts(executionData, analysisRecord.degradationAssignments)
             }
         } else {
@@ -7591,7 +8613,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
                 for i, deg in degradation_list {
                     degradation_string .= (i > 1 ? "," : "") . deg
                 }
-                executionData["degradation_types"] := degradation_string
+                executionData["degradation_assignments"] := degradation_string
                 ProcessDegradationCounts(executionData, degradation_string)
             }
         }
@@ -7600,7 +8622,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         ; For JSON executions: extract data from analysis record
         if (IsObject(analysisRecord)) {
             if (analysisRecord.HasOwnProp("jsonDegradationName")) {
-                executionData["degradation_types"] := analysisRecord.jsonDegradationName
+                executionData["degradation_assignments"] := analysisRecord.jsonDegradationName
                 ProcessDegradationCounts(executionData, analysisRecord.jsonDegradationName)
             }
             if (analysisRecord.HasOwnProp("severity")) {
@@ -7614,7 +8636,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     } else if (executionType = "clear") {
         ; For clear executions
         executionData["clear_count"] := 1
-        executionData["degradation_types"] := "clear"
+        executionData["degradation_assignments"] := "clear"
     }
 
     ; Update active time tracking before recording
@@ -7680,11 +8702,11 @@ RecordClearDegradationExecution(buttonName, executionStartTime) {
     executionData := Map()
     executionData["timestamp"] := timestamp
     executionData["execution_type"] := "macro"  ; This is a macro execution with clear degradation
-    executionData["macro_name"] := buttonName
+    executionData["button_key"] := buttonName
     executionData["layer"] := currentLayer
     executionData["execution_time_ms"] := execution_time_ms
     executionData["total_boxes"] := 1  ; Count as 1 box with clear degradation
-    executionData["degradation_types"] := "clear"  ; Clear degradation type
+    executionData["degradation_assignments"] := "clear"  ; Clear degradation type
     executionData["degradation_summary"] := "No degradation present"
     executionData["status"] := "submitted"
     executionData["severity_level"] := "none"
@@ -7820,18 +8842,42 @@ ReadStatsFromCSV(filterBySession := false) {
                         gradeCount[performance_grade]++
                     }
 
-                    ; Parse degradation counts (fields 15-24)
-                    if (fields.Length >= 24) {
-                        stats["smudge_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
-                        stats["glare_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
-                        stats["splashes_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
-                        stats["partial_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
-                        stats["full_blockage_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
-                        stats["light_flare_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
-                        stats["rain_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
-                        stats["haze_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
-                        stats["snow_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
-                        stats["clear_total"] += IsNumber(fields[24]) ? Integer(fields[24]) : 0
+                    ; Parse degradation assignments from new CSV format (field 9)
+                    if (fields.Length >= 9) {
+                        degradation_field := Trim(fields[9])
+                        ; Remove quotes if present
+                        degradation_field := StrReplace(degradation_field, '"', "")
+                        degradation_field := StrReplace(degradation_field, "'", "")
+
+                        if (degradation_field != "" && degradation_field != "clear") {
+                            ; Split degradation assignments and count each type
+                            degradations := StrSplit(degradation_field, ",")
+                            for degradation in degradations {
+                                degradation := Trim(degradation)
+                                switch degradation {
+                                    case "smudge":
+                                        stats["smudge_total"]++
+                                    case "glare":
+                                        stats["glare_total"]++
+                                    case "splashes":
+                                        stats["splashes_total"]++
+                                    case "partial_blockage":
+                                        stats["partial_blockage_total"]++
+                                    case "full_blockage":
+                                        stats["full_blockage_total"]++
+                                    case "light_flare":
+                                        stats["light_flare_total"]++
+                                    case "rain":
+                                        stats["rain_total"]++
+                                    case "haze":
+                                        stats["haze_total"]++
+                                    case "snow":
+                                        stats["snow_total"]++
+                                }
+                            }
+                        } else {
+                            stats["clear_total"]++
+                        }
                     }
 
                 } catch {

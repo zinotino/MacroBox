@@ -68,6 +68,11 @@ class MacroMasterOptimizedAnalytics:
             df['degradation_assignments'] = df['degradation_assignments'].fillna('none')
             df['severity_level'] = df['severity_level'].fillna('none')
             df['canvas_mode'] = df['canvas_mode'].fillna('wide')
+
+            # Clean degradation_assignments field (remove quotes and standardize)
+            df['degradation_assignments'] = df['degradation_assignments'].astype(str)
+            df['degradation_assignments'] = df['degradation_assignments'].str.strip('"\'')  # Remove quotes
+            df['degradation_assignments'] = df['degradation_assignments'].str.replace('none', 'clear')  # Standardize
             
             # Add analysis columns
             df['date'] = df['timestamp'].dt.date
@@ -301,21 +306,28 @@ class MacroMasterOptimizedAnalytics:
     
     def add_degradation_breakdown(self, fig, df, row, col):
         """Degradation breakdown - relevant for data quality"""
-        json_df = df[df['execution_type'] == 'json_profile'].copy()
-        
-        if json_df.empty:
+        # Include both json_profile AND macro executions with degradation data
+        degradation_df = df[
+            (df['execution_type'].isin(['json_profile', 'macro'])) &
+            (df['degradation_assignments'].notna()) &
+            (df['degradation_assignments'] != '') &
+            (df['degradation_assignments'] != 'clear')
+        ].copy()
+
+        if degradation_df.empty:
+            # For pie chart subplots, use domain coordinates
             fig.add_annotation(
-                text="No JSON Profile Data<br>All executions are macro-based",
-                xref="x", yref="y",
-                x=0.5, y=0.5,
+                text="No Degradation Data<br>All executions marked as clear",
+                xref="paper", yref="paper",
+                x=0.165, y=0.72,  # Approximate position for row=2, col=1 in pie chart
                 showarrow=False,
                 font=dict(size=12, color='#7f8c8d'),
-                row=row, col=col
+                align="center"
             )
             return
         
         # Count degradation types
-        degradation_counts = json_df['degradation_assignments'].value_counts()
+        degradation_counts = degradation_df['degradation_assignments'].value_counts()
         labels = [self.degradation_types.get(deg, deg) for deg in degradation_counts.index]
         
         # Color by severity
@@ -710,16 +722,22 @@ class MacroMasterOptimizedAnalytics:
             if 'button_key' in df.columns and not df.empty:
                 button_stats = df.groupby('button_key')['total_boxes'].sum().to_dict()
             
-            # Degradation analysis
-            json_df = df[df['execution_type'] == 'json_profile']
-            degradation_stats = json_df['degradation_assignments'].value_counts().to_dict() if not json_df.empty else {}
-            
-            # Quality score
+            # Degradation analysis - include both macro and json_profile executions
+            degradation_df = df[
+                (df['execution_type'].isin(['json_profile', 'macro'])) &
+                (df['degradation_assignments'].notna()) &
+                (df['degradation_assignments'] != '') &
+                (df['degradation_assignments'] != 'clear')
+            ]
+            degradation_stats = degradation_df['degradation_assignments'].value_counts().to_dict() if not degradation_df.empty else {}
+
+            # Quality score based on degradation rate
             quality_score = 100
-            if not json_df.empty:
-                degraded_count = len(json_df[json_df['degradation_assignments'] != 'none'])
-                degradation_rate = (degraded_count / len(json_df)) * 100
-                quality_score = 100 - degradation_rate
+            if len(df) > 0:
+                # Count non-clear degradations vs total executions
+                degraded_count = len(degradation_df)
+                degradation_rate = (degraded_count / len(df)) * 100
+                quality_score = max(0, 100 - degradation_rate)
             
             metrics = {
                 "filter_mode": filter_mode,
