@@ -35,9 +35,15 @@ class MacroMasterOptimizedAnalytics:
         
         self.severity_colors = {
             'high': '#e74c3c',
-            'medium': '#f39c12', 
+            'medium': '#f39c12',
             'low': '#27ae60',
             'none': '#3498db'
+        }
+
+        # Consistent execution type colors across all charts
+        self.execution_type_colors = {
+            'macro': '#3498db',        # Blue for macros
+            'json_profile': '#e74c3c'  # Red for JSON profiles
         }
         
     def load_and_clean_data(self):
@@ -122,15 +128,15 @@ class MacroMasterOptimizedAnalytics:
         fig = make_subplots(
             rows=4, cols=3,
             subplot_titles=[
-                '📊 Execution Timeline', '🎮 Button Performance', '⚡ Efficiency Over Time',
-                '🎨 Degradation Breakdown', '📈 Execution Types', '📦 Boxes Distribution', 
-                '⏱️ Execution Speed', '📅 Hourly Activity', '🎯 Performance Summary',
+                '📊 Execution Timeline', '📈 Execution Types', '📦 Boxes Distribution',
+                '⏱️ Execution Speed', '🎮 Button Performance', '📅 Hourly Activity',
+                '🎨 All Degradations', '🔵 Macro Degradations', '🔴 JSON Degradations',
                 '📈 Session Summary', '💻 Workflow Analysis', '🔍 Performance Insights'
             ],
             specs=[
-                [{"secondary_y": True}, {"type": "bar"}, {"secondary_y": True}],
-                [{"type": "pie"}, {"type": "pie"}, {"type": "histogram"}],
-                [{"type": "scatter"}, {"type": "bar"}, {"type": "indicator"}],
+                [{"secondary_y": False}, {"type": "pie"}, {"type": "histogram"}],
+                [{"type": "scatter"}, {"type": "bar"}, {"type": "bar"}],
+                [{"type": "pie"}, {"type": "pie"}, {"type": "pie"}],
                 [{"type": "table"}, {"type": "table"}, {"type": "table"}]
             ],
             vertical_spacing=0.08,
@@ -138,20 +144,20 @@ class MacroMasterOptimizedAnalytics:
             row_heights=[0.25, 0.25, 0.25, 0.25]
         )
         
-        # Row 1: Core Performance Charts
+        # Row 1: Timeline & Distribution Charts
         self.add_execution_timeline(fig, df_filtered, row=1, col=1)
-        self.add_button_performance(fig, df_filtered, row=1, col=2)
-        self.add_efficiency_over_time(fig, df_filtered, row=1, col=3)
-        
-        # Row 2: Analysis Charts
-        self.add_degradation_breakdown(fig, df_filtered, row=2, col=1)
-        self.add_execution_types(fig, df_filtered, row=2, col=2)
-        self.add_boxes_distribution(fig, df_filtered, row=2, col=3)
-        
-        # Row 3: Detailed Analysis (3 charts for 9 total)
-        self.add_execution_speed_scatter(fig, df_filtered, row=3, col=1)
-        self.add_hourly_activity_chart(fig, df_filtered, row=3, col=2)
-        self.add_performance_summary_gauge(fig, df_filtered, row=3, col=3)
+        self.add_execution_types(fig, df_filtered, row=1, col=2)
+        self.add_boxes_distribution(fig, df_filtered, row=1, col=3)
+
+        # Row 2: Performance & Button Analysis Charts
+        self.add_execution_speed_scatter(fig, df_filtered, row=2, col=1)
+        self.add_button_performance(fig, df_filtered, row=2, col=2)
+        self.add_hourly_activity_chart(fig, df_filtered, row=2, col=3)
+
+        # Row 3: Degradation Analysis Charts
+        self.add_degradation_breakdown(fig, df_filtered, row=3, col=1)
+        self.add_degradation_pie_macros(fig, df_filtered, row=3, col=2)
+        self.add_degradation_pie_json(fig, df_filtered, row=3, col=3)
         
         # Row 4: Text Analysis Section
         self.add_session_summary_table(fig, df_filtered, row=4, col=1)
@@ -186,48 +192,36 @@ class MacroMasterOptimizedAnalytics:
         self.save_optimized_metrics(df_filtered, filter_mode)
     
     def add_execution_timeline(self, fig, df, row, col):
-        """Execution timeline with boxes processed"""
+        """Execution timeline with unified colors by execution type"""
         if df.empty:
             return
-            
-        # Group by hour
-        hourly_data = df.groupby(df['timestamp'].dt.floor('h')).agg({
+
+        # Group by hour and execution type
+        hourly_data = df.groupby([df['timestamp'].dt.floor('h'), 'execution_type']).agg({
             'execution_time_ms': 'count',
             'total_boxes': 'sum'
         }).reset_index()
-        
-        # Executions
-        fig.add_trace(
-            go.Scatter(
-                x=hourly_data['timestamp'],
-                y=hourly_data['execution_time_ms'],
-                mode='lines+markers',
-                name='Executions',
-                line=dict(color='#3498db', width=3),
-                marker=dict(size=8),
-                hovertemplate="<b>%{x}</b><br>Executions: %{y}<extra></extra>"
-            ),
-            row=row, col=col
-        )
-        
-        # Boxes (secondary axis)
-        fig.add_trace(
-            go.Scatter(
-                x=hourly_data['timestamp'],
-                y=hourly_data['total_boxes'],
-                mode='lines+markers',
-                name='Boxes',
-                line=dict(color='#e74c3c', width=3),
-                marker=dict(size=8),
-                yaxis='y2',
-                hovertemplate="<b>%{x}</b><br>Boxes: %{y}<extra></extra>"
-            ),
-            row=row, col=col, secondary_y=True
-        )
-        
+
+        # Plot each execution type with consistent colors
+        for exec_type in hourly_data['execution_type'].unique():
+            type_data = hourly_data[hourly_data['execution_type'] == exec_type]
+            color = self.execution_type_colors.get(exec_type, '#95a5a6')
+
+            fig.add_trace(
+                go.Scatter(
+                    x=type_data['timestamp'],
+                    y=type_data['execution_time_ms'],
+                    mode='lines+markers',
+                    name=f'{exec_type.replace("_", " ").title()}',
+                    line=dict(color=color, width=3),
+                    marker=dict(size=8),
+                    hovertemplate=f"<b>%{{x}}</b><br>{exec_type}: %{{y}} executions<extra></extra>"
+                ),
+                row=row, col=col
+            )
+
         fig.update_xaxes(title_text="Time", row=row, col=col)
-        fig.update_yaxes(title_text="Executions", row=row, col=col)
-        fig.update_yaxes(title_text="Boxes", secondary_y=True, row=row, col=col)
+        fig.update_yaxes(title_text="Executions by Type", row=row, col=col)
     
     def add_button_performance(self, fig, df, row, col):
         """Button performance ranking - most relevant"""
@@ -260,49 +254,32 @@ class MacroMasterOptimizedAnalytics:
         fig.update_xaxes(title_text="Total Boxes", row=row, col=col)
         fig.update_yaxes(title_text="Button", row=row, col=col)
     
-    def add_efficiency_over_time(self, fig, df, row, col):
-        """Efficiency trends - very relevant for productivity"""
-        if df.empty:
+    def add_degradation_pie_macros(self, fig, df, row, col):
+        """Macro degradation breakdown - separate from JSON"""
+        macro_df = df[
+            (df['execution_type'] == 'macro') &
+            (df['degradation_assignments'].notna()) &
+            (df['degradation_assignments'] != 'none') &
+            (df['degradation_assignments'] != '')
+        ]
+
+        if macro_df.empty:
             return
-            
-        # Group by hour for efficiency trends
-        hourly_efficiency = df.groupby(df['timestamp'].dt.floor('h')).agg({
-            'boxes_per_second': 'mean',
-            'execution_time_ms': 'mean'
-        }).reset_index()
-        
-        # Efficiency
+
+        degradation_counts = macro_df['degradation_assignments'].value_counts()
+
         fig.add_trace(
-            go.Scatter(
-                x=hourly_efficiency['timestamp'],
-                y=hourly_efficiency['boxes_per_second'],
-                mode='lines+markers',
-                name='Efficiency',
-                line=dict(color='#27ae60', width=3),
-                marker=dict(size=8),
-                hovertemplate="<b>%{x}</b><br>Efficiency: %{y:.2f} boxes/sec<extra></extra>"
+            go.Pie(
+                labels=degradation_counts.index,
+                values=degradation_counts.values,
+                name="Macro Degradations",
+                marker_colors=['#3498db', '#5dade2', '#85c1e9', '#aed6f1', '#d6eaf8'],
+                hovertemplate="<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>"
             ),
             row=row, col=col
         )
-        
-        # Avg time (secondary axis)
-        fig.add_trace(
-            go.Scatter(
-                x=hourly_efficiency['timestamp'],
-                y=hourly_efficiency['execution_time_ms'],
-                mode='lines+markers',
-                name='Avg Time',
-                line=dict(color='#f39c12', width=3),
-                marker=dict(size=8),
-                yaxis='y2',
-                hovertemplate="<b>%{x}</b><br>Avg Time: %{y:.0f}ms<extra></extra>"
-            ),
-            row=row, col=col, secondary_y=True
-        )
-        
-        fig.update_xaxes(title_text="Time", row=row, col=col)
-        fig.update_yaxes(title_text="Boxes/Second", row=row, col=col)
-        fig.update_yaxes(title_text="Avg Time (ms)", secondary_y=True, row=row, col=col)
+
+        fig.update_traces(textinfo='label+percent', row=row, col=col)
     
     def add_degradation_breakdown(self, fig, df, row, col):
         """Degradation breakdown - relevant for data quality"""
@@ -360,13 +337,16 @@ class MacroMasterOptimizedAnalytics:
             return
             
         type_counts = df['execution_type'].value_counts()
-        
+
+        # Use consistent execution type colors
+        colors = [self.execution_type_colors.get(exec_type, '#95a5a6') for exec_type in type_counts.index]
+
         fig.add_trace(
             go.Pie(
                 labels=[t.title().replace('_', ' ') for t in type_counts.index],
                 values=type_counts.values,
                 name="Execution Types",
-                marker_colors=['#3498db', '#e74c3c'],
+                marker_colors=colors,
                 hole=0.3,
                 textinfo='label+value+percent'
             ),
@@ -397,8 +377,8 @@ class MacroMasterOptimizedAnalytics:
         if df.empty:
             return
             
-        # Color by execution type
-        colors = ['#3498db' if t == 'macro' else '#e74c3c' for t in df['execution_type']]
+        # Color by execution type using consistent mapping
+        colors = [self.execution_type_colors.get(t, '#95a5a6') for t in df['execution_type']]
         
         fig.add_trace(
             go.Scatter(
@@ -448,39 +428,32 @@ class MacroMasterOptimizedAnalytics:
         fig.update_xaxes(title_text="Hour of Day", row=row, col=col)
         fig.update_yaxes(title_text="Executions", row=row, col=col)
     
-    def add_performance_summary_gauge(self, fig, df, row, col):
-        """Performance summary gauge - relevant for at-a-glance status"""
-        if df.empty:
+    def add_degradation_pie_json(self, fig, df, row, col):
+        """JSON degradation breakdown - separate from macros"""
+        json_df = df[
+            (df['execution_type'] == 'json_profile') &
+            (df['degradation_assignments'].notna()) &
+            (df['degradation_assignments'] != 'none') &
+            (df['degradation_assignments'] != '')
+        ]
+
+        if json_df.empty:
             return
-            
-        # Calculate overall efficiency score (0-100)
-        efficiency = df['boxes_per_second'].mean()
-        # Scale efficiency to 0-100 (assuming 5 boxes/sec = 100%)
-        efficiency_score = min(100, (efficiency / 5.0) * 100)
-        
+
+        degradation_counts = json_df['degradation_assignments'].value_counts()
+
         fig.add_trace(
-            go.Indicator(
-                mode="gauge+number",
-                value=efficiency_score,
-                title={'text': "Efficiency<br>Score"},
-                number={'suffix': "%"},
-                gauge={
-                    'axis': {'range': [None, 100]},
-                    'bar': {'color': "#2ecc71"},
-                    'steps': [
-                        {'range': [0, 30], 'color': "#ecf0f1"},
-                        {'range': [30, 60], 'color': "#d5dbdb"},
-                        {'range': [60, 100], 'color': "#aed6f1"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 80
-                    }
-                }
+            go.Pie(
+                labels=degradation_counts.index,
+                values=degradation_counts.values,
+                name="JSON Degradations",
+                marker_colors=['#e74c3c', '#ec7063', '#f1948a', '#f5b7b1', '#fadbd8'],
+                hovertemplate="<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>"
             ),
             row=row, col=col
         )
+
+        fig.update_traces(textinfo='label+percent', row=row, col=col)
     
     def add_session_summary_table(self, fig, df, row, col):
         """Session summary - relevant session metrics"""
@@ -562,34 +535,32 @@ class MacroMasterOptimizedAnalytics:
             degradation_rate = (degraded_count / len(json_df)) * 100
             quality_score = 100 - degradation_rate
         
-        # Performance trend
-        if len(df) > 2:
-            recent_efficiency = df.tail(3)['boxes_per_second'].mean()
-            early_efficiency = df.head(3)['boxes_per_second'].mean()
-            trend = "Improving" if recent_efficiency > early_efficiency else "Declining" if recent_efficiency < early_efficiency else "Stable"
-        else:
-            trend = "Stable"
-        
+        # Raw numerical data only
+        total_executions = len(df)
+        total_time_hours = df['execution_time_ms'].sum() / (1000 * 3600)
+        avg_boxes_per_exec = df['total_boxes'].mean()
+        std_deviation = df['total_boxes'].std()
+
         workflow_data = {
-            'Workflow Analysis': [
-                'Most Efficient Button',
-                'Top Button Rate',
-                'Quality Score',
-                'Performance Trend',
-                'Workflow Balance',
-                'Consistency Rating',
-                'Productivity Level',
-                'Recommendation'
+            'Raw Data': [
+                'Most Used Button',
+                'Button Rate',
+                'Average Boxes per Execution',
+                'Total Executions',
+                'Total Hours',
+                'Boxes/Second Average',
+                'Standard Deviation',
+                'JSON Executions'
             ],
-            'Insight': [
+            'Numbers': [
                 f"{top_button}",
                 f"{top_efficiency:.2f} boxes/sec",
-                f"{quality_score:.0f}/100",
-                f"{trend}",
-                f"{'Balanced' if json_df.empty == False and len(json_df) > 0 else 'Macro-Heavy'}",
-                f"{'High' if df['total_boxes'].std() < 3 else 'Medium' if df['total_boxes'].std() < 6 else 'Variable'}",
-                f"{'High' if df['boxes_per_second'].mean() > 2 else 'Medium' if df['boxes_per_second'].mean() > 1 else 'Low'}",
-                f"{'Keep it up!' if df['boxes_per_second'].mean() > 2 else 'Focus on speed' if df['boxes_per_second'].mean() > 1 else 'Review workflow'}"
+                f"{avg_boxes_per_exec:.1f}",
+                f"{total_executions}",
+                f"{total_time_hours:.2f}",
+                f"{df['boxes_per_second'].mean():.2f}",
+                f"{std_deviation:.1f}",
+                f"{len(json_df) if not json_df.empty else 0}"
             ]
         }
         
@@ -645,21 +616,21 @@ class MacroMasterOptimizedAnalytics:
                 'Total Processing Time',
                 'Total Boxes Processed',
                 'Average Speed',
-                'Speed Consistency',
+                'Speed Standard Deviation',
                 'Fastest Execution',
                 'Slowest Execution',
                 'Max Boxes (Single)',
-                'Quality Control Rate'
+                'Median Speed'
             ],
             'Values': [
                 f"{total_time_hours:.2f} hours",
                 f"{total_boxes:,} boxes",
                 f"{avg_speed:.2f} boxes/sec",
-                f"{'High' if speed_std < 1 else 'Medium' if speed_std < 2 else 'Variable'}",
+                f"{speed_std:.2f} boxes/sec",
                 f"{fastest_execution:.0f}ms",
                 f"{slowest_execution:.0f}ms",
                 f"{max_boxes_single} boxes",
-                f"{(degraded_entries/json_executions*100):.1f}%" if json_executions > 0 else "N/A"
+                f"{median_speed:.2f} boxes/sec"
             ]
         }
         
