@@ -1,10 +1,13 @@
 timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active
-2025-09-16 20:31:50,sess_20250916_203121,ajnef,json_profile,Num8,1,110,0,splashes,medium,narrow,29485,false
-2025-09-16 20:32:11,sess_20250916_203121,ajnef,macro,Num4,1,610,1,smudge,,narrow,50485,false
-2025-09-16 20:32:12,sess_20250916_203121,ajnef,macro,Num5,1,625,1,smudge,,narrow,51313,false
-2025-09-16 20:32:14,sess_20250916_203121,ajnef,macro,Num5,1,656,1,smudge,,narrow,52844,false
-2025-09-16 20:32:15,sess_20250916_203121,ajnef,macro,Num4,1,609,1,smudge,,narrow,54141,false
-2025-09-16 20:35:59,sess_20250916_203121,ajnef,macro,Num7,1,5000,9,smudge,smudge,smudge,smudge,smudge,smudge,smudge,smudge,smudge,,narrow,277782,false
-2025-09-16 20:36:00,sess_20250916_203121,ajnef,macro,Num5,1,625,1,smudge,,narrow,279094,false
-2025-09-16 20:36:02,sess_20250916_203121,ajnef,macro,Num4,1,610,1,smudge,,narrow,280907,false
-2025-09-16 20:36:36,sess_20250916_203121,ajnef,macro,Num7,1,5000,9,smudge,smudge,smudge,smudge,smudge,smudge,smudge,smudge,smudge,,narrow,315313,false
+2025-01-18 12:00:00,test_session,test_user,macro,Num1,1,1500,3,"smudge,glare",medium,wide,300000,false
+2025-01-18 12:01:00,test_session,test_user,macro,Num2,1,1200,2,"clear",low,wide,300000,false
+2025-01-18 12:02:00,test_session,test_user,macro,Num3,2,1800,5,"splashes,partial_blockage",high,narrow,300000,false
+2025-01-18 12:03:00,test_session,test_user,json_profile,Num4,1,800,1,"clear",low,wide,300000,false
+2025-01-18 12:04:00,test_session,test_user,macro,Num5,2,2200,7,"smudge,glare,rain",high,narrow,300000,false
+2025-01-18 12:05:00,test_session,test_user,macro,Num6,3,950,2,"haze",medium,wide,300000,false
+2025-01-18 12:06:00,test_session,test_user,clear,Num7,1,300,0,"clear",low,wide,300000,false
+2025-01-18 12:07:00,test_session,test_user,macro,Num8,3,1600,4,"snow,full_blockage",high,narrow,300000,true
+2025-01-18 12:08:00,test_session,test_user,json_profile,Num9,2,650,1,"light_flare",medium,wide,300000,false
+2025-01-18 12:09:00,test_session,test_user,macro,Num1,1,1100,3,"smudge",medium,wide,300000,false
+2025-01-18 12:10:00,test_session,test_user,macro,Num2,1,1350,4,"glare,splashes",medium,narrow,300000,false
+2025-01-18 12:11:00,test_session,test_user,macro,Num3,2,1750,6,"partial_blockage,haze",high,wide,300000,false

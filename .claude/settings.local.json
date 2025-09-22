@@ -35,7 +35,18 @@
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_documents_structure.ahk)",
       "Bash(del test_documents_structure.ahk)",
       "Bash(del test_stats.ahk)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(del test_simple.ahk)",
+      "Bash(del test_integration.ahk)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut /validate test_basic_syntax.ahk)",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_basic_syntax.ahk)",
+      "Bash(del test_basic_syntax.ahk)",
+      "Bash(if exist \"data\\master_stats.csv\" del \"data\\master_stats.csv\")",
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_stats_integration.ahk)",
+      "Read(//c/Users/ajnef/Documents/MacroMaster/data/**)",
+      "Bash(copy:*)",
+      "Bash(del test_stats_integration.ahk)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []
