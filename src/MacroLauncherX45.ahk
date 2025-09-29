@@ -1788,7 +1788,7 @@ ExecuteMacro(buttonName) {
         }
         
         executionTime := A_TickCount - startTime
-        analysisRecord := MacroExecutionData(buttonName, events, executionTime)
+        analysisRecord := MacroExecutionAnalysis(buttonName, events, executionTime)
         
         ; Record execution stats with analysis data
         if (events.Length = 1 && events[1].type = "jsonAnnotation") {
@@ -1803,12 +1803,15 @@ ExecuteMacro(buttonName) {
         ; CRITICAL: Force state reset on any execution error
         UpdateStatus("⚠️ Execution error: " . e.Message . " - State reset")
     } finally {
-        ; Simple execution time monitoring
+        ; PERFORMANCE MONITORING - Calculate execution time and grade
         executionTime := A_TickCount - executionStartTime
-
-        ; Add timing info to status for JSON profiles
+        performanceGrade := executionTime <= 500 ? "A" : 
+                           executionTime <= 1000 ? "B" : 
+                           executionTime <= 2000 ? "C" : "D"
+        
+        ; Add performance info to status (for JSON profiles mainly)
         if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0 && macroEvents[layerMacroName][1].type = "jsonAnnotation")) {
-            UpdateStatus("✅ JSON executed (" . executionTime . "ms)")
+            UpdateStatus("✅ JSON executed (" . executionTime . "ms, Grade: " . performanceGrade . ")")
         }
         
         ; CRITICAL: Always reset playback state and button flash
@@ -4289,7 +4292,7 @@ ShowStatsMenu() {
     statsMenuGui.SetFont("s10", "Segoe UI")
 
     ; Header
-    headerText := statsMenuGui.Add("Text", "x20 y20 w360 h30 Center", "📊 Execution Data")
+    headerText := statsMenuGui.Add("Text", "x20 y20 w360 h30 Center", "📊 Personal Performance Analytics")
     headerText.SetFont("s12 bold", "Segoe UI")
     headerText.Opt("c" . (darkMode ? "White" : "Black"))
 
@@ -4322,8 +4325,8 @@ ShowStatsMenu() {
     btnWeek.SetFont("s9 bold")
     btnWeek.OnEvent("Click", (*) => LaunchDashboard("week", statsMenuGui))
 
-    ; Raw Data View
-    btnTrends := statsMenuGui.Add("Button", "x" . (20 + btnWidth + btnSpacing) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📋 Raw Data")
+    ; Performance Trends
+    btnTrends := statsMenuGui.Add("Button", "x" . (20 + btnWidth + btnSpacing) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📊 Performance Trends")
     btnTrends.SetFont("s9 bold")
     btnTrends.OnEvent("Click", (*) => LaunchDashboard("trends", statsMenuGui))
 
@@ -4387,20 +4390,20 @@ LaunchDashboard(filterMode, statsMenuGui) {
     }
 
     ; First try the AMAZING HTML dashboard with Python
-    pythonScript := A_ScriptDir . "\..\analytics\macromaster_optimized.py"
+    pythonScript := A_ScriptDir . "\macromaster_optimized.py"
 
     if (FileExist(pythonScript)) {
         try {
             ; Launch the beautiful HTML dashboard
             pythonCmd := 'python "' . pythonScript . '" "' . masterStatsCSV . '" --filter ' . filterMode
 
-            UpdateStatus("📊 Launching HTML data dashboard...")
+            UpdateStatus("📊 Launching amazing HTML analytics dashboard...")
             Run(pythonCmd, A_ScriptDir)
 
             ; Close the menu
             statsMenuGui.Destroy()
 
-            UpdateStatus("📊 HTML dashboard opened in browser")
+            UpdateStatus("🎮 Beautiful HTML dashboard opened in browser!")
             return
 
         } catch Error as e {
@@ -4410,7 +4413,7 @@ LaunchDashboard(filterMode, statsMenuGui) {
 
     ; Fallback to built-in GUI for workplace restrictions
     try {
-        UpdateStatus("📊 Using built-in data display")
+        UpdateStatus("📊 Using built-in analytics (workplace-friendly)")
 
         ; Read stats data using our CSV function
         stats := ReadStatsFromCSV(filterMode = "today")
@@ -4421,11 +4424,11 @@ LaunchDashboard(filterMode, statsMenuGui) {
         ; Close the menu
         statsMenuGui.Destroy()
 
-        UpdateStatus("📊 Built-in data display shown")
+        UpdateStatus("📊 Built-in analytics displayed (no Python required)")
 
     } catch Error as e {
-        MsgBox("❌ Failed to load data: " . e.Message . "`n`nCSV location: " . masterStatsCSV, "Error", "Icon!")
-        UpdateStatus("❌ Data display failed: " . e.Message)
+        MsgBox("❌ Failed to load analytics: " . e.Message . "`n`nCSV location: " . masterStatsCSV, "Error", "Icon!")
+        UpdateStatus("❌ Analytics failed: " . e.Message)
     }
 }
 
@@ -4461,7 +4464,7 @@ ShowBuiltInStatsGUI(filterMode, stats) {
     chartFiles := GenerateDataCharts(stats, filterMode)
 
     ; Header
-    titleText := statsGui.Add("Text", "x20 y15 w860 h35 Center", "📊 Raw Data")
+    titleText := statsGui.Add("Text", "x20 y15 w860 h35 Center", "📊 Raw Data Analytics Dashboard")
     titleText.SetFont("s16 bold", "Segoe UI")
     titleText.Opt("c" . (darkMode ? "White" : "Black"))
 
@@ -4549,11 +4552,11 @@ ShowBuiltInStatsGUI(filterMode, stats) {
     btnDegradationChart.SetFont("s9 bold")
     btnDegradationChart.OnEvent("Click", (*) => OpenChart(chartFiles.degradation))
 
-    btnTimeChart := statsGui.Add("Button", "x310 y" . btnChartsY . " w250 h50", "⏱️ Execution Times`nTiming Data Charts")
+    btnTimeChart := statsGui.Add("Button", "x310 y" . btnChartsY . " w250 h50", "⏱️ Execution Time Analysis`nTiming Performance Dashboard")
     btnTimeChart.SetFont("s9 bold")
     btnTimeChart.OnEvent("Click", (*) => OpenChart(chartFiles.timing))
 
-    btnUsageChart := statsGui.Add("Button", "x580 y" . btnChartsY . " w250 h50", "📊 Usage Data`nLayer Activity Charts")
+    btnUsageChart := statsGui.Add("Button", "x580 y" . btnChartsY . " w250 h50", "📈 Layer Usage Trends`nUsage Pattern Analysis")
     btnUsageChart.SetFont("s9 bold")
     btnUsageChart.OnEvent("Click", (*) => OpenChart(chartFiles.usage))
 
@@ -4731,7 +4734,7 @@ CreateChartGenerationScript(chartsDir, filterMode) {
     scriptContent .= "        return`n`n"
 
     scriptContent .= "    deg_df = pd.DataFrame(degradation_data)`n"
-    scriptContent .= "    fig = px.bar(deg_df, x='Type', y='Count', title='Degradation Distribution', color='Count', color_continuous_scale='viridis')`n"
+    scriptContent .= "    fig = px.bar(deg_df, x='Type', y='Count', title='Degradation Distribution Analysis', color='Count', color_continuous_scale='viridis')`n"
     scriptContent .= "    fig.update_layout(showlegend=False, xaxis_title='Degradation Type', yaxis_title='Total Count', template='plotly_white')`n"
     scriptContent .= "    fig.write_html('degradation_chart.html')`n`n"
 
@@ -4739,23 +4742,21 @@ CreateChartGenerationScript(chartsDir, filterMode) {
     scriptContent .= "    if 'execution_time_ms' not in df.columns:`n"
     scriptContent .= "        return`n`n"
 
-    scriptContent .= "    fig = make_subplots(rows=2, cols=1, subplot_titles=('Execution Time Histogram', 'Time vs Boxes'))`n"
+    scriptContent .= "    fig = make_subplots(rows=2, cols=2, subplot_titles=('Execution Time Histogram', 'Time vs Boxes', 'Daily Count', 'Time Trend'))`n"
     scriptContent .= "    fig.add_trace(go.Histogram(x=df['execution_time_ms'], name='Execution Time', nbinsx=20), row=1, col=1)`n"
     scriptContent .= "    if 'total_boxes' in df.columns:`n"
-    scriptContent .= "        fig.add_trace(go.Scatter(x=df['total_boxes'], y=df['execution_time_ms'], mode='markers', name='Time vs Boxes'), row=2, col=1)`n"
-    scriptContent .= "    fig.update_layout(title_text='Execution Timing Data', showlegend=False, template='plotly_white')`n"
+    scriptContent .= "        fig.add_trace(go.Scatter(x=df['total_boxes'], y=df['execution_time_ms'], mode='markers', name='Time vs Boxes'), row=1, col=2)`n"
+    scriptContent .= "    fig.update_layout(title_text='Execution Timing Analysis Dashboard', showlegend=False, template='plotly_white')`n"
     scriptContent .= "    fig.write_html('timing_chart.html')`n`n"
 
     scriptContent .= "def create_usage_chart(df):`n"
     scriptContent .= "    if 'layer' not in df.columns:`n"
     scriptContent .= "        return`n`n"
 
-    scriptContent .= "    fig = make_subplots(rows=1, cols=2, subplot_titles=('Layer Usage', 'Button Usage'), specs=[[{'type': 'pie'}, {'type': 'bar'}]])`n"
+    scriptContent .= "    fig = make_subplots(rows=2, cols=2, subplot_titles=('Layer Usage', 'Button Usage', 'Execution Types', 'Hourly Activity'), specs=[[{'type': 'pie'}, {'type': 'bar'}], [{'type': 'pie'}, {'type': 'bar'}]])`n"
     scriptContent .= "    layer_counts = df['layer'].value_counts()`n"
     scriptContent .= "    fig.add_trace(go.Pie(labels=[f'Layer {x}' for x in layer_counts.index], values=layer_counts.values, name='Layer Usage'), row=1, col=1)`n"
-    scriptContent .= "    button_counts = df['button_key'].value_counts()`n"
-    scriptContent .= "    fig.add_trace(go.Bar(x=button_counts.index, y=button_counts.values, name='Button Usage'), row=1, col=2)`n"
-    scriptContent .= "    fig.update_layout(title_text='Usage Data & Activity', showlegend=False, template='plotly_white')`n"
+    scriptContent .= "    fig.update_layout(title_text='Usage Patterns & Activity Analysis', showlegend=False, template='plotly_white')`n"
     scriptContent .= "    fig.write_html('usage_chart.html')`n`n"
 
     scriptContent .= "if __name__ == '__main__':`n"
@@ -4891,9 +4892,9 @@ ShowSystemHealthDialog() {
     if currentHealth = "critical"
         healthDetails .= "🚨 CRITICAL ISSUES DETECTED:`n• CSV file may be corrupted or missing`n• Immediate attention required"
     else if currentHealth = "degraded"
-        healthDetails .= "⚠️ SYSTEM DEGRADED:`n• Error count: High`n• Status: Auto-recovery active"
+        healthDetails .= "⚠️ PERFORMANCE DEGRADED:`n• High error rate detected`n• System will auto-recover"
     else
-        healthDetails .= "✅ SYSTEM OPERATIONAL:`n• Error count: Normal`n• Data integrity: OK"
+        healthDetails .= "✅ ALL SYSTEMS OPERATIONAL:`n• Performance within normal parameters`n• Data integrity maintained"
 
     healthControl := healthGui.Add("Text", "x20 y" . healthY . " w360 h180", healthDetails)
     healthControl.SetFont("s9", "Consolas")
@@ -5005,7 +5006,7 @@ ExportStatsData(statsMenuGui) {
 
     try {
         FileCopy(masterStatsCSV, exportPath)
-        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel or other tools.", "Export Complete", "Icon!")
+        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel or other analytics tools.", "Export Complete", "Icon!")
         UpdateStatus("💾 Stats data exported to " . exportPath)
     } catch Error as e {
         MsgBox("❌ Export failed: " . e.Message, "Error", "Icon!")
@@ -5260,35 +5261,37 @@ CreateTimingMetricsTabOriginal(statsGui, tabs) {
     }
     content .= "`n"
     
-    ; Basic timing data
+    ; Efficiency calculations using original data
     if (appUptime > 0 && totalExecutions > 0) {
+        execPerMinute := Round(totalExecutions / (appUptime / 60), 2)
+        boxesPerMinute := Round(totalBoxes / (appUptime / 60), 2)
         avgExecTime := Round(totalExecutionTime / totalExecutions, 1)
-        totalHours := Round(appUptime / 3600, 1)
-
-        content .= "⏱️ TIMING DATA:`n"
+        
+        content .= "📈 EFFICIENCY METRICS:`n"
         content .= "  • Total Executions: " . totalExecutions . "`n"
         content .= "  • Total Boxes: " . totalBoxes . "`n"
-        content .= "  • Average Execution Time: " . avgExecTime . "ms`n"
-        content .= "  • Session Duration: " . totalHours . " hours`n"
-
+        content .= "  • Executions per Minute: " . execPerMinute . "`n"
+        content .= "  • Boxes per Minute: " . boxesPerMinute . "`n"
+        content .= "  • Average Execution Duration: " . avgExecTime . "ms`n"
+        
         if (totalBoxes > 0) {
             avgBoxTime := Round(totalExecutionTime / totalBoxes, 1)
-            content .= "  • Average Time per Box: " . avgBoxTime . "ms`n"
+            content .= "  • Average Time per Box: ~" . avgBoxTime . "ms`n"
         }
         content .= "`n"
-
-        ; Simple rate information
+        
+        ; Active time efficiency
         if (totalActiveTime > 0) {
-            activeHours := totalActiveTime / 3600000
-            content .= "📊 USAGE RATES:`n"
-            content .= "  • Executions per Hour: " . Round(totalExecutions / activeHours, 1) . "`n"
-            content .= "  • Boxes per Hour: " . Round(totalBoxes / activeHours, 1) . "`n"
-            content .= "  • Active Time: " . Round(activeHours, 1) . " hours`n"
+            activeMinutes := totalActiveTime / 60000
+            content .= "⚡ ACTIVE TIME EFFICIENCY:`n"
+            content .= "  • Executions per Active Minute: " . Round(totalExecutions / activeMinutes, 2) . "`n"
+            content .= "  • Boxes per Active Minute: " . Round(totalBoxes / activeMinutes, 2) . "`n"
+            content .= "  • Active Time Utilization: " . Round((totalActiveTime / (A_TickCount - applicationStartTime)) * 100, 1) . "%`n"
         }
     } else {
-        content .= "⏱️ TIMING DATA:`n"
+        content .= "📈 EFFICIENCY METRICS:`n"
         content .= "  • No execution data available yet`n"
-        content .= "  • Execute some macros to see timing information!`n"
+        content .= "  • Execute some macros to see timing metrics!`n"
     }
     
     editTiming := statsGui.Add("Edit", "x30 y120 w800 h450 ReadOnly VScroll", content)
@@ -6341,7 +6344,7 @@ CreateRecordedMacrosTab(statsGui, tabs, timeFilter) {
     
     ; Build recorded macros content with better formatting
     content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                       📦 RECORDED MACRO DEGRADATIONS                        ║`n"
+    content .= "║                    📦 RECORDED MACRO DEGRADATION ANALYSIS                     ║`n"
     content .= "║                              (" . timeFilter . ")                                    ║`n"
     content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     content .= "📊 EXECUTION SUMMARY: " . macroExecutions.Length . " macro runs`n`n"
@@ -6492,7 +6495,7 @@ CreateJsonProfilesTab(statsGui, tabs, timeFilter) {
     
     ; Build JSON profiles content with better formatting
     content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                         📋 JSON PROFILE SEVERITIES                          ║`n"
+    content .= "║                      📋 JSON PROFILE SEVERITY ANALYSIS                       ║`n"
     content .= "║                              (" . timeFilter . ")                                    ║`n"
     content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
     content .= "📊 PROFILE SUMMARY: " . jsonExecutions.Length . " JSON executions`n`n"
@@ -6697,7 +6700,7 @@ ExportDegradationData() {
     
     try {
         timestamp := FormatTime(A_Now, "yyyyMMdd_HHmmss")
-        filename := workDir . "\degradation_data_" . timestamp . ".csv"
+        filename := workDir . "\degradation_analysis_" . timestamp . ".csv"
         
         ; Create simplified CSV focused on degradation counts
         csvContent := "Timestamp,Button,Layer,Mode,TotalBoxes,DegradationSummary,ExecutionTime_ms`n"
@@ -6716,7 +6719,7 @@ ExportDegradationData() {
         FileAppend(csvContent, filename)
         
         Run("notepad.exe " . filename)
-        UpdateStatus("📊 Exported degradation data for " . macroExecutionLog.Length . " executions")
+        UpdateStatus("📊 Exported degradation analysis for " . macroExecutionLog.Length . " executions")
     } catch Error as e {
         UpdateStatus("⚠️ Export failed: " . e.Message)
     }
@@ -6754,7 +6757,7 @@ ExportAllHistoricalData() {
     }
 }
 
-MacroExecutionData(buttonName, events, executionTime) {
+MacroExecutionAnalysis(buttonName, events, executionTime) {
     global macroExecutionLog, currentLayer, annotationMode, macroEvents
     
     ; Extract bounding boxes and degradation information
@@ -6894,9 +6897,9 @@ MacroExecutionData(buttonName, events, executionTime) {
         }
         degradationAssignments := Join(assignmentParts, ",")
 
-        ; VALIDATION: Report box count
+        ; VALIDATION: Check for overly complex macros that should be simplified
         if (detailedBoxes.Length > 3) {
-            UpdateStatus("📊 Recorded " . detailedBoxes.Length . " boxes with degradation assignments")
+            UpdateStatus("⚠️ WARNING: " . detailedBoxes.Length . " boxes recorded - consider simpler workflow (1 box = 1 degradation)")
         }
     }
     
@@ -7901,7 +7904,7 @@ AnalyzeRecordedMacro(macroKey) {
     local events := macroEvents[macroKey]
     local boundingBoxCount := 0
     
-    local degradationAnalysis := GetDegradationData(events)
+    local degradationAnalysis := AnalyzeDegradationPattern(events)
     
     for event in events {
         if (event.type = "boundingBox") {
@@ -7920,7 +7923,7 @@ AnalyzeRecordedMacro(macroKey) {
     }
 }
 
-GetDegradationData(events) {
+AnalyzeDegradationPattern(events) {
     global degradationTypes
     
     local boxes := []
@@ -8555,7 +8558,10 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     executionData["execution_time_ms"] := execution_time_ms
     executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
 
-    ; Performance grading removed - using raw timing data only
+    ; Calculate performance grade
+    executionData["performance_grade"] := execution_time_ms <= 500 ? "A" :
+                                         execution_time_ms <= 1000 ? "B" :
+                                         execution_time_ms <= 2000 ? "C" : "D"
 
     ; Initialize all degradation counts to zero
     executionData["smudge_count"] := 0
@@ -8738,7 +8744,7 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["executions_per_hour"] := 0
     stats["most_used_button"] := ""
     stats["most_active_layer"] := ""
-    ; Performance grades removed - using raw data only
+    stats["performance_grades"] := Map()
     stats["degradation_totals"] := Map()
 
     ; Initialize degradation type counters
@@ -8794,7 +8800,7 @@ ReadStatsFromCSV(filterBySession := false) {
                     layer := IsNumber(fields[6]) ? Integer(fields[6]) : 1
                     execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
                     total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
-                    ; performance_grade field removed
+                    performance_grade := Trim(fields[12])
                     session_active_time := IsNumber(fields[13]) ? Integer(fields[13]) : 0
 
                     ; Track latest active time for rate calculations
@@ -8828,7 +8834,13 @@ ReadStatsFromCSV(filterBySession := false) {
                     }
                     layerCount[layer]++
 
-                    ; Performance grade tracking removed
+                    ; Count performance grades
+                    if (performance_grade != "") {
+                        if (!gradeCount.Has(performance_grade)) {
+                            gradeCount[performance_grade] := 0
+                        }
+                        gradeCount[performance_grade]++
+                    }
 
                     ; Parse degradation assignments from new CSV format (field 9)
                     if (fields.Length >= 9) {
@@ -8907,7 +8919,8 @@ ReadStatsFromCSV(filterBySession := false) {
             }
         }
 
-        ; Performance grades removed
+        ; Store performance grades
+        stats["performance_grades"] := gradeCount
 
     } catch as e {
         ; Handle file read errors gracefully

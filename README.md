@@ -8,10 +8,13 @@ A comprehensive AutoHotkey v2.0 macro recording and playback system designed for
 MacroMasterV555/
 ├── src/                      # Main application source code
 │   └── MacroLauncherX45.ahk    # Main AutoHotkey application (~4,800 lines)
-├── analytics/                # Data analytics and visualization
-│   ├── macromaster_optimized.py    # Python dashboard generator
-│   ├── install_chart_dependencies.py    # Dependency installer
-│   └── requirements.txt            # Python dependencies
+├── dashboard/               # Data analytics and visualization
+│   ├── timeline_slider_dashboard.py    # Main timeline dashboard generator
+│   ├── requirements.txt            # Python dependencies
+│   ├── output/                     # Generated dashboard files
+│   │   └── macromaster_timeline_slider.html
+│   └── metrics/                    # Dashboard metrics storage
+│       └── macromaster_timeline_metrics.json
 ├── tests/                    # Test files
 │   ├── test_json_tracking.ahk      # JSON tracking tests
 │   └── test_stats_integration.ahk   # Stats system integration tests
@@ -22,9 +25,6 @@ MacroMasterV555/
 │   └── CLAUDE.md                # Development guidelines and project overview
 ├── data/                     # Data storage (runtime)
 │   └── master_stats.csv         # CSV statistics database
-├── output/                   # Generated output files
-│   ├── macromaster_optimized_*.html    # Dashboard HTML files
-│   └── macromaster_optimized_*.json    # Metrics JSON files
 └── thumbnails/              # Button thumbnail storage (runtime)
 ```
 
@@ -38,14 +38,13 @@ MacroMasterV555/
 
 ### Generating Analytics Dashboard
 ```bash
-# Navigate to analytics directory
-cd analytics
+# Navigate to dashboard directory
+cd dashboard
 
-# Generate dashboard for all data
-python macromaster_optimized.py ../data/master_stats.csv --filter all
+# Generate timeline dashboard (integrated with AHK GUI)
+python timeline_slider_dashboard.py ../data/master_stats.csv
 
-# Generate dashboard for today's data only
-python macromaster_optimized.py ../data/master_stats.csv --filter today
+# Dashboard automatically opens in browser and saves to output/
 ```
 
 ### Running Tests
@@ -73,26 +72,32 @@ python macromaster_optimized.py ../data/master_stats.csv --filter today
 
 ### File Organization
 - **src/**: Core application logic
-- **analytics/**: Data visualization and reporting
+- **dashboard/**: Data visualization and reporting with timeline controls
 - **tests/**: Quality assurance and validation
 - **config/**: System configuration management
 - **docs/**: Project documentation and guidelines
 
 ### Key Integration Points
-- AutoHotkey script references Python analytics via relative path
-- CSV data stored in user Documents directory structure
-- Dashboard output generated in project output directory
+- AutoHotkey script references Python dashboard via relative path
+- CSV data stored in data/ directory for analysis
+- Dashboard output generated in dashboard/output/ directory
+- Timeline slider integrated directly with AHK GUI system
 - Configuration files support both simple and advanced setups
 
 ## 📈 Analytics Dashboard
 
-The dashboard provides comprehensive workflow analysis with:
+The timeline slider dashboard provides focused workflow analysis with:
 
-### Chart Types by Category
-- **Timeline & Distribution**: Execution timeline, execution types, boxes distribution
-- **Performance & Analysis**: Execution speed, button performance, hourly activity
-- **Degradation Analysis**: Combined degradations, macro degradations, JSON degradations
-- **Summary Tables**: Session metrics, workflow analysis, performance insights
+### 3x3 Layout with 6 Focused Charts
+- **Top Row (Pie Charts)**: Pure macro degradations, degradation combinations, JSON profile executions
+- **Middle Row**: Execution timeline with slider controls, execution types distribution, layer usage analysis
+- **Bottom Section**: 3 comprehensive raw data tables with session details
+
+### Key Features
+- **Timeline Slider**: Interactive time range selection with preset controls
+- **Degradation Focus**: Specialized charts for tracking degradation applications and combinations
+- **Performance Metrics**: Speed analysis, boxes per hour, peak performance tracking
+- **Raw Data Export**: Detailed tables for workplace reporting and analysis
 
 ### Color Coordination
 - 🔵 **Blue (#3498db)**: Macro executions

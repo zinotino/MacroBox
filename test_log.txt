@@ -1,0 +1,10 @@
+21:37:21 - Starting direct stats test...
+21:37:21 - CSV Path: C:\Users\ajnef\Documents\MacroMaster\data\master_stats.csv
+21:37:21 - ? SUCCESS: CSV file created
+21:37:21 - CSV Header: timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active
+21:37:21 - Recording test execution...
+21:37:21 - ? SUCCESS: 33 data lines recorded
+21:37:21 - First data line: 2025-09-25 18:48:08,sess_20250925_184806,ajnef,macro,Num1,1,1200,3,"smudge,glare",medium,wide,600000,false
+21:37:21 - Testing dashboard data loading...
+21:37:21 - ? SUCCESS: Dashboard can load stats - Total executions: 14
+21:37:21 - Test complete! CSV file location: C:\Users\ajnef\Documents\MacroMaster\data\master_stats.csv

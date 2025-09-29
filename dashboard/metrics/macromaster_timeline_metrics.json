@@ -1,0 +1,18 @@
+{
+  "dashboard_type": "timeline_slider",
+  "total_executions": 12,
+  "total_boxes": 38,
+  "session_duration_hours": 0.18,
+  "boxes_per_hour": 207.3,
+  "peak_hour_executions": 12,
+  "avg_hourly_executions": 12.0,
+  "avg_speed_boxes_per_second": 2.18,
+  "peak_speed_boxes_per_second": 3.43,
+  "busiest_hour": 12,
+  "busiest_day": "2025-01-18",
+  "timeline_range": {
+    "start": "2025-01-18T12:00:00",
+    "end": "2025-01-18T12:11:00"
+  },
+  "generated_at": "2025-09-24T14:41:05.436249"
+}
