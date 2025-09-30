@@ -32,13 +32,13 @@ CreateMacroVisualization(macroEvents, buttonDims) {
         graphics := 0
         DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
 
-        ; Clean white background for better clarity
-        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFFFFFFFF)
+        ; Black background for letterboxing contrast
+        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
 
         ; Skip canvas type indicator - not needed for button view
 
-        ; Draw macro boxes optimized for button dimensions
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes)
+        ; Draw macro boxes optimized for button dimensions (pass entire macroEvents for mode detection)
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
 
         ; Save to temporary file
         tempFile := A_Temp . "\macro_viz_" . A_TickCount . ".png"
@@ -172,7 +172,7 @@ DrawCanvasTypeIndicator(graphics, size, canvasType) {
 ; - Narrow recorded macros (aspect ratio <= 1.5) → Use NARROW canvas config → Black bars based on configured narrow aspect ratio
 ; - Canvas choice based on RECORDED CONTENT characteristics, not button size
 ; - Clean visualization without indicators for maximum aesthetic appeal
-DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
+DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsArray := "") {
     global degradationColors, annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
@@ -236,8 +236,16 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
         narrowCoverage := (usedNarrowW * usedNarrowH) / (narrowCanvasW * narrowCanvasH)
     }
 
-    ; RESPECT ANNOTATION MODE: Override intelligent detection with user preference
-    if (annotationMode = "Wide") {
+    ; Check if macro has a stored recording mode (takes priority)
+    storedMode := ""
+    if (macroEventsArray != "" && IsObject(macroEventsArray) && macroEventsArray.HasOwnProp("recordedMode")) {
+        storedMode := macroEventsArray.recordedMode
+    }
+
+    ; RESPECT ANNOTATION MODE: Use stored mode if available, otherwise current mode
+    effectiveMode := storedMode != "" ? storedMode : annotationMode
+
+    if (effectiveMode = "Wide") {
         ; User selected Wide mode - use calibrated wide canvas if available, otherwise detected
         if (isWideCanvasCalibrated) {
             useWideCanvas := true
@@ -253,7 +261,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
             useNarrowCanvas := fitsInNarrowCanvas
             useLegacyCanvas := !fitsInNarrowCanvas
         }
-    } else if (annotationMode = "Narrow") {
+    } else if (effectiveMode = "Narrow") {
         ; User selected Narrow mode - use calibrated narrow canvas if available, otherwise detected
         if (isNarrowCanvasCalibrated) {
             useWideCanvas := false
@@ -307,6 +315,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
 
     ; ENHANCED DIAGNOSTIC: Log detailed canvas detection metrics
     debugInfo := "Canvas Detection: "
+    debugInfo .= "EffectiveMode=" . effectiveMode . " (stored=" . storedMode . ", current=" . annotationMode . ") "
     debugInfo .= "Recorded(" . Round(minX) . "," . Round(minY) . " to " . Round(maxX) . "," . Round(maxY) . ") "
     debugInfo .= "Aspect:" . Round(recordedAspectRatio, 2) . " "
 
@@ -324,8 +333,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
     } else {
         debugInfo .= "→ LEGACY fallback (coordinates exceed canvas bounds)"
     }
-    ; Temporarily update status with diagnostic info (comment out in production)
-    ; UpdateStatus(debugInfo)
+    ; Enable diagnostic output temporarily
+    UpdateStatus(debugInfo)
 
     ; Store diagnostic info globally for testing
     global lastCanvasDetection := debugInfo
@@ -366,33 +375,80 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
         canvasH := canvasBottom - canvasTop
     }
 
-    ; PROPORTIONAL SCALING: Preserve aspect ratio and center content like on canvas
+    ; VISUAL DIFFERENTIATION: Wide = stretch to fill, Narrow = letterboxing
+    ; Background is already set by caller - we draw a colored overlay for the content area
 
-    ; Dark grey background fills entire thumbnail
-    DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF303030)
+    ; Apply different scaling strategies based on canvas type
+    if (useWideCanvas) {
+        ; WIDE CANVAS: Stretch to fill entire button (non-uniform scaling)
+        ; Fill entire area with dark gray background (no letterboxing)
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
 
-    ; Calculate proportional scale to fit content while preserving aspect ratio
-    scale := Min(buttonWidth / recordedWidth, buttonHeight / recordedHeight)
+        scaleX := buttonWidth / canvasW
+        scaleY := buttonHeight / canvasH
+        offsetX := 0
+        offsetY := 0
+    } else if (useNarrowCanvas) {
+        ; NARROW CANVAS: Letterboxing to preserve 4:3 aspect ratio
+        ; Calculate 4:3 content area centered in button
+        narrowAspect := 4.0 / 3.0
+        buttonAspect := buttonWidth / buttonHeight
 
-    ; Center the scaled recorded area in the button
-    offsetX := (buttonWidth - recordedWidth * scale) / 2
-    offsetY := (buttonHeight - recordedHeight * scale) / 2
+        if (buttonAspect > narrowAspect) {
+            ; Button is wider than 4:3 - add horizontal letterboxing
+            contentHeight := buttonHeight
+            contentWidth := contentHeight * narrowAspect
+        } else {
+            ; Button is taller than 4:3 - add vertical letterboxing
+            contentWidth := buttonWidth
+            contentHeight := contentWidth / narrowAspect
+        }
+
+        ; Center the 4:3 content area
+        offsetX := (buttonWidth - contentWidth) / 2
+        offsetY := (buttonHeight - contentHeight) / 2
+
+        ; Fill 4:3 content area with dark gray, leaving black letterbox bars
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        ; STRETCH canvas to fill the entire 4:3 content area (like wide mode)
+        ; This ensures boxes in corners reach the edges of the letterboxed area
+        scaleX := contentWidth / canvasW
+        scaleY := contentHeight / canvasH
+        ; No need to adjust offset - canvas fills the entire 4:3 area
+    } else {
+        ; LEGACY/FALLBACK: Stretch to fill
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        scaleX := buttonWidth / canvasW
+        scaleY := buttonHeight / canvasH
+        offsetX := 0
+        offsetY := 0
+    }
 
     ; Draw the boxes with enhanced precision and accuracy
     for box in boxes {
-        ; PROPORTIONAL COORDINATE TRANSFORMATION: Recorded space → Thumbnail space
-        ; Use floating-point arithmetic for sub-pixel accuracy with aspect ratio preservation
-        rawX1 := ((box.left - minX) * scale) + offsetX
-        rawY1 := ((box.top - minY) * scale) + offsetY
-        rawX2 := ((box.right - minX) * scale) + offsetX
-        rawY2 := ((box.bottom - minY) * scale) + offsetY
+        ; Map box coordinates from canvas to button space
+        rawX1 := ((box.left - canvasLeft) * scaleX) + offsetX
+        rawY1 := ((box.top - canvasTop) * scaleY) + offsetY
+        rawX2 := ((box.right - canvasLeft) * scaleX) + offsetX
+        rawY2 := ((box.bottom - canvasTop) * scaleY) + offsetY
 
         ; Calculate raw dimensions with floating-point precision
         rawW := rawX2 - rawX1
         rawH := rawY2 - rawY1
 
         ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
-        minSize := 1.5  ; Minimum dimension in pixels
+        minSize := 2.5  ; Slightly smaller minimum for better area utilization
 
         if (rawW < minSize || rawH < minSize) {
             ; Calculate original aspect ratio
@@ -444,9 +500,19 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes) {
         w := x2 - x1
         h := y2 - y1
 
-        ; Skip boxes that are completely outside the thumbnail area
-        if (w <= 0 || h <= 0) {
+        ; Skip boxes that are completely outside the thumbnail area or too small to see
+        if (w < 1.5 || h < 1.5) {
             continue
+        }
+
+        ; Ensure minimum visible size for better display while allowing smaller valid boxes
+        if (w < 2) {
+            w := 2
+            x2 := x1 + w
+        }
+        if (h < 2) {
+            h := 2
+            y2 := y1 + h
         }
 
         ; Get degradation type color

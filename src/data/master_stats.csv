@@ -1,5 +1,0 @@
-﻿timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
-2025-09-29 15:15:23,sess_20250929_151443,alexanderneff,macro,Num0,1,1844,4,clear,medium,wide,40047,false,0,0,0,0,0,0,0,0,0,1,,true,
-2025-09-29 15:15:28,sess_20250929_151443,alexanderneff,macro,Num0,1,1421,4,clear,medium,wide,44718,false,0,0,0,0,0,0,0,0,0,1,,true,
-2025-09-29 15:15:45,sess_20250929_151443,alexanderneff,macro,Num0,1,1781,4,clear,medium,wide,61765,false,0,0,0,0,0,0,0,0,0,1,,true,
-2025-09-29 15:42:57,sess_20250929_154151,alexanderneff,macro,Num0,1,1360,4,clear,medium,wide,66578,false,0,0,0,0,0,0,0,0,0,1,,true,

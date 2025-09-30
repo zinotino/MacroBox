@@ -7261,7 +7261,7 @@ UpdateTimingFromEdit(variableName, editControl) {
 
 ApplyTimingPreset(preset, settingsGui) {
     global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
-    
+
     switch preset {
         case "fast":
             boxDrawDelay := 55
@@ -7272,7 +7272,7 @@ ApplyTimingPreset(preset, settingsGui) {
             keyPressDelay := 15
             focusDelay := 90
             mouseHoverDelay := 25  ; Fast hover
-            
+
         case "default":
             boxDrawDelay := 75
             mouseClickDelay := 85
@@ -7282,7 +7282,7 @@ ApplyTimingPreset(preset, settingsGui) {
             keyPressDelay := 20
             focusDelay := 110
             mouseHoverDelay := 35  ; Default hover
-            
+
         case "safe":
             boxDrawDelay := 110
             mouseClickDelay := 130
@@ -7292,7 +7292,7 @@ ApplyTimingPreset(preset, settingsGui) {
             keyPressDelay := 30
             focusDelay := 170
             mouseHoverDelay := 50  ; Safe hover
-            
+
         case "slow":
             boxDrawDelay := 150
             mouseClickDelay := 180

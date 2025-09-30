@@ -219,14 +219,16 @@ CreateHBITMAPVisualization(macroEvents, buttonSize) {
         return 0
     }
 
-    ; PERFORMANCE: Generate cache key based on macro events content
+    ; PERFORMANCE: Generate cache key based on macro events content AND recorded mode
     cacheKey := ""
     for event in macroEvents {
         if (event.type = "boundingBox") {
             cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
         }
     }
-    cacheKey .= buttonSize.width . "x" . buttonSize.height
+    ; Include recorded mode in cache key so narrow/wide are cached separately
+    recordedMode := macroEvents.HasOwnProp("recordedMode") ? macroEvents.recordedMode : "unknown"
+    cacheKey .= buttonSize.width . "x" . buttonSize.height . "_" . recordedMode
 
     ; Check cache first
     if (hbitmapCache.Has(cacheKey)) {
@@ -278,8 +280,8 @@ CreateHBITMAPVisualization(macroEvents, buttonSize) {
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
 
-        ; Draw boxes using same logic as PNG version
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes)
+        ; Draw boxes using same logic as PNG version (pass macroEvents for mode detection)
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
 
         ; Convert GDI+ bitmap to HBITMAP
         result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0x00000000)
@@ -387,11 +389,11 @@ CreateVisualizationInPath(macroEvents, buttonSize, filePath) {
         graphics := 0
         DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
 
-        ; Clean white background
-        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFFFFFFFF)
+        ; Black background for letterboxing contrast
+        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
 
-        ; Draw macro boxes
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes)
+        ; Draw macro boxes (pass macroEvents for mode detection)
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
 
         ; Save to specified path
         result := SaveVisualizationPNG(bitmap, filePath)
@@ -1085,13 +1087,31 @@ ShowSettings() {
     clickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseClickDelay", clickDelayEdit))
     settingsGui.clickDelayEdit := clickDelayEdit
 
-    settingsGui.Add("Text", "x30 y185 w170 h20", "Mouse Drag Delay (ms):")
-    dragDelayEdit := settingsGui.Add("Edit", "x200 y183 w70 h22", mouseDragDelay)
+    settingsGui.Add("Text", "x30 y185 w170 h20", "Menu Click Delay (ms):")
+    menuClickDelayEdit := settingsGui.Add("Edit", "x200 y183 w70 h22", menuClickDelay)
+    menuClickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("menuClickDelay", menuClickDelayEdit))
+    settingsGui.menuClickDelayEdit := menuClickDelayEdit
+
+    ; ===== INTELLIGENT TIMING SYSTEM CONTROLS =====
+    settingsGui.Add("Text", "x30 y275 w480 h20", "🎯 Intelligent Timing System - Smart Delays:")
+
+    settingsGui.Add("Text", "x30 y305 w170 h20", "Smart Box Click (ms):")
+    smartBoxClickDelayEdit := settingsGui.Add("Edit", "x200 y303 w70 h22", smartBoxClickDelay)
+    smartBoxClickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("smartBoxClickDelay", smartBoxClickDelayEdit))
+    settingsGui.smartBoxClickDelayEdit := smartBoxClickDelayEdit
+
+    settingsGui.Add("Text", "x280 y305 w170 h20", "Smart Menu Click (ms):")
+    smartMenuClickDelayEdit := settingsGui.Add("Edit", "x450 y303 w70 h22", smartMenuClickDelay)
+    smartMenuClickDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("smartMenuClickDelay", smartMenuClickDelayEdit))
+    settingsGui.smartMenuClickDelayEdit := smartMenuClickDelayEdit
+
+    settingsGui.Add("Text", "x30 y215 w170 h20", "Mouse Drag Delay (ms):")
+    dragDelayEdit := settingsGui.Add("Edit", "x200 y213 w70 h22", mouseDragDelay)
     dragDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseDragDelay", dragDelayEdit))
     settingsGui.dragDelayEdit := dragDelayEdit
 
-    settingsGui.Add("Text", "x30 y215 w170 h20", "Mouse Release Delay (ms):")
-    releaseDelayEdit := settingsGui.Add("Edit", "x200 y213 w70 h22", mouseReleaseDelay)
+    settingsGui.Add("Text", "x30 y245 w170 h20", "Mouse Release Delay (ms):")
+    releaseDelayEdit := settingsGui.Add("Edit", "x200 y243 w70 h22", mouseReleaseDelay)
     releaseDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseReleaseDelay", releaseDelayEdit))
     settingsGui.releaseDelayEdit := releaseDelayEdit
 
@@ -1861,12 +1881,13 @@ GetStatsSummary() {
 
 
 ; ===== SAVE ALL SETTINGS =====
-SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMouseDragDelay, editMouseReleaseDelay, editBetweenBoxDelay, editKeyPressDelay, editFocusDelay, editMouseHoverDelay) {
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
+SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMenuClickDelay, editMouseDragDelay, editMouseReleaseDelay, editBetweenBoxDelay, editKeyPressDelay, editFocusDelay, editMouseHoverDelay) {
+    global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
 
     ; Apply timing settings
     boxDrawDelay := Integer(editBoxDrawDelay.Text)
     mouseClickDelay := Integer(editMouseClickDelay.Text)
+    menuClickDelay := Integer(editMenuClickDelay.Text)
     mouseDragDelay := Integer(editMouseDragDelay.Text)
     mouseReleaseDelay := Integer(editMouseReleaseDelay.Text)
     betweenBoxDelay := Integer(editBetweenBoxDelay.Text)
@@ -1919,57 +1940,72 @@ UpdateTimingFromEdit(timingVar, editControl, *) {
     Switch timingVar {
         Case "boxDrawDelay": boxDrawDelay := newValue
         Case "mouseClickDelay": mouseClickDelay := newValue
+        Case "menuClickDelay": menuClickDelay := newValue
         Case "mouseDragDelay": mouseDragDelay := newValue
         Case "mouseReleaseDelay": mouseReleaseDelay := newValue
         Case "betweenBoxDelay": betweenBoxDelay := newValue
         Case "keyPressDelay": keyPressDelay := newValue
         Case "focusDelay": focusDelay := newValue
         Case "mouseHoverDelay": mouseHoverDelay := newValue
+        Case "smartBoxClickDelay": smartBoxClickDelay := newValue
+        Case "smartMenuClickDelay": smartMenuClickDelay := newValue
     }
     UpdateStatus("⚡ Updated " . timingVar . " to " . newValue . "ms")
 }
 
 ; Apply timing preset
 ApplyTimingPreset(preset, settingsGui, *) {
-    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
+    global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
 
     switch preset {
         case "fast":
             boxDrawDelay := 50
             mouseClickDelay := 60
+            menuClickDelay := 100
             mouseDragDelay := 65
             mouseReleaseDelay := 65
             betweenBoxDelay := 150
             keyPressDelay := 15
             focusDelay := 60
             mouseHoverDelay := 25
+            smartBoxClickDelay := 25  ; Ultra-fast for intelligent system
+            smartMenuClickDelay := 80  ; Fast but reliable for menus
         case "default":
             boxDrawDelay := 75
             mouseClickDelay := 85
+            menuClickDelay := 150
             mouseDragDelay := 90
             mouseReleaseDelay := 90
             betweenBoxDelay := 200
             keyPressDelay := 20
             focusDelay := 80
             mouseHoverDelay := 35
+            smartBoxClickDelay := 35  ; Optimized for smooth box drawing
+            smartMenuClickDelay := 120  ; Balanced for menu reliability
         case "safe":
             boxDrawDelay := 100
             mouseClickDelay := 110
+            menuClickDelay := 200
             mouseDragDelay := 115
             mouseReleaseDelay := 115
             betweenBoxDelay := 250
             keyPressDelay := 25
             focusDelay := 100
             mouseHoverDelay := 45
+            smartBoxClickDelay := 50  ; Slower but very smooth
+            smartMenuClickDelay := 180  ; Conservative for maximum reliability
         case "slow":
             boxDrawDelay := 150
             mouseClickDelay := 160
+            menuClickDelay := 250
             mouseDragDelay := 165
             mouseReleaseDelay := 165
             betweenBoxDelay := 350
             keyPressDelay := 35
             focusDelay := 120
             mouseHoverDelay := 60
+            smartBoxClickDelay := 75  ; Very slow but extremely smooth
+            smartMenuClickDelay := 220  ; Maximum reliability for menus
     }
 
     ; Update the edit controls in the GUI
@@ -1978,6 +2014,9 @@ ApplyTimingPreset(preset, settingsGui, *) {
     }
     if (settingsGui.HasProp("clickDelayEdit")) {
         settingsGui.clickDelayEdit.Value := mouseClickDelay
+    }
+    if (settingsGui.HasProp("menuClickDelayEdit")) {
+        settingsGui.menuClickDelayEdit.Value := menuClickDelay
     }
     if (settingsGui.HasProp("dragDelayEdit")) {
         settingsGui.dragDelayEdit.Value := mouseDragDelay
@@ -1996,6 +2035,12 @@ ApplyTimingPreset(preset, settingsGui, *) {
     }
     if (settingsGui.HasProp("hoverDelayEdit")) {
         settingsGui.hoverDelayEdit.Value := mouseHoverDelay
+    }
+    if (settingsGui.HasProp("smartBoxClickDelayEdit")) {
+        settingsGui.smartBoxClickDelayEdit.Value := smartBoxClickDelay
+    }
+    if (settingsGui.HasProp("smartMenuClickDelayEdit")) {
+        settingsGui.smartMenuClickDelayEdit.Value := smartMenuClickDelay
     }
 
     SaveConfig()

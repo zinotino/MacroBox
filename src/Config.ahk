@@ -185,7 +185,12 @@ global layerBorderColors := ["0xFF0000", "0x00FF00", "0x0000FF", "0xFFFF00", "0x
 ; Timing settings
 global boxDrawDelay := 75
 global mouseClickDelay := 85
+global menuClickDelay := 150
 global mouseDragDelay := 90
+
+; ===== INTELLIGENT TIMING SYSTEM - UNIQUE DELAYS =====
+global smartBoxClickDelay := 35    ; Optimized for fast box drawing in intelligent system
+global smartMenuClickDelay := 120  ; Optimized for accurate menu selections in intelligent system
 global mouseReleaseDelay := 90
 global betweenBoxDelay := 200
 global keyPressDelay := 20
@@ -907,12 +912,15 @@ LoadConfig() {
                             case "autoExecutionMaxCount": autoExecutionMaxCount := EnsureInteger(value, 0)
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)
+                            case "menuClickDelay": menuClickDelay := EnsureInteger(value, 150)
                             case "mouseDragDelay": mouseDragDelay := EnsureInteger(value, 90)
                             case "mouseReleaseDelay": mouseReleaseDelay := EnsureInteger(value, 90)
                             case "betweenBoxDelay": betweenBoxDelay := EnsureInteger(value, 200)
                             case "keyPressDelay": keyPressDelay := EnsureInteger(value, 20)
                             case "focusDelay": focusDelay := EnsureInteger(value, 80)
                             case "mouseHoverDelay": mouseHoverDelay := EnsureInteger(value, 35)
+                            case "smartBoxClickDelay": smartBoxClickDelay := EnsureInteger(value, 35)
+                            case "smartMenuClickDelay": smartMenuClickDelay := EnsureInteger(value, 120)
                             case "layerName1": layerNames[1] := value
                             case "layerName2": layerNames[2] := value
                             case "layerName3": layerNames[3] := value
@@ -1139,13 +1147,16 @@ SaveConfig() {
         ; Timing settings
         content .= "boxDrawDelay=" . boxDrawDelay . "`n"
         content .= "mouseClickDelay=" . mouseClickDelay . "`n"
+        content .= "menuClickDelay=" . menuClickDelay . "`n"
         content .= "mouseDragDelay=" . mouseDragDelay . "`n"
         content .= "mouseReleaseDelay=" . mouseReleaseDelay . "`n"
         content .= "betweenBoxDelay=" . betweenBoxDelay . "`n"
         content .= "keyPressDelay=" . keyPressDelay . "`n"
         content .= "focusDelay=" . focusDelay . "`n"
         content .= "mouseHoverDelay=" . mouseHoverDelay . "`n"
-        settingsSaved += 8
+        content .= "smartBoxClickDelay=" . smartBoxClickDelay . "`n"
+        content .= "smartMenuClickDelay=" . smartMenuClickDelay . "`n"
+        settingsSaved += 10
 
         ; Macros section
         content .= "`n[Macros]`n"

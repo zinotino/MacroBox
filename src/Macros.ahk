@@ -269,14 +269,88 @@ AutoExecuteLoop() {
     ExecuteMacro(autoExecutionButton)
 }
 
+; ===== SMART TIMING SYSTEM =====
+IsMenuInteraction(eventIndex, recordedEvents) {
+    ; Determine if a mouseDown/mouseUp event is a menu interaction vs box drawing
+    ; Menu interactions are typically quick clicks with minimal movement
+
+    if (eventIndex >= recordedEvents.Length) {
+        return false
+    }
+
+    currentEvent := recordedEvents[eventIndex]
+
+    ; Only check for mouseDown events
+    if (currentEvent.type != "mouseDown") {
+        return false
+    }
+
+    ; Look ahead for the corresponding mouseUp
+    mouseUpIndex := -1
+    for i, event in recordedEvents {
+        if (i > eventIndex && event.type = "mouseUp" && event.button = currentEvent.button) {
+            mouseUpIndex := i
+            break
+        }
+    }
+
+    if (mouseUpIndex = -1) {
+        return false  ; No corresponding mouseUp found
+    }
+
+    mouseUpEvent := recordedEvents[mouseUpIndex]
+
+    ; Calculate movement distance between mouseDown and mouseUp
+    deltaX := Abs(mouseUpEvent.x - currentEvent.x)
+    deltaY := Abs(mouseUpEvent.y - currentEvent.y)
+    movementDistance := Sqrt(deltaX**2 + deltaY**2)
+
+    ; Check if this is a quick click with minimal movement (menu interaction)
+    ; Menu clicks typically have < 5 pixels movement and happen within a short time window
+    isQuickClick := (movementDistance < 5)
+
+    ; Additional check: if there are boundingBox events between mouseDown and mouseUp,
+    ; this is definitely part of box drawing
+    hasBoundingBoxBetween := false
+    loopCount := mouseUpIndex - eventIndex - 1
+    if (loopCount > 0) {
+        Loop loopCount {
+            checkIndex := eventIndex + A_Index
+            if (checkIndex >= 1 && checkIndex <= recordedEvents.Length && recordedEvents[checkIndex].type = "boundingBox") {
+                hasBoundingBoxBetween := true
+                break
+            }
+        }
+    }
+
+    ; If there's a boundingBox between mouseDown and mouseUp, it's box drawing
+    if (hasBoundingBoxBetween) {
+        return false
+    }
+
+    ; Otherwise, use movement distance to determine
+    return isQuickClick
+}
+
 ; ===== MACRO PLAYBACK =====
 PlayEventsOptimized(recordedEvents) {
-    global playback, boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay
+    global playback, boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
 
     try {
         SetMouseDelay(0)
         SetKeyDelay(5)
         CoordMode("Mouse", "Screen")
+
+        ; ===== OPTIMIZE STARTUP: Skip ALL events before tool selection =====
+        ; Find the first "1" keypress (tool selection)
+        toolSelectionIndex := 0
+        for eventIndex, event in recordedEvents {
+            if (event.type = "keyDown" && event.key = "1") {
+                ; Tool selection keypress - this is our starting point
+                toolSelectionIndex := eventIndex
+                break
+            }
+        }
 
         for eventIndex, event in recordedEvents {
             ; CRITICAL: Check playback state to allow early termination
@@ -284,9 +358,18 @@ PlayEventsOptimized(recordedEvents) {
                 break
 
             try {
+                ; ===== OPTIMIZE STARTUP: Skip ALL events before "1" keypress =====
+                if (toolSelectionIndex > 0 && eventIndex < toolSelectionIndex) {
+                    ; Skip ALL mouse movements, clicks, and box drawing before tool selection
+                    if (event.type = "mouseMove" || event.type = "mouseDown" || event.type = "mouseUp" || event.type = "boundingBox") {
+                        continue
+                    }
+                }
+
                 if (event.type = "boundingBox") {
                     MouseMove(event.left, event.top, 3)
-                    Sleep(mouseHoverDelay)  ; Add hover delay before clicking for accurate positioning
+                    ; OPTIMIZE: Reduce hover delay for faster startup, especially for first box after tool selection
+                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
 
                     Send("{LButton Down}")
                     Sleep(mouseClickDelay)
@@ -299,17 +382,25 @@ PlayEventsOptimized(recordedEvents) {
                 }
                 else if (event.type = "mouseDown") {
                     MouseMove(event.x, event.y, 3)
-                    Sleep(mouseHoverDelay)
+                    ; OPTIMIZE: Reduce hover delay for faster startup
+                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
                     Send("{LButton Down}")
+                    ; Use optimized smart timing delays for intelligent system
+                    Sleep(IsMenuInteraction(eventIndex, recordedEvents) ? smartMenuClickDelay : smartBoxClickDelay)
                 }
                 else if (event.type = "mouseUp") {
                     MouseMove(event.x, event.y, 3)
-                    Sleep(mouseHoverDelay)
+                    ; OPTIMIZE: Reduce hover delay for faster startup
+                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
                     Send("{LButton Up}")
+                    ; Use optimized smart timing delays for intelligent system
+                    Sleep(IsMenuInteraction(eventIndex, recordedEvents) ? smartMenuClickDelay : smartBoxClickDelay)
                 }
                 else if (event.type = "keyDown") {
+                    ; OPTIMIZE: Start immediately with tool selection keypress
                     Send("{" . event.key . " Down}")
-                    Sleep(keyPressDelay)
+                    ; Reduce key delay for tool selection
+                    Sleep(event.key = "1" ? 0 : keyPressDelay)
                 }
                 else if (event.type = "keyUp") {
                     Send("{" . event.key . " Up}")
@@ -670,6 +761,10 @@ AssignToButton(buttonName) {
     for event in macroEvents[currentMacro] {
         macroEvents[layerMacroName].Push(event)
     }
+
+    ; Store the annotation mode with the macro for visualization
+    global annotationMode
+    macroEvents[layerMacroName].recordedMode := annotationMode
 
     macroEvents.Delete(currentMacro)
 
