@@ -1118,32 +1118,28 @@ ShowSettings() {
     focusDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("focusDelay", focusDelayEdit))
     settingsGui.focusDelayEdit := focusDelayEdit
 
-    ; NEW: Mouse hover delay for click accuracy
     settingsGui.Add("Text", "x280 y215 w170 h20", "Mouse Hover (ms):")
     hoverDelayEdit := settingsGui.Add("Edit", "x450 y213 w70 h22", mouseHoverDelay)
     hoverDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseHoverDelay", hoverDelayEdit))
     settingsGui.hoverDelayEdit := hoverDelayEdit
 
-    ; Description for hover delay
-    settingsGui.Add("Text", "x30 y245 w500 h15 c0x666666", "💡 Mouse Hover: Pause time after moving to target before clicking (improves accuracy)")
+    ; Preset buttons section (clear spacing from timing controls)
+    settingsGui.Add("Text", "x30 y345 w480 h18", "🎚️ Timing Presets")
 
-    ; Preset buttons (adjusted Y position for new hover control)
-    settingsGui.Add("Text", "x30 y275 w480 h20", "🎚️ Timing Presets:")
-
-    btnFast := settingsGui.Add("Button", "x30 y300 w100 h25", "⚡ Fast")
+    btnFast := settingsGui.Add("Button", "x30 y368 w100 h25", "⚡ Fast")
     btnFast.OnEvent("Click", (*) => ApplyTimingPreset("fast", settingsGui))
 
-    btnDefault := settingsGui.Add("Button", "x150 y300 w100 h25", "🎯 Default")
+    btnDefault := settingsGui.Add("Button", "x150 y368 w100 h25", "🎯 Default")
     btnDefault.OnEvent("Click", (*) => ApplyTimingPreset("default", settingsGui))
 
-    btnSafe := settingsGui.Add("Button", "x270 y300 w100 h25", "🛡️ Safe")
+    btnSafe := settingsGui.Add("Button", "x270 y368 w100 h25", "🛡️ Safe")
     btnSafe.OnEvent("Click", (*) => ApplyTimingPreset("safe", settingsGui))
 
-    btnSlow := settingsGui.Add("Button", "x390 y300 w100 h25", "🐌 Slow")
+    btnSlow := settingsGui.Add("Button", "x390 y368 w100 h25", "🐌 Slow")
     btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
 
     ; Instructions
-    settingsGui.Add("Text", "x30 y330 w480 h40", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
+    settingsGui.Add("Text", "x30 y405 w480 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
 
     ; TAB 3: Hotkeys
     tabs.UseTab(3)
