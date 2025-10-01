@@ -175,7 +175,7 @@ global corporateEnvironmentDetected := false
 ; Auto execution settings
 global autoExecutionMode := false
 global autoExecutionButton := ""
-global autoExecutionInterval := 2000
+global autoExecutionInterval := 5000
 global autoExecutionMaxCount := 0
 
 ; Layer settings
@@ -908,7 +908,7 @@ LoadConfig() {
                             case "corporateEnvironmentDetected": corporateEnvironmentDetected := (value = "true")
                             case "autoExecutionMode": autoExecutionMode := (value = "true")
                             case "autoExecutionButton": autoExecutionButton := value
-                            case "autoExecutionInterval": autoExecutionInterval := EnsureInteger(value, 2000)
+                            case "autoExecutionInterval": autoExecutionInterval := EnsureInteger(value, 5000)
                             case "autoExecutionMaxCount": autoExecutionMaxCount := EnsureInteger(value, 0)
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)

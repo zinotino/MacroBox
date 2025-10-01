@@ -70,7 +70,7 @@ ToggleAutoEnable(buttonName, *) {
         ; No settings exist - create with defaults and enable
         buttonAutoSettings[buttonKey] := {
             enabled: true,
-            interval: 2000,  ; 2 seconds default
+            interval: 5000,  ; 5 seconds default
             maxCount: 0      ; infinite default
         }
         UpdateStatus("✅ Auto mode enabled for " . buttonName . " (default settings)")
@@ -93,7 +93,7 @@ ConfigureAutoMode(buttonName, *) {
     }
 
     ; Get existing settings or defaults
-    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: 2000, maxCount: 0}
+    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: 5000, maxCount: 0}
 
     ; Create configuration dialog
     configDialog := Gui("+Owner" . mainGui.Hwnd, "Auto Mode Setup - " . buttonName)

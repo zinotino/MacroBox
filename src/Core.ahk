@@ -59,7 +59,7 @@ global hotkeyStats := ""
 global autoExecutionMode := false
 global autoExecutionButton := ""
 global autoExecutionTimer := 0
-global autoExecutionInterval := 2000  ; Default 2 seconds
+global autoExecutionInterval := 5000  ; Default 5 seconds
 global autoExecutionCount := 0
 global autoExecutionMaxCount := 0  ; 0 = infinite
 global autoExecutionButtons := Map()  ; Track which buttons have automation enabled
