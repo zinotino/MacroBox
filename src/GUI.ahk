@@ -1203,13 +1203,8 @@ ShowSettings() {
     instructY += 60
     settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Focus on utility functions - WASD mapping handled automatically.")
 
-    ; Close button positioned dynamically based on content
-    closeY := instructY + 30
-    btnClose := settingsGui.Add("Button", "x480 y" . closeY . " w70 h25", "Close")
-    btnClose.OnEvent("Click", (*) => settingsGui.Destroy())
-
-    ; Fixed window size for better text spacing
-    settingsGui.Show("w580 h500")
+    ; Show settings window
+    settingsGui.Show("w580 h580")
 }
 
 ShowConfigMenu() {
