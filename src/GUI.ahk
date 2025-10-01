@@ -1005,53 +1005,14 @@ ShowSettings() {
     settingsGui.SetFont("s12 Bold")
 
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y60 w520 h500", ["📦 Configuration", "⚙️ Execution Settings", "🎁 Macro Packs", "🎹 Hotkey Profiles"])
+    tabs := settingsGui.Add("Tab3", "x20 y60 w520 h500", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys"])
 
-    ; TAB 1: Configuration Management
+    ; TAB 1: Essential Configuration
     tabs.UseTab(1)
-
-    ; Macro pack management - organized section
     settingsGui.SetFont("s9")
-    settingsGui.Add("Text", "x30 y95 w480 h20", "📦 Team Macro Pack Sharing:")
 
-    ; Create pack section
-    settingsGui.Add("Text", "x50 y115 w180 h15 c0x0066CC", "Create & Share:")
-    btnCreatePack := settingsGui.Add("Button", "x50 y130 w180 h30", "📦 Create Macro Pack")
-    btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
-
-    ; Import pack section
-    settingsGui.Add("Text", "x280 y115 w180 h15 c0x0066CC", "Import & Load:")
-    btnImportPack := settingsGui.Add("Button", "x280 y130 w180 h30", "📥 Import Macro Pack")
-    btnImportPack.OnEvent("Click", (*) => ImportMacroPack())
-
-    ; Browse packs section
-    settingsGui.Add("Text", "x50 y170 w180 h15 c0x0066CC", "Browse & Manage:")
-    btnBrowsePacks := settingsGui.Add("Button", "x50 y185 w180 h30", "📚 Browse Local Packs")
-    btnBrowsePacks.OnEvent("Click", (*) => BrowseMacroPacks())
-
-    ; System maintenance section
-    settingsGui.Add("Text", "x30 y230 w480 h20", "🔧 System Maintenance:")
-
-    ; Manual save/restore options
-    settingsGui.Add("Text", "x50 y250 w200 h15 c0x666666", "Manual Save/Restore:")
-    btnManualSave := settingsGui.Add("Button", "x50 y265 w120 h28", "💾 Save Now")
-    btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
-
-    btnManualRestore := settingsGui.Add("Button", "x180 y265 w120 h28", "📤 Restore Backup")
-    btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
-
-    ; Clear options
-    settingsGui.Add("Text", "x50 y395 w200 h15 c0x666666", "Reset Options:")
-    btnClearConfig := settingsGui.Add("Button", "x50 y410 w160 h28", "🗑️ Clear All Macros")
-    btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
-
-    btnResetStats := settingsGui.Add("Button", "x240 y410 w160 h28", "📊 Reset Statistics")
-    btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
-
-    ; Configuration complete - no version check needed
-
-    ; Canvas configuration section
-    settingsGui.Add("Text", "x30 y305 w480 h20", "🖼️ Canvas Calibration:")
+    ; Canvas configuration section - PRIORITY #1
+    settingsGui.Add("Text", "x30 y95 w480 h20", "🖼️ Canvas Calibration (Required for Thumbnails):")
 
     ; Show canvas status based on calibration flags
     global isWideCanvasCalibrated, isNarrowCanvasCalibrated
@@ -1059,15 +1020,40 @@ ShowSettings() {
     wideStatusText := isWideCanvasCalibrated ? "✅ Wide Canvas Configured" : "❌ Wide Canvas Not Set"
     narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Canvas Configured" : "❌ Narrow Canvas Not Set"
 
-    settingsGui.Add("Text", "x50 y325 w200 h15 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
-    settingsGui.Add("Text", "x280 y325 w200 h15 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
+    settingsGui.Add("Text", "x50 y120 w200 h15 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
+    settingsGui.Add("Text", "x280 y120 w200 h15 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
 
-    ; Configuration buttons (moved below status text to prevent overlap)
-    btnConfigureWide := settingsGui.Add("Button", "x40 y345 w180 h30", "📐 Calibrate Wide")
+    btnConfigureWide := settingsGui.Add("Button", "x40 y140 w180 h30", "📐 Calibrate Wide")
     btnConfigureWide.OnEvent("Click", (*) => ConfigureWideCanvasFromSettings(settingsGui))
 
-    btnConfigureNarrow := settingsGui.Add("Button", "x240 y345 w180 h30", "📐 Calibrate Narrow")
+    btnConfigureNarrow := settingsGui.Add("Button", "x240 y140 w180 h30", "📐 Calibrate Narrow")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
+
+    ; Macro pack management section
+    settingsGui.Add("Text", "x30 y190 w480 h20", "📦 Macro Pack Sharing:")
+
+    btnCreatePack := settingsGui.Add("Button", "x40 y215 w180 h28", "📦 Create Pack")
+    btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
+
+    btnImportPack := settingsGui.Add("Button", "x240 y215 w180 h28", "📥 Import Pack")
+    btnImportPack.OnEvent("Click", (*) => ImportMacroPack())
+
+    ; System maintenance section
+    settingsGui.Add("Text", "x30 y265 w480 h20", "🔧 System Maintenance:")
+
+    btnManualSave := settingsGui.Add("Button", "x40 y290 w120 h28", "💾 Save Now")
+    btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
+
+    btnManualRestore := settingsGui.Add("Button", "x175 y290 w120 h28", "📤 Restore Backup")
+    btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
+
+    btnClearConfig := settingsGui.Add("Button", "x310 y290 w120 h28", "🗑️ Clear Macros")
+    btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
+
+    ; Stats reset
+    settingsGui.Add("Text", "x30 y340 w480 h20", "📊 Statistics:")
+    btnResetStats := settingsGui.Add("Button", "x40 y365 w180 h28", "📊 Reset All Stats")
+    btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings
     tabs.UseTab(2)
@@ -1157,20 +1143,8 @@ ShowSettings() {
     ; Instructions
     settingsGui.Add("Text", "x30 y330 w480 h40", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
 
-    ; TAB 3: Macro Packs
+    ; TAB 3: Hotkeys
     tabs.UseTab(3)
-    settingsGui.Add("Text", "x30 y95 w480 h20", "🎁 Macro Pack Management:")
-
-    btnBrowsePacks := settingsGui.Add("Button", "x30 y120 w200 h30", "📚 Browse Local Packs")
-    btnBrowsePacks.OnEvent("Click", (*) => BrowseMacroPacks())
-
-    ; Pack sharing info
-    settingsGui.Add("Text", "x30 y165 w480 h80", "📝 Macro Packs are specialized sharing packages that contain:• Selected layers with macros• Degradation tracking data• Optional thumbnails and statistics• Author information and descriptions")
-
-    settingsGui.Add("Text", "x30 y255 w480 h40", "🌐 Share packs with other users by sending the ZIP files. Recipients can import them via 'Import New Pack' to add macros to their collection.")
-
-    ; TAB 4: Hotkey Profiles
-    tabs.UseTab(4)
     global hotkeyProfileActive, wasdHotkeyMap, wasdLabelsEnabled
 
     ; Header focused on utility functions
