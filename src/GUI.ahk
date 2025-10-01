@@ -997,62 +997,64 @@ UpdateAllButtonAppearances() {
 
 ShowSettings() {
     ; Create settings dialog with tabbed interface
-    settingsGui := Gui("+Resize", "⚙️ Configuration Manager")
-    settingsGui.SetFont("s10")
+    settingsGui := Gui("+Resize", "⚙️ Configuration")
+    settingsGui.SetFont("s9")
 
-    ; Header
-    settingsGui.Add("Text", "x20 y20 w520 h30 Center", "CONFIGURATION MANAGEMENT")
-    settingsGui.SetFont("s12 Bold")
+    ; Compact header
+    settingsGui.Add("Text", "x20 y10 w520 h25 Center", "Configuration")
+    settingsGui.SetFont("s10 Bold")
 
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y60 w520 h500", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys"])
+    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys"])
 
     ; TAB 1: Essential Configuration
     tabs.UseTab(1)
     settingsGui.SetFont("s9")
 
     ; Canvas configuration section - PRIORITY #1
-    settingsGui.Add("Text", "x30 y95 w480 h20", "🖼️ Canvas Calibration (Required for Thumbnails):")
+    settingsGui.Add("Text", "x30 y75 w480 h18", "🖼️ Canvas Calibration")
+    settingsGui.SetFont("s8")
 
     ; Show canvas status based on calibration flags
     global isWideCanvasCalibrated, isNarrowCanvasCalibrated
 
-    wideStatusText := isWideCanvasCalibrated ? "✅ Wide Canvas Configured" : "❌ Wide Canvas Not Set"
-    narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Canvas Configured" : "❌ Narrow Canvas Not Set"
+    wideStatusText := isWideCanvasCalibrated ? "✅ Wide Configured" : "❌ Not Set"
+    narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Configured" : "❌ Not Set"
 
-    settingsGui.Add("Text", "x50 y120 w200 h15 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
-    settingsGui.Add("Text", "x280 y120 w200 h15 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
+    settingsGui.Add("Text", "x50 y98 w200 h16 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
+    settingsGui.Add("Text", "x280 y98 w200 h16 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
+    settingsGui.SetFont("s9")
 
-    btnConfigureWide := settingsGui.Add("Button", "x40 y140 w180 h30", "📐 Calibrate Wide")
+    btnConfigureWide := settingsGui.Add("Button", "x40 y118 w180 h28", "📐 Calibrate Wide")
     btnConfigureWide.OnEvent("Click", (*) => ConfigureWideCanvasFromSettings(settingsGui))
 
-    btnConfigureNarrow := settingsGui.Add("Button", "x240 y140 w180 h30", "📐 Calibrate Narrow")
+    btnConfigureNarrow := settingsGui.Add("Button", "x240 y118 w180 h28", "📐 Calibrate Narrow")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
 
     ; Macro pack management section
-    settingsGui.Add("Text", "x30 y190 w480 h20", "📦 Macro Pack Sharing:")
+    settingsGui.Add("Text", "x30 y165 w480 h18", "📦 Macro Pack Sharing")
 
-    btnCreatePack := settingsGui.Add("Button", "x40 y215 w180 h28", "📦 Create Pack")
+    btnCreatePack := settingsGui.Add("Button", "x40 y188 w180 h28", "📦 Create Pack")
     btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
 
-    btnImportPack := settingsGui.Add("Button", "x240 y215 w180 h28", "📥 Import Pack")
+    btnImportPack := settingsGui.Add("Button", "x240 y188 w180 h28", "📥 Import Pack")
     btnImportPack.OnEvent("Click", (*) => ImportMacroPack())
 
     ; System maintenance section
-    settingsGui.Add("Text", "x30 y265 w480 h20", "🔧 System Maintenance:")
+    settingsGui.Add("Text", "x30 y235 w480 h18", "🔧 System Maintenance")
 
-    btnManualSave := settingsGui.Add("Button", "x40 y290 w120 h28", "💾 Save Now")
+    btnManualSave := settingsGui.Add("Button", "x40 y258 w120 h28", "💾 Save Now")
     btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
 
-    btnManualRestore := settingsGui.Add("Button", "x175 y290 w120 h28", "📤 Restore Backup")
+    btnManualRestore := settingsGui.Add("Button", "x175 y258 w120 h28", "📤 Restore Backup")
     btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
 
-    btnClearConfig := settingsGui.Add("Button", "x310 y290 w120 h28", "🗑️ Clear Macros")
+    btnClearConfig := settingsGui.Add("Button", "x310 y258 w120 h28", "🗑️ Clear Macros")
     btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
 
     ; Stats reset
-    settingsGui.Add("Text", "x30 y340 w480 h20", "📊 Statistics:")
-    btnResetStats := settingsGui.Add("Button", "x40 y365 w180 h28", "📊 Reset All Stats")
+    settingsGui.Add("Text", "x30 y305 w480 h18", "📊 Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y328 w180 h28", "📊 Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings
