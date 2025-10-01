@@ -50,7 +50,7 @@ AssignJsonAnnotation(buttonName, presetName, *) {
 }
 
 ToggleAutoEnable(buttonName, *) {
-    global buttonAutoSettings, currentLayer, macroEvents
+    global buttonAutoSettings, currentLayer, macroEvents, autoExecutionInterval
 
     buttonKey := "L" . currentLayer . "_" . buttonName
 
@@ -67,11 +67,11 @@ ToggleAutoEnable(buttonName, *) {
         status := buttonAutoSettings[buttonKey].enabled ? "✅ Auto mode enabled for " : "❌ Auto mode disabled for "
         UpdateStatus(status . buttonName)
     } else {
-        ; No settings exist - create with defaults and enable
+        ; No settings exist - create with global defaults and enable
         buttonAutoSettings[buttonKey] := {
             enabled: true,
-            interval: 5000,  ; 5 seconds default
-            maxCount: 0      ; infinite default
+            interval: autoExecutionInterval,  ; Use global default
+            maxCount: 0                        ; infinite default
         }
         UpdateStatus("✅ Auto mode enabled for " . buttonName . " (default settings)")
     }
@@ -82,7 +82,7 @@ ToggleAutoEnable(buttonName, *) {
 }
 
 ConfigureAutoMode(buttonName, *) {
-    global buttonAutoSettings, currentLayer, macroEvents, mainGui
+    global buttonAutoSettings, currentLayer, macroEvents, mainGui, autoExecutionInterval
 
     buttonKey := "L" . currentLayer . "_" . buttonName
 
@@ -92,8 +92,8 @@ ConfigureAutoMode(buttonName, *) {
         return
     }
 
-    ; Get existing settings or defaults
-    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: 5000, maxCount: 0}
+    ; Get existing settings or use global defaults
+    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: autoExecutionInterval, maxCount: 0}
 
     ; Create configuration dialog
     configDialog := Gui("+Owner" . mainGui.Hwnd, "Auto Mode Setup - " . buttonName)
