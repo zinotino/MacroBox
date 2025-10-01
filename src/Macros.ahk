@@ -280,7 +280,45 @@ IsMenuInteraction(eventIndex, recordedEvents) {
 
     currentEvent := recordedEvents[eventIndex]
 
-    ; Only check for mouseDown events
+    ; Handle both mouseDown and mouseUp events
+    if (currentEvent.type = "mouseUp") {
+        ; For mouseUp, look backward to find the corresponding mouseDown
+        mouseDownIndex := -1
+        for i := eventIndex - 1; i >= 1; i-- {
+            if (recordedEvents[i].type = "mouseDown" && recordedEvents[i].button = currentEvent.button) {
+                mouseDownIndex := i
+                break
+            }
+        }
+
+        if (mouseDownIndex = -1) {
+            return false  ; No corresponding mouseDown found
+        }
+
+        mouseDownEvent := recordedEvents[mouseDownIndex]
+        deltaX := Abs(currentEvent.x - mouseDownEvent.x)
+        deltaY := Abs(currentEvent.y - mouseDownEvent.y)
+        movementDistance := Sqrt(deltaX**2 + deltaY**2)
+
+        isQuickClick := (movementDistance < 5)
+
+        ; Check for boundingBox events between mouseDown and mouseUp
+        hasBoundingBoxBetween := false
+        loopCount := eventIndex - mouseDownIndex - 1
+        if (loopCount > 0) {
+            Loop loopCount {
+                checkIndex := mouseDownIndex + A_Index
+                if (checkIndex >= 1 && checkIndex <= recordedEvents.Length && recordedEvents[checkIndex].type = "boundingBox") {
+                    hasBoundingBoxBetween := true
+                    break
+                }
+            }
+        }
+
+        return isQuickClick && !hasBoundingBoxBetween
+    }
+
+    ; Original mouseDown logic
     if (currentEvent.type != "mouseDown") {
         return false
     }
@@ -368,42 +406,44 @@ PlayEventsOptimized(recordedEvents) {
 
                 if (event.type = "boundingBox") {
                     MouseMove(event.left, event.top, 3)
-                    ; OPTIMIZE: Reduce hover delay for faster startup, especially for first box after tool selection
-                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
+                    ; Always use at least minimal hover delay for reliability
+                    Sleep(Max(10, mouseHoverDelay))
 
                     Send("{LButton Down}")
-                    Sleep(mouseClickDelay)
+                    Sleep(Max(20, mouseClickDelay))
 
                     MouseMove(event.right, event.bottom, 4)
-                    Sleep(mouseReleaseDelay)
+                    Sleep(Max(20, mouseReleaseDelay))
 
                     Send("{LButton Up}")
-                    Sleep(betweenBoxDelay)
+                    Sleep(Max(30, betweenBoxDelay))
                 }
                 else if (event.type = "mouseDown") {
                     MouseMove(event.x, event.y, 3)
-                    ; OPTIMIZE: Reduce hover delay for faster startup
-                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
+                    ; Always use at least minimal hover delay for reliability
+                    Sleep(Max(10, mouseHoverDelay))
                     Send("{LButton Down}")
-                    ; Use optimized smart timing delays for intelligent system
-                    Sleep(IsMenuInteraction(eventIndex, recordedEvents) ? smartMenuClickDelay : smartBoxClickDelay)
+                    ; Use intelligent delay based on interaction type
+                    isMenu := IsMenuInteraction(eventIndex, recordedEvents)
+                    Sleep(Max(20, isMenu ? smartMenuClickDelay : smartBoxClickDelay))
                 }
                 else if (event.type = "mouseUp") {
                     MouseMove(event.x, event.y, 3)
-                    ; OPTIMIZE: Reduce hover delay for faster startup
-                    Sleep(eventIndex = toolSelectionIndex + 1 ? 0 : mouseHoverDelay)
+                    ; Minimal hover before release
+                    Sleep(10)
                     Send("{LButton Up}")
-                    ; Use optimized smart timing delays for intelligent system
-                    Sleep(IsMenuInteraction(eventIndex, recordedEvents) ? smartMenuClickDelay : smartBoxClickDelay)
+                    ; Use intelligent delay based on interaction type
+                    isMenu := IsMenuInteraction(eventIndex, recordedEvents)
+                    Sleep(Max(20, isMenu ? smartMenuClickDelay : smartBoxClickDelay))
                 }
                 else if (event.type = "keyDown") {
-                    ; OPTIMIZE: Start immediately with tool selection keypress
                     Send("{" . event.key . " Down}")
-                    ; Reduce key delay for tool selection
-                    Sleep(event.key = "1" ? 0 : keyPressDelay)
+                    ; Minimal key delay, slightly longer for non-tool keys
+                    Sleep(event.key = "1" ? 10 : Max(15, keyPressDelay))
                 }
                 else if (event.type = "keyUp") {
                     Send("{" . event.key . " Up}")
+                    Sleep(5)
                 }
             } catch Error as e {
                 ; Continue with next event if individual event fails
