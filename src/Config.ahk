@@ -180,7 +180,7 @@ global autoExecutionMaxCount := 0
 
 ; Layer settings
 global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]
-global layerBorderColors := ["0xFF0000", "0x00FF00", "0x0000FF", "0xFFFF00", "0xFF00FF"]
+global layerBorderColors := ["0x404040", "0x505050", "0x606060", "0x707070", "0x808080"]
 
 ; Timing settings
 global boxDrawDelay := 75

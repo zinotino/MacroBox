@@ -418,7 +418,7 @@ global minWindowHeight := 600
 global currentLayer := 1
 global totalLayers := 5  ; Always ensure this is an integer
 global layerNames := ["Base", "Advanced", "Tools", "Custom", "AUTO", "JSON", "Thumbnails", "Settings", "Layer9", "Layer10"]
-global layerBorderColors := ["0x2D2D30", "0x505050", "0x6D6D70", "0x8D8D90", "0xA5A5A5", "0xADADAD", "0xBDBDBD", "0xCDCDCD", "0xDDDDDD", "0xEDEDED"]
+global layerBorderColors := ["0x404040", "0x505050", "0x606060", "0x707070", "0x808080"]
 
 ; ===== TIMING CONFIGURATION =====
 global boxDrawDelay := 75
