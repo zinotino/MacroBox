@@ -1199,17 +1199,41 @@ SaveMacroState() {
     
     ; ===== CLEAR MACRO FUNCTION =====
     ClearMacro(buttonName) {
-        global currentLayer, macroEvents
-    
+        global currentLayer, macroEvents, buttonThumbnails, buttonCustomLabels, buttonAutoSettings
+
         layerMacroName := "L" . currentLayer . "_" . buttonName
-    
-        if (macroEvents.Has(layerMacroName)) {
-            macroEvents.Delete(layerMacroName)
+
+        if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Auto settings`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
+            ; Clear macro events
+            if (macroEvents.Has(layerMacroName)) {
+                macroEvents.Delete(layerMacroName)
+            }
+
+            ; Clear thumbnails
+            if (buttonThumbnails.Has(layerMacroName)) {
+                buttonThumbnails.Delete(layerMacroName)
+            }
+
+            ; Clear custom labels (restore to default)
+            if (buttonCustomLabels.Has(buttonName)) {
+                buttonCustomLabels.Delete(buttonName)
+            }
+
+            ; Clear auto settings
+            if (buttonAutoSettings.Has(layerMacroName)) {
+                buttonAutoSettings.Delete(layerMacroName)
+            }
+
+            ; Clear HBITMAP cache
+            ClearHBitmapCacheForMacro(layerMacroName)
+
+            ; Update button appearance to show empty state
             UpdateButtonAppearance(buttonName)
-            SaveMacroState()
-            UpdateStatus("🗑️ Cleared macro for " . buttonName . " on Layer " . currentLayer)
-        } else {
-            UpdateStatus("⚠️ No macro to clear for " . buttonName . " on Layer " . currentLayer)
+
+            ; Save changes
+            SaveConfig()
+
+            UpdateStatus("🗑️ Cleared " . buttonName . " - all data removed")
         }
     }
     
