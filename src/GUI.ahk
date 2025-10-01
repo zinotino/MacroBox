@@ -727,7 +727,7 @@ UpdateButtonAppearance(buttonName) {
         button.Visible := true
         button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
         button.SetFont("s8", "cGray")
-        button.Text := wasdLabelsEnabled ? "" : "L" . currentLayer
+        button.Text := ""  ; Remove "L" + layer number display
         return
     }
 
