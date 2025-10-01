@@ -944,7 +944,16 @@ LoadConfig() {
                         }
 
                     case "Macros":
-                        ProcessMacroLine(key, value)
+                        ; Check if this is a recordedMode property
+                        if (InStr(key, "_RecordedMode")) {
+                            ; Extract the macro name (remove "_RecordedMode" suffix)
+                            macroName := StrReplace(key, "_RecordedMode", "")
+                            if (macroEvents.Has(macroName)) {
+                                macroEvents[macroName].recordedMode := value
+                            }
+                        } else {
+                            ProcessMacroLine(key, value)
+                        }
 
                     case "Labels":
                         ProcessCustomLabel(key, value)
@@ -1182,6 +1191,12 @@ SaveConfig() {
                         }
                     }
                     content .= layerMacroName . "=" . eventString . "`n"
+
+                    ; Save recordedMode property if it exists (critical for letterboxing persistence)
+                    if (events.HasOwnProp("recordedMode")) {
+                        content .= layerMacroName . "_RecordedMode=" . events.recordedMode . "`n"
+                    }
+
                     macrosSaved++
                 }
             }
