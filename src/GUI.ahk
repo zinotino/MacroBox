@@ -843,13 +843,9 @@ UpdateButtonAppearance(buttonName) {
         }
     }
 
-    ; Label control - show labels on empty buttons, hide on buttons with content
-    if (hasMacro || isJsonAnnotation) {
-        buttonLabels[buttonName].Visible := false
-    } else {
-        buttonLabels[buttonName].Visible := true
-        buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
-    }
+    ; Label control - always visible with button name/custom label
+    buttonLabels[buttonName].Visible := true
+    buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
 
     ; Apply yellow outline for auto mode buttons
     ApplyYellowOutline(buttonName, hasAutoMode)
