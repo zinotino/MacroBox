@@ -199,7 +199,7 @@ global mouseHoverDelay := 35
 
 ; Macro and button data
 global macroEvents := Map()
-global buttonNames := ["Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9", "NumDot", "NumMult"]
+global buttonNames := ["Num7", "Num8", "Num9", "Num4", "Num5", "Num6", "Num1", "Num2", "Num3", "Num0", "NumDot", "NumMult"]
 global buttonCustomLabels := Map()
 global buttonAutoSettings := Map()
 
