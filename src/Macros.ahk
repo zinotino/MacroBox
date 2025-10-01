@@ -284,11 +284,13 @@ IsMenuInteraction(eventIndex, recordedEvents) {
     if (currentEvent.type = "mouseUp") {
         ; For mouseUp, look backward to find the corresponding mouseDown
         mouseDownIndex := -1
-        for i := eventIndex - 1; i >= 1; i-- {
+        i := eventIndex - 1
+        while (i >= 1) {
             if (recordedEvents[i].type = "mouseDown" && recordedEvents[i].button = currentEvent.button) {
                 mouseDownIndex := i
                 break
             }
+            i--
         }
 
         if (mouseDownIndex = -1) {
