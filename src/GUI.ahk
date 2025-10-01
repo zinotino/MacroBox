@@ -1862,8 +1862,15 @@ GetStatsSummary() {
     ; Get stats from CSV-based system instead of macroExecutionLog
     stats := ReadStatsFromCSV(false)
 
-    ; Format active time safely
-    activeTimeStr := totalActiveTime > 0 ? FormatTime(totalActiveTime, "mm:ss") : "00:00"
+    ; Format active time safely - totalActiveTime is milliseconds, not a timestamp
+    if (totalActiveTime > 0) {
+        totalSeconds := Floor(totalActiveTime / 1000)
+        minutes := Floor(totalSeconds / 60)
+        seconds := Mod(totalSeconds, 60)
+        activeTimeStr := Format("{:02d}:{:02d}", minutes, seconds)
+    } else {
+        activeTimeStr := "00:00"
+    }
 
     if (stats["total_executions"] = 0) {
         return "No execution data available`n`nTotal Active Time: " . activeTimeStr . "`nBoxes/Hour: 0`nExecutions/Hour: 0"

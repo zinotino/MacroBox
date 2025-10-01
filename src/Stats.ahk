@@ -712,9 +712,12 @@ AggregateMetrics() {
     }
     activeTimeSeconds := Round(currentActiveTime / 1000, 2)
 
+    ; Generate safe taskId - applicationStartTime is A_TickCount (number), not a timestamp
+    safeTaskId := "session_" . (IsSet(currentSessionId) ? StrReplace(currentSessionId, "sess_", "") : FormatTime(A_Now, "yyyyMMdd_HHmmss"))
+
     return {
         timestamp: FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss"),
-        taskId: "session_" . FormatTime(applicationStartTime, "yyyyMMdd_HHmmss"),
+        taskId: safeTaskId,
         totalBoxCount: totalBoxCount,
         totalExecutionTimeMs: totalExecutionTimeMs,
         activeTimeSeconds: activeTimeSeconds,
