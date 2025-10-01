@@ -1216,29 +1216,24 @@ ShowContextMenuCleaned(buttonName) {
     ; Create context menu
     contextMenu := Menu()
 
-    ; Macro operations section
-    if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-        contextMenu.Add("▶️ Execute Macro", (*) => ExecuteMacro(buttonName))
-        contextMenu.Add("🎥 Record New Macro", (*) => F9_RecordingOnly())
-        contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
-        contextMenu.Add()  ; Separator
-    } else {
-        contextMenu.Add("🎥 Record Macro", (*) => F9_RecordingOnly())
-        contextMenu.Add()  ; Separator
-    }
-
-    ; JSON Profiles submenu - organized by degradation type
-    jsonMainMenu := Menu()
+    ; Commands submenu at the top - organized by degradation type
+    commandsMenu := Menu()
     for id, typeName in degradationTypes {
         typeMenu := Menu()
         for severity in severityLevels {
             presetName := StrTitle(typeName) . " (" . StrTitle(severity) . ")"
             typeMenu.Add(StrTitle(severity), AssignJsonAnnotation.Bind(buttonName, presetName))
         }
-        jsonMainMenu.Add(StrTitle(typeName), typeMenu)
+        commandsMenu.Add(StrTitle(typeName), typeMenu)
     }
-    contextMenu.Add("🏷️ JSON Profiles", jsonMainMenu)
+    contextMenu.Add("⚡ Commands", commandsMenu)
     contextMenu.Add()  ; Separator
+
+    ; Clear macro option (if macro exists)
+    if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
+        contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
+        contextMenu.Add()  ; Separator
+    }
 
     ; Visual customization section
     if (buttonThumbnails.Has(layerMacroName)) {
@@ -1261,6 +1256,46 @@ ShowContextMenuCleaned(buttonName) {
 
     ; Show menu
     contextMenu.Show()
+}
+
+; ===== CLEAR MACRO =====
+ClearMacro(buttonName) {
+    global macroEvents, buttonThumbnails, buttonCustomLabels, buttonAutoSettings, currentLayer
+
+    layerMacroName := "L" . currentLayer . "_" . buttonName
+
+    if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Auto settings`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
+        ; Clear macro events
+        if (macroEvents.Has(layerMacroName)) {
+            macroEvents.Delete(layerMacroName)
+        }
+
+        ; Clear thumbnails
+        if (buttonThumbnails.Has(layerMacroName)) {
+            buttonThumbnails.Delete(layerMacroName)
+        }
+
+        ; Clear custom labels (restore to default)
+        if (buttonCustomLabels.Has(buttonName)) {
+            buttonCustomLabels.Delete(buttonName)
+        }
+
+        ; Clear auto settings
+        if (buttonAutoSettings.Has(layerMacroName)) {
+            buttonAutoSettings.Delete(layerMacroName)
+        }
+
+        ; Clear HBITMAP cache
+        ClearHBitmapCacheForMacro(layerMacroName)
+
+        ; Update button appearance to show empty state
+        UpdateButtonAppearance(buttonName)
+
+        ; Save changes
+        SaveConfig()
+
+        UpdateStatus("🗑️ Cleared " . buttonName . " - all data removed")
+    }
 }
 
 
