@@ -155,14 +155,14 @@ global userCanvasRight := 1920
 global userCanvasBottom := 1080
 
 ; Hotkey settings
-global hotkeyRecordToggle := "F1"
-global hotkeySubmit := "F2"
-global hotkeyDirectClear := "F3"
-global hotkeyStats := "F4"
-global hotkeyBreakMode := "F5"
-global hotkeySettings := "F6"
-global hotkeyLayerPrev := "F7"
-global hotkeyLayerNext := "F8"
+global hotkeyRecordToggle := "F9"
+global hotkeySubmit := "+Enter"
+global hotkeyDirectClear := "NumpadEnter"
+global hotkeyStats := ""
+global hotkeyBreakMode := "^b"
+global hotkeySettings := ""
+global hotkeyLayerPrev := "NumpadDiv"
+global hotkeyLayerNext := "NumpadSub"
 
 ; WASD settings
 global hotkeyProfileActive := false

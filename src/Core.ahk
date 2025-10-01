@@ -46,14 +46,14 @@ ClearHBitmapCacheForMacro(macroName) {
 
 ; ===== HOTKEY CONFIGURATION =====
 global hotkeyRecordToggle := "F9"
-global hotkeySubmit := "NumpadEnter"
-global hotkeyDirectClear := "+Enter"
+global hotkeySubmit := "+Enter"
+global hotkeyDirectClear := "NumpadEnter"
 global hotkeyEmergency := "RCtrl"
 global hotkeyBreakMode := "^b"
 global hotkeyLayerPrev := "NumpadDiv"
 global hotkeyLayerNext := "NumpadSub"
-global hotkeySettings := "^k"
-global hotkeyStats := "F12"
+global hotkeySettings := ""
+global hotkeyStats := ""
 
 ; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
 global autoExecutionMode := false
