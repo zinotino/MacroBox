@@ -841,12 +841,45 @@ RepairConfigSystem() {
     }
 }
 
+; ===== INITIALIZATION =====
+InitializeConfigSystem() {
+    global workDir, configFile
+
+    InitConfigLock()
+    VerifyConfigPaths()
+
+    ; Clean up any stuck locks from previous crashes
+    lockFile := workDir . "\config.lock"
+    if (FileExist(lockFile)) {
+        try {
+            FileDelete(lockFile)
+        } catch {
+            ; Ignore
+        }
+    }
+}
+
+SetupConfigTestHotkeys() {
+    ; F10 - Diagnostics
+    Hotkey("F10", (*) => DiagnoseConfigSystem())
+
+    ; F11 - Test Save/Load
+    Hotkey("F11", (*) => TestConfigSystem())
+
+    ; Ctrl+Shift+F12 - Emergency Repair
+    Hotkey("^+F12", (*) => RepairConfigSystem())
+}
+
 ; ===== HELPER FUNCTIONS =====
 InitConfigLock() {
     ; Placeholder - implement as needed
 }
 
 CleanupOldConfigFiles() {
+    ; Placeholder - implement as needed
+}
+
+VerifyConfigPaths() {
     ; Placeholder - implement as needed
 }
 

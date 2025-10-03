@@ -406,11 +406,6 @@ TestConfigSystem() {
     UpdateStatus("🔬 Config test complete: " . loadedCount . "/" . originalCount . " macros")
 }
 
-
-VerifyConfigPaths() {
-    ; Placeholder - implement as needed
-}
-
 LoadWASDMappingsFromFile() {
     ; Placeholder - implement as needed
 }
