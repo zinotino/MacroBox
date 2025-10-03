@@ -146,16 +146,18 @@ ShowStatsMenu() {
     y += 20
     AddStatsLine(statsGui, y, "Total Boxes:", allStats["total_boxes"])
     y += 20
-    AddStatsLine(statsGui, y, "Average Time:", allStats["average_execution_time"] . " ms")
-    y += 20
-    AddStatsLine(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"])
-    y += 20
-    AddStatsLine(statsGui, y, "Executions/Hour:", allStats["executions_per_hour"])
+    AddStatsLine(statsGui, y, "Avg Execution Time:", allStats["average_execution_time"] . " ms")
     y += 20
 
     ; Session info
     sessionTime := FormatMilliseconds(allStats["session_active_time"])
     AddStatsLine(statsGui, y, "Active Time:", sessionTime)
+    y += 20
+
+    ; Hourly rates
+    AddStatsLine(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"])
+    y += 20
+    AddStatsLine(statsGui, y, "Executions/Hour:", allStats["executions_per_hour"])
     y += 30
 
     ; === DEGRADATION BREAKDOWN (ALL-TIME) ===
@@ -191,7 +193,7 @@ ShowStatsMenu() {
     y += 20
     AddStatsLine(statsGui, y, "Boxes:", todayStats["total_boxes"])
     y += 20
-    AddStatsLine(statsGui, y, "Average Time:", todayStats["average_execution_time"] . " ms")
+    AddStatsLine(statsGui, y, "Avg Execution Time:", todayStats["average_execution_time"] . " ms")
     y += 20
     AddStatsLine(statsGui, y, "Active Time:", FormatMilliseconds(todayStats["session_active_time"]))
     y += 20
@@ -232,6 +234,24 @@ ShowStatsMenu() {
     AddStatsLine(statsGui, y, "Most Used Button:", allStats["most_used_button"])
     y += 20
     AddStatsLine(statsGui, y, "Most Active Layer:", allStats["most_active_layer"])
+    y += 20
+
+    ; Calculate efficiency metrics
+    if (allStats["total_executions"] > 0 && allStats["session_active_time"] > 0) {
+        activeTimeSeconds := allStats["session_active_time"] / 1000.0
+        totalExecTimeSeconds := allStats["total_execution_time"] / 1000.0
+        efficiency := Round((totalExecTimeSeconds / activeTimeSeconds) * 100, 1)
+        AddStatsLine(statsGui, y, "Efficiency Ratio:", efficiency . "%")
+        y += 20
+
+        avgBoxesPerExec := Round(allStats["total_boxes"] / allStats["total_executions"], 1)
+        AddStatsLine(statsGui, y, "Avg Boxes/Execution:", avgBoxesPerExec)
+        y += 20
+    }
+
+    AddStatsLine(statsGui, y, "Macro Executions:", allStats["macro_executions_count"])
+    y += 20
+    AddStatsLine(statsGui, y, "JSON Executions:", allStats["json_profile_executions_count"])
     y += 20
     AddStatsLine(statsGui, y, "Session ID:", SubStr(currentSessionId, 6))
     y += 30
@@ -337,8 +357,8 @@ GetTodayStats() {
                         stats["session_active_time"] := session_active_time
                     }
 
-                    ; Parse degradations
-                    if (fields.Length >= 14) {
+                    ; Parse degradations from fields 14-23
+                    if (fields.Length >= 23) {
                         stats["smudge_total"] += IsNumber(fields[14]) ? Integer(fields[14]) : 0
                         stats["glare_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
                         stats["splashes_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
@@ -467,8 +487,7 @@ ReadStatsFromCSV(filterBySession := false) {
                     layer := IsNumber(fields[6]) ? Integer(fields[6]) : 1
                     execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
                     total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
-                    ; performance_grade field removed
-                    session_active_time := IsNumber(fields[13]) ? Integer(fields[13]) : 0
+                    session_active_time := IsNumber(fields[12]) ? Integer(fields[12]) : 0
 
                     ; Track latest active time for rate calculations
                     if (session_active_time > latestActiveTime) {
@@ -503,42 +522,19 @@ ReadStatsFromCSV(filterBySession := false) {
 
                     ; Performance grade tracking removed
 
-                    ; Parse degradation assignments from new CSV format (field 9)
-                    if (fields.Length >= 9) {
-                        degradation_field := Trim(fields[9])
-                        ; Remove quotes if present
-                        degradation_field := StrReplace(degradation_field, '"', "")
-                        degradation_field := StrReplace(degradation_field, "'", "")
-
-                        if (degradation_field != "" && degradation_field != "clear") {
-                            ; Split degradation assignments and count each type
-                            degradations := StrSplit(degradation_field, ",")
-                            for degradation in degradations {
-                                degradation := Trim(degradation)
-                                switch degradation {
-                                    case "smudge":
-                                        stats["smudge_total"]++
-                                    case "glare":
-                                        stats["glare_total"]++
-                                    case "splashes":
-                                        stats["splashes_total"]++
-                                    case "partial_blockage":
-                                        stats["partial_blockage_total"]++
-                                    case "full_blockage":
-                                        stats["full_blockage_total"]++
-                                    case "light_flare":
-                                        stats["light_flare_total"]++
-                                    case "rain":
-                                        stats["rain_total"]++
-                                    case "haze":
-                                        stats["haze_total"]++
-                                    case "snow":
-                                        stats["snow_total"]++
-                                }
-                            }
-                        } else {
-                            stats["clear_total"]++
-                        }
+                    ; Read degradation counts directly from CSV fields (14-23)
+                    ; Headers: ...break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count...
+                    if (fields.Length >= 23) {
+                        stats["smudge_total"] += IsNumber(fields[14]) ? Integer(fields[14]) : 0
+                        stats["glare_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
+                        stats["splashes_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
+                        stats["partial_blockage_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
+                        stats["full_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
+                        stats["light_flare_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
+                        stats["rain_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
+                        stats["haze_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
+                        stats["snow_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
+                        stats["clear_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
                     }
 
                 } catch {
