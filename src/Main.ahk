@@ -20,6 +20,8 @@ Refactored for maintainability with clear separation of concerns
 #Include "Dialogs.ahk"
 #Include "Stats.ahk"
 #Include "Macros.ahk"
+#Include "MacroExecution.ahk"
+#Include "MacroRecording.ahk"
 #Include "Hotkeys.ahk"
 #Include "Visualization.ahk"
 
