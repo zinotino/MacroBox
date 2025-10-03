@@ -13,6 +13,7 @@ Refactored for maintainability with clear separation of concerns
 ; Include all modules
 #Include "Core.ahk"
 #Include "Utils.ahk"
+#Include "Canvas.ahk"
 #Include "Config.ahk"
 #Include "GUI.ahk"
 #Include "Stats.ahk"

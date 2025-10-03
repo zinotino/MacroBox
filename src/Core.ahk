@@ -175,259 +175,30 @@ global sessionStartTime := 0
 global clearDegradationCount := 0
 
 ; ===== CANVAS CALIBRATION FUNCTIONS =====
+; Legacy wrappers for backwards compatibility
 CalibrateCanvasArea() {
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-
-    ; Prompt user to define canvas area
-    result := MsgBox("Define your canvas area for accurate macro visualization.`n`nClick OK then:`n1. Click TOP-LEFT corner of your canvas`n2. Click BOTTOM-RIGHT corner of your canvas", "Canvas Calibration", "OKCancel")
-
-    if (result = "Cancel") {
-        return
-    }
-
-    UpdateStatus("📐 Canvas Calibration: Click TOP-LEFT corner...")
-
-    ; Ensure mouse button is released before waiting for click
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
-    MouseGetPos(&x1, &y1)
-
-    ; Wait for button release to prevent double-detection
-    KeyWait("LButton", "U")
-    Sleep(200)  ; Brief pause between clicks
-
-    UpdateStatus("📐 Canvas Calibration: Click BOTTOM-RIGHT corner...")
-
-    ; Wait for second click
-    KeyWait("LButton", "D")
-    MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
-
-    ; Set canvas bounds
-    userCanvasLeft := Min(x1, x2)
-    userCanvasTop := Min(y1, y2)
-    userCanvasRight := Max(x1, x2)
-    userCanvasBottom := Max(y1, y2)
-
-    canvasW := userCanvasRight - userCanvasLeft
-    canvasH := userCanvasBottom - userCanvasTop
-
-    if (canvasH = 0) {
-        MsgBox("⚠️ Calibration failed: Selected area has zero height.`n`nPlease try again and select a valid area.", "Calibration Error", "Icon!")
-        return
-    }
-
-    canvasAspect := Round(canvasW / canvasH, 2)
-
-    ; Show confirmation dialog
-    confirmMsg := "Canvas calibrated to:`n`nLeft: " . userCanvasLeft . "`nTop: " . userCanvasTop . "`nRight: " . userCanvasRight . "`nBottom: " . userCanvasBottom . "`nSize: " . canvasW . "x" . canvasH . "`nAspect Ratio: " . canvasAspect . ":1`n`nSave this configuration?"
-
-    result := MsgBox(confirmMsg, "Confirm Canvas Calibration", "YesNo Icon?")
-
-    if (result = "No") {
-        UpdateStatus("🔄 Canvas calibration cancelled by user")
-        return
-    }
-
-    ; Set calibration flag and save
-    isCanvasCalibrated := true
-    SaveConfig()
-
-    UpdateStatus("✅ Canvas calibrated and saved: " . canvasW . "x" . canvasH . " (ratio: " . canvasAspect . ":1)")
-
-    ; Refresh all button visualizations with new canvas
-    RefreshAllButtonAppearances()
+    Canvas_Calibrate("user")
 }
 
 ResetCanvasCalibration() {
-    global isCanvasCalibrated
-
-    result := MsgBox("Reset canvas calibration to automatic detection?", "Reset Canvas", "YesNo")
-    if (result = "Yes") {
-        isCanvasCalibrated := false
-        UpdateStatus("🔄 Canvas calibration reset - using automatic detection")
-        RefreshAllButtonAppearances()
-        ; Save configuration to persist the reset
-        SaveConfig()
-    }
+    Canvas_Reset("user")
 }
 
-; ===== WIDE CANVAS CALIBRATION =====
+; Legacy wrappers for canvas calibration
 CalibrateWideCanvasArea() {
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-
-    ; Prompt user to define wide canvas area
-    result := MsgBox("Calibrate 16:9 Wide Canvas Area`n`nThis is for WIDE mode recordings (full screen, widescreen).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 16:9 area`n2. Click BOTTOM-RIGHT corner of your 16:9 area", "Wide Canvas Calibration", "OKCancel")
-
-    if (result = "Cancel") {
-        return
-    }
-
-    UpdateStatus("🔦 Wide Canvas (16:9): Click TOP-LEFT corner...")
-
-    ; Ensure mouse button is released before waiting for click
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
-    MouseGetPos(&x1, &y1)
-
-    ; Wait for button release to prevent double-detection
-    KeyWait("LButton", "U")
-    Sleep(200)  ; Brief pause between clicks
-
-    UpdateStatus("🔦 Wide Canvas (16:9): Click BOTTOM-RIGHT corner...")
-
-    ; Get bottom-right corner
-    KeyWait("LButton", "D")
-    MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
-
-    ; Set wide canvas bounds
-    wideCanvasLeft := Min(x1, x2)
-    wideCanvasTop := Min(y1, y2)
-    wideCanvasRight := Max(x1, x2)
-    wideCanvasBottom := Max(y1, y2)
-    isWideCanvasCalibrated := true
-
-    ; Validate aspect ratio with divide-by-zero protection
-    canvasW := wideCanvasRight - wideCanvasLeft
-    canvasH := wideCanvasBottom - wideCanvasTop
-
-    if (canvasH = 0) {
-        MsgBox("⚠️ Calibration failed: Selected area has zero height.`n`nPlease try again and select a valid area.", "Calibration Error", "Icon!")
-        return
-    }
-
-    aspectRatio := canvasW / canvasH
-
-    ; Show confirmation dialog
-    confirmMsg := "Canvas calibrated to:`n`nLeft: " . wideCanvasLeft . "`nTop: " . wideCanvasTop . "`nRight: " . wideCanvasRight . "`nBottom: " . wideCanvasBottom . "`nAspect Ratio: " . Round(aspectRatio, 2)
-
-    if (Abs(aspectRatio - 1.777) > 0.1) {
-        confirmMsg .= "`n`n⚠️ Aspect ratio is " . Round(aspectRatio, 2) . " (expected ~1.78 for 16:9)"
-    } else {
-        confirmMsg .= "`n`n✅ Aspect ratio matches 16:9"
-    }
-
-    confirmMsg .= "`n`nSave this configuration?"
-
-    result := MsgBox(confirmMsg, "Confirm Wide Canvas Calibration", "YesNo Icon?")
-
-    if (result = "No") {
-        UpdateStatus("🔄 Wide canvas calibration cancelled by user")
-        return
-    }
-
-    ; Set calibration flag and save
-    isWideCanvasCalibrated := true
-    SaveConfig()
-
-    UpdateStatus("✅ Wide canvas (16:9) calibrated and saved: " . wideCanvasLeft . "," . wideCanvasTop . " to " . wideCanvasRight . "," . wideCanvasBottom)
-
-    ; Refresh all button visualizations with new canvas
-    RefreshAllButtonAppearances()
+    Canvas_Calibrate("wide")
 }
 
-; ===== RESET WIDE CANVAS CALIBRATION =====
 ResetWideCanvasCalibration() {
-    global isWideCanvasCalibrated
-
-    result := MsgBox("Reset Wide canvas calibration to automatic detection?", "Reset Wide Canvas", "YesNo")
-    if (result = "Yes") {
-        isWideCanvasCalibrated := false
-        UpdateStatus("🔄 Wide canvas calibration reset - using automatic detection")
-        RefreshAllButtonAppearances()
-        ; Save configuration to persist the reset
-        SaveConfig()
-    }
+    Canvas_Reset("wide")
 }
 
-; ===== RESET NARROW CANVAS CALIBRATION =====
 ResetNarrowCanvasCalibration() {
-    global isNarrowCanvasCalibrated
-
-    result := MsgBox("Reset Narrow canvas calibration to automatic detection?", "Reset Narrow Canvas", "YesNo")
-    if (result = "Yes") {
-        isNarrowCanvasCalibrated := false
-        UpdateStatus("🔄 Narrow canvas calibration reset - using automatic detection")
-        RefreshAllButtonAppearances()
-        ; Save configuration to persist the reset
-        SaveConfig()
-    }
+    Canvas_Reset("narrow")
 }
 
-; ===== NARROW CANVAS CALIBRATION =====
 CalibrateNarrowCanvasArea() {
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-
-    ; Prompt user to define narrow canvas area
-    result := MsgBox("Calibrate 4:3 Narrow Canvas Area`n`nThis is for NARROW mode recordings (constrained, square-ish).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 4:3 area`n2. Click BOTTOM-RIGHT corner of your 4:3 area", "Narrow Canvas Calibration", "OKCancel")
-
-    if (result = "Cancel") {
-        return
-    }
-
-    UpdateStatus("📱 Narrow Canvas (4:3): Click TOP-LEFT corner...")
-
-    ; Ensure mouse button is released before waiting for click
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
-    MouseGetPos(&x1, &y1)
-
-    ; Wait for button release to prevent double-detection
-    KeyWait("LButton", "U")
-    Sleep(200)  ; Brief pause between clicks
-
-    UpdateStatus("📱 Narrow Canvas (4:3): Click BOTTOM-RIGHT corner...")
-
-    ; Get bottom-right corner
-    KeyWait("LButton", "D")
-    MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
-
-    ; Set narrow canvas bounds
-    narrowCanvasLeft := Min(x1, x2)
-    narrowCanvasTop := Min(y1, y2)
-    narrowCanvasRight := Max(x1, x2)
-    narrowCanvasBottom := Max(y1, y2)
-    isNarrowCanvasCalibrated := true
-
-    ; Validate aspect ratio with divide-by-zero protection
-    canvasW := narrowCanvasRight - narrowCanvasLeft
-    canvasH := narrowCanvasBottom - narrowCanvasTop
-
-    if (canvasH = 0) {
-        MsgBox("⚠️ Calibration failed: Selected area has zero height.`n`nPlease try again and select a valid area.", "Calibration Error", "Icon!")
-        return
-    }
-
-    aspectRatio := canvasW / canvasH
-
-    ; Show confirmation dialog
-    confirmMsg := "Canvas calibrated to:`n`nLeft: " . narrowCanvasLeft . "`nTop: " . narrowCanvasTop . "`nRight: " . narrowCanvasRight . "`nBottom: " . narrowCanvasBottom . "`nAspect Ratio: " . Round(aspectRatio, 2)
-
-    if (Abs(aspectRatio - 1.333) > 0.1) {
-        confirmMsg .= "`n`n⚠️ Aspect ratio is " . Round(aspectRatio, 2) . " (expected ~1.33 for 4:3)"
-    } else {
-        confirmMsg .= "`n`n✅ Aspect ratio matches 4:3"
-    }
-
-    confirmMsg .= "`n`nSave this configuration?"
-
-    result := MsgBox(confirmMsg, "Confirm Narrow Canvas Calibration", "YesNo Icon?")
-
-    if (result = "No") {
-        UpdateStatus("🔄 Narrow canvas calibration cancelled by user")
-        return
-    }
-
-    ; Set calibration flag and save
-    isNarrowCanvasCalibrated := true
-    SaveConfig()
-
-    UpdateStatus("✅ Narrow canvas (4:3) calibrated and saved: " . narrowCanvasLeft . "," . narrowCanvasTop . " to " . narrowCanvasRight . "," . narrowCanvasBottom)
-
-    ; Refresh all button visualizations with new canvas
-    RefreshAllButtonAppearances()
+    Canvas_Calibrate("narrow")
 }
 
 ; ===== REAL-TIME DASHBOARD INTEGRATION =====
@@ -552,29 +323,7 @@ CountLoadedMacros() {
 
 ; ===== CANVAS VARIABLE INITIALIZATION =====
 InitializeCanvasVariables() {
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-
-    ; Initialize with valid numeric defaults to prevent "invalid value" errors
-    wideCanvasLeft := 0
-    wideCanvasTop := 0
-    wideCanvasRight := 1920
-    wideCanvasBottom := 1080
-    isWideCanvasCalibrated := false
-
-    narrowCanvasLeft := 240
-    narrowCanvasTop := 0
-    narrowCanvasRight := 1680
-    narrowCanvasBottom := 1080
-    isNarrowCanvasCalibrated := false
-
-    userCanvasLeft := 0
-    userCanvasTop := 0
-    userCanvasRight := 1920
-    userCanvasBottom := 1080
-    isCanvasCalibrated := false
-
+    Canvas_Initialize()
 }
 
 ; ===== MAIN INITIALIZATION =====
@@ -733,35 +482,7 @@ Main() {
 }
 
 CheckCanvasConfiguration() {
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom
-    global isWideCanvasCalibrated, isNarrowCanvasCalibrated
-
-    ; Check if canvas coordinates are actually configured (not default values) or flags are set
-    wideConfigured := (wideCanvasLeft != 0 || wideCanvasTop != 0 || wideCanvasRight != 1920 || wideCanvasBottom != 1080) || isWideCanvasCalibrated
-    narrowConfigured := (narrowCanvasLeft != 240 || narrowCanvasTop != 0 || narrowCanvasRight != 1680 || narrowCanvasBottom != 1080) || isNarrowCanvasCalibrated
-    userConfigured := (userCanvasLeft != 0 || userCanvasTop != 0 || userCanvasRight != 1920 || userCanvasBottom != 1080)
-
-    ; Check if neither canvas is actually configured
-    if (!wideConfigured && !narrowConfigured && !userConfigured) {
-        result := MsgBox("🖼️ THUMBNAIL CANVAS CONFIGURATION`n`n" .
-                        "Would you like to configure your canvas areas for picture-perfect thumbnails?`n`n" .
-                        "⚡ RECOMMENDED: Configure both Wide and Narrow canvas areas`n" .
-                        "• Wide canvas: For landscape/widescreen recordings`n" .
-                        "• Narrow canvas: For portrait/square recordings`n`n" .
-                        "⚠️ WITHOUT configuration: Thumbnails will auto-detect but may not be pixel-perfect`n`n" .
-                        "Configure now?", "Thumbnail Integration Setup", "YesNo Icon?")
-
-        if (result = "Yes") {
-            ; Open settings directly to canvas configuration
-            ShowSettings()
-            UpdateStatus("🖼️ Configure both Wide and Narrow canvas areas in Settings → Configuration tab")
-        } else {
-            ; User declined, show what they'll miss
-            UpdateStatus("⚠️ Thumbnail auto-detection active - Configure canvas areas in Settings for pixel-perfect thumbnails")
-        }
-    }
+    Canvas_CheckConfiguration()
 }
 
 ; ===== VARIABLE INITIALIZATION =====

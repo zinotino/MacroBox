@@ -974,6 +974,8 @@ LoadConfig() {
         ; VALIDATE LOADED CANVAS VALUES - ensure they are valid to prevent visualization failures
         try {
             ValidateAndFixCanvasValues()
+            ; Sync canvas state from legacy globals
+            Canvas_SyncFromLegacyGlobals()
         } catch Error as canvasError {
             UpdateStatus("⚠️ Canvas validation failed")
             throw canvasError
