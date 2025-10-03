@@ -68,7 +68,8 @@
       "Bash(taskkill:*)",
       "Bash(find:*)",
       "Bash(for:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []

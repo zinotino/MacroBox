@@ -15,6 +15,7 @@ Refactored for maintainability with clear separation of concerns
 #Include "Utils.ahk"
 #Include "Canvas.ahk"
 #Include "Config.ahk"
+#Include "ConfigIO.ahk"
 #Include "GUI.ahk"
 #Include "Dialogs.ahk"
 #Include "Stats.ahk"
