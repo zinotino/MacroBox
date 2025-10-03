@@ -692,6 +692,13 @@ CleanupAndExit() {
         SafeUninstallMouseHook()
         SafeUninstallKeyboardHook()
 
+        ; Clean up HBITMAP cache
+        try {
+            CleanupHBITMAPCache()
+        } catch {
+            ; Silently continue if HBITMAP cleanup fails
+        }
+
         ; Save final state - CRITICAL: Ensure config saves before exit
         try {
             SaveConfig()
