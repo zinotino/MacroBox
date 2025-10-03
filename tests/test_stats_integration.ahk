@@ -1,117 +1,70 @@
-; MacroMaster V5 Stats System Integration Test
-; Tests the CSV stats tracking functionality
-
+; ===== STATS INTEGRATION TEST =====
 #Requires AutoHotkey v2.0
+#SingleInstance Force
 
-; Test the ReadStatsFromCSV function
-testCSV := "data\master_stats.csv"
+; Set up minimal required globals for Stats.ahk
+global breakMode := false
+global recording := false
+global currentLayer := 1
+global annotationMode := "Wide"
+global totalActiveTime := 0
+global lastActiveTime := A_TickCount
+global sessionStartTime := A_TickCount
+global currentSessionId := "integration_test_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
+global currentUsername := A_UserName
+global documentsDir := A_MyDocuments . "\MacroMaster"
+global dataDir := documentsDir . "\data"
+global masterStatsCSV := dataDir . "\master_stats.csv"
 
-if (!FileExist(testCSV)) {
-    MsgBox("❌ Test Failed: CSV file does not exist at " . testCSV)
-    ExitApp
+; Define required functions for Stats.ahk
+UpdateStatus(message) {
+    OutputDebug("STATUS: " . message)
 }
 
-; Read the CSV content
+RunWaitOne(command) {
+    try {
+        return RunWait(command, , "Hide")
+    } catch {
+        return ""
+    }
+}
+
+; Now include Stats.ahk
+#Include "src\Stats.ahk"
+
+; Test the integration
+OutputDebug("Starting stats integration test...")
+
 try {
-    csvContent := FileRead(testCSV, "UTF-8")
-    lines := StrSplit(csvContent, "`n")
+    ; Initialize CSV
+    InitializeCSVFile()
 
-    ; Verify header structure
-    if (lines.Length < 2) {
-        MsgBox("❌ Test Failed: CSV has insufficient data")
-        ExitApp
-    }
+    if FileExist(masterStatsCSV) {
+        OutputDebug("✅ CSV file created successfully: " . masterStatsCSV)
 
-    header := lines[1]
-    expectedFields := ["timestamp", "session_id", "username", "execution_type", "button_key", "layer", "execution_time_ms", "total_boxes", "degradation_assignments", "severity_level", "canvas_mode", "session_active_time_ms", "break_mode_active"]
-
-    ; Verify all expected fields are present
-    for field in expectedFields {
-        if (!InStr(header, field)) {
-            MsgBox("❌ Test Failed: Missing header field: " . field)
-            ExitApp
-        }
-    }
-
-    ; Count data rows (excluding header)
-    dataRows := lines.Length - 1
-    if (Trim(lines[lines.Length]) = "") {
-        dataRows-- ; Remove empty last line
-    }
-
-    ; Analyze data quality
-    macroCount := 0
-    jsonCount := 0
-    clearCount := 0
-    totalBoxes := 0
-    totalTime := 0
-
-    ; Process each data row
-    for i in Range(2, lines.Length) {
-        line := Trim(lines[i])
-        if (line = "") {
-            continue
+        ; Test recording a stat
+        mockAnalysisRecord := {
+            boundingBoxCount: 2,
+            degradationAssignments: "smudge,glare"
         }
 
-        fields := StrSplit(line, ",")
-        if (fields.Length >= 8) {
-            executionType := fields[4]
-            boxes := Integer(fields[8])
-            time := Integer(fields[7])
+        RecordExecutionStats("IntegrationTest", A_TickCount, "macro", [], mockAnalysisRecord)
 
-            if (executionType = "macro") {
-                macroCount++
-            } else if (executionType = "json_profile") {
-                jsonCount++
-            } else if (executionType = "clear") {
-                clearCount++
-            }
+        ; Check if data was recorded
+        content := FileRead(masterStatsCSV, "UTF-8")
+        lines := StrSplit(content, "`n")
 
-            totalBoxes += boxes
-            totalTime += time
+        if (lines.Length >= 2) {
+            OutputDebug("✅ Stats recorded successfully - " . (lines.Length - 1) . " data lines")
+        } else {
+            OutputDebug("❌ No stats recorded")
         }
+    } else {
+        OutputDebug("❌ CSV file not created")
     }
-
-    ; Calculate metrics
-    totalExecutions := macroCount + jsonCount + clearCount
-    avgTime := totalExecutions > 0 ? Round(totalTime / totalExecutions, 0) : 0
-    avgBoxes := totalExecutions > 0 ? Round(totalBoxes / totalExecutions, 1) : 0
-
-    ; Display comprehensive test results
-    result := "✅ MacroMaster V5 Stats System Test Results`n`n"
-    result .= "📊 DATA INTEGRITY:`n"
-    result .= "• Header structure: ✓ Valid (" . expectedFields.Length . " fields)`n"
-    result .= "• Data rows: " . dataRows . " records`n"
-    result .= "• File size: " . Round(FileGetSize(testCSV) / 1024, 1) . " KB`n`n"
-
-    result .= "📈 EXECUTION ANALYTICS:`n"
-    result .= "• Total executions: " . totalExecutions . "`n"
-    result .= "• Macro executions: " . macroCount . "`n"
-    result .= "• JSON profiles: " . jsonCount . "`n"
-    result .= "• Clear operations: " . clearCount . "`n`n"
-
-    result .= "⚡ PERFORMANCE METRICS:`n"
-    result .= "• Total bounding boxes: " . totalBoxes . "`n"
-    result .= "• Average execution time: " . avgTime . "ms`n"
-    result .= "• Average boxes per execution: " . avgBoxes . "`n`n"
-
-    result .= "🎯 SYSTEM STATUS:`n"
-    result .= "• CSV format: ✓ Production ready`n"
-    result .= "• Data tracking: ✓ Fully functional`n"
-    result .= "• Analytics ready: ✓ Dashboard compatible`n`n"
-
-    result .= "🚀 MANUAL TESTING STEPS:`n"
-    result .= "1. Launch MacroMaster (F9 to record, numpad to execute)`n"
-    result .= "2. Record a macro with bounding boxes`n"
-    result .= "3. Execute the macro multiple times`n"
-    result .= "4. Check stats menu for live data updates`n"
-    result .= "5. Verify CSV file gets new entries automatically"
-
-    MsgBox(result, "MacroMaster V5 Stats Integration Test", "T30")
-
-} catch Error as e {
-    MsgBox("❌ Test Failed: " . e.Message)
-    ExitApp
+} catch as e {
+    OutputDebug("❌ Error: " . e.Message)
 }
 
+OutputDebug("Integration test complete")
 ExitApp

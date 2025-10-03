@@ -63,7 +63,12 @@
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" test_stats_simple.ahk)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut /validate test_stats_direct.ahk)",
       "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut /validate \"src\\Main.ahk\")",
-      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut /validate \"src\\Visualization.ahk\")"
+      "Bash(\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey.exe\" /ErrorStdOut /validate \"src\\Visualization.ahk\")",
+      "Bash(cat:*)",
+      "Bash(taskkill:*)",
+      "Bash(find:*)",
+      "Bash(for:*)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []
