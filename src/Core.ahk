@@ -97,9 +97,50 @@ global canvasHeight := 1080
 global canvasType := "wide"  ; "wide", "narrow", or "custom"
 global canvasAspectRatio := 1.78
 
+; Initialize canvas variables with default values
+wideCanvasLeft := 0
+wideCanvasTop := 0
+wideCanvasRight := 1920
+wideCanvasBottom := 1080
+
+narrowCanvasLeft := 240
+narrowCanvasTop := 0
+narrowCanvasRight := 1680
+narrowCanvasBottom := 1080
+
+userCanvasLeft := 0
+userCanvasTop := 0
+userCanvasRight := 1920
+userCanvasBottom := 1080
+
+isCanvasCalibrated := false
+isWideCanvasCalibrated := false
+isNarrowCanvasCalibrated := false
+lastCanvasDetection := ""
+
 ; ===== DUAL CANVAS SYSTEM FOR ASPECT RATIOS =====
 ; Wide mode: 16:9 aspect ratio (1920x1080 reference)
-; Canvas variables are declared in Config.ahk
+global wideCanvasLeft := 0
+global wideCanvasTop := 0
+global wideCanvasRight := 1920
+global wideCanvasBottom := 1080
+
+; Narrow mode: 4:3 aspect ratio (1440x1080 centered in 1920x1080)
+global narrowCanvasLeft := 240
+global narrowCanvasTop := 0
+global narrowCanvasRight := 1680
+global narrowCanvasBottom := 1080
+
+; Legacy canvas (for backwards compatibility)
+global userCanvasLeft := 0
+global userCanvasTop := 0
+global userCanvasRight := 1920
+global userCanvasBottom := 1080
+
+global isCanvasCalibrated := false  ; Start as false until calibrated
+global isWideCanvasCalibrated := false
+global isNarrowCanvasCalibrated := false
+global lastCanvasDetection := ""
 
 ; Narrow mode: 4:3 aspect ratio (1440x1080 centered in 1920x1080)
 ; Legacy canvas (for backwards compatibility)
@@ -509,20 +550,108 @@ CountLoadedMacros() {
     return macroCount
 }
 
+; ===== CANVAS VARIABLE INITIALIZATION =====
+InitializeCanvasVariables() {
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
+
+    ; Initialize with valid numeric defaults to prevent "invalid value" errors
+    wideCanvasLeft := 0
+    wideCanvasTop := 0
+    wideCanvasRight := 1920
+    wideCanvasBottom := 1080
+    isWideCanvasCalibrated := false
+
+    narrowCanvasLeft := 240
+    narrowCanvasTop := 0
+    narrowCanvasRight := 1680
+    narrowCanvasBottom := 1080
+    isNarrowCanvasCalibrated := false
+
+    userCanvasLeft := 0
+    userCanvasTop := 0
+    userCanvasRight := 1920
+    userCanvasBottom := 1080
+    isCanvasCalibrated := false
+
+}
+
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
-        ; Initialize core systems
-        InitializeDirectories()
-        InitializeConfigSystem()  ; Initialize config system and clean up locks
-        InitializeVariables()
-        InitializeCSVFile()
-        InitializeStatsSystem()
-        InitializeOfflineDataFiles()  ; Initialize offline data storage
+        ; Initialize core systems with debugging
+        try {
+            InitializeDirectories()
+        } catch Error as e {
+            UpdateStatus("❌ Directory initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeConfigSystem()  ; Initialize config system and clean up locks
+        } catch Error as e {
+            UpdateStatus("❌ Config system initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeVariables()
+        } catch Error as e {
+            UpdateStatus("❌ Variable initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeCanvasVariables()  ; Initialize canvas variables BEFORE loading config
+        } catch Error as e {
+            UpdateStatus("❌ Canvas variable initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeCSVFile()
+        } catch Error as e {
+            UpdateStatus("❌ CSV file initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeStatsSystem()
+        } catch Error as e {
+            UpdateStatus("❌ Stats system initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeOfflineDataFiles()  ; Initialize offline data storage
+        } catch Error as e {
+            UpdateStatus("❌ Offline data files initialization failed: " . e.Message)
+            throw e
+        }
+
         ; Legacy execution data loading removed - CSV system handles all stats
-        InitializeJsonAnnotations()
-        InitializeVisualizationSystem()  ; Initialize GDI+ BEFORE GUI creation
-        InitializeWASDHotkeys()  ; Initialize WASD hotkey mappings
+
+        try {
+            InitializeJsonAnnotations()
+        } catch Error as e {
+            UpdateStatus("❌ JSON annotations initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeVisualizationSystem()  ; Initialize GDI+ BEFORE GUI creation
+        } catch Error as e {
+            UpdateStatus("❌ Visualization system initialization failed: " . e.Message)
+            throw e
+        }
+
+        try {
+            InitializeWASDHotkeys()  ; Initialize WASD hotkey mappings
+        } catch Error as e {
+            UpdateStatus("❌ WASD hotkeys initialization failed: " . e.Message)
+            throw e
+        }
 
         ; Initialize real-time session
         InitializeRealtimeSession()
@@ -533,6 +662,26 @@ Main() {
 
         ; Load configuration (after GUI is created so mode toggle button can be updated)
         LoadConfig()
+
+        ; Apply loaded settings to GUI now that it's fully initialized
+        ApplyLoadedSettingsToGUI()
+
+        ; Switch active canvas based on loaded annotation mode
+        global annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom
+        global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
+        global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
+
+        if (annotationMode = "Narrow") {
+            userCanvasLeft := narrowCanvasLeft
+            userCanvasTop := narrowCanvasTop
+            userCanvasRight := narrowCanvasRight
+            userCanvasBottom := narrowCanvasBottom
+        } else {
+            userCanvasLeft := wideCanvasLeft
+            userCanvasTop := wideCanvasTop
+            userCanvasRight := wideCanvasRight
+            userCanvasBottom := wideCanvasBottom
+        }
 
         ; Ensure totalLayers is always a valid integer after loading config
         global totalLayers := EnsureInteger(totalLayers, 5)
@@ -687,7 +836,6 @@ InitializeDirectories() {
                 if (DirExist(testDir)) {
                     ; Update global thumbnail directory to working path
                     thumbnailDir := testDir
-                    UpdateStatus("📁 Using alternate thumbnail directory: " . testDir)
                     return
                 }
             } catch {
@@ -723,8 +871,6 @@ InitializeJsonAnnotations() {
 
     ; Assign JSON profiles to layer 6 buttons for immediate access
     AssignJsonProfilesToLayer6()
-
-    UpdateStatus("📋 JSON annotations initialized for " . jsonAnnotations.Count . " presets")
 }
 
 BuildJsonAnnotation(mode, categoryId, severity) {
@@ -800,8 +946,6 @@ AssignJsonProfilesToLayer6() {
             }
         }
     }
-
-    UpdateStatus("✅ JSON profiles assigned to layer 6 buttons")
 }
 
 ; ===== CLEANUP AND EXIT FUNCTIONS =====
@@ -844,7 +988,7 @@ CleanupAndExit() {
         AggregateMetrics()
 
     } catch Error as e {
-        MsgBox("⚠️ Error during cleanup: " . e.Message, "Cleanup Error", "Icon!")
+        ; Silently continue on cleanup errors
     }
 }
 
@@ -860,8 +1004,8 @@ AutoSave() {
     if (!recording && !breakMode) {
         try {
             SaveConfig()
-        } catch Error as e {
-            UpdateStatus("⚠️ Auto-save failed: " . e.Message)
+        } catch {
+            ; Silently continue if auto-save fails
         }
     }
 }
@@ -945,33 +1089,26 @@ ValidateConfigIntegrity() {
 
         ; Basic validation
         if (content = "") {
-            UpdateStatus("⚠️ Configuration file is empty - will use defaults on next load")
             return
         }
 
         ; Check for basic structure
         if (!InStr(content, "[Settings]") && !InStr(content, "[Macros]")) {
-            UpdateStatus("⚠️ Configuration file structure is invalid - will attempt recovery on next load")
             return
         }
 
         ; Check file size (too small or too large might indicate corruption)
         fileSize := FileGetSize(configFile)
         if (fileSize < 100) {
-            UpdateStatus("⚠️ Configuration file is too small - may be corrupted")
             return
         }
 
         if (fileSize > 10485760) { ; 10MB limit
-            UpdateStatus("⚠️ Configuration file is unusually large - may be corrupted")
             return
         }
 
-        ; If we get here, config appears valid
-        ; UpdateStatus("✅ Configuration integrity check passed")
-
-    } catch Error as e {
-        UpdateStatus("⚠️ Configuration integrity check failed: " . e.Message)
+    } catch {
+        ; Silently continue if integrity check fails
     }
 }
 

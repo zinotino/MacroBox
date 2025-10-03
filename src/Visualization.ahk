@@ -313,30 +313,15 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         }
     }
 
-    ; ENHANCED DIAGNOSTIC: Log detailed canvas detection metrics
-    debugInfo := "Canvas Detection: "
-    debugInfo .= "EffectiveMode=" . effectiveMode . " (stored=" . storedMode . ", current=" . annotationMode . ") "
-    debugInfo .= "Recorded(" . Round(minX) . "," . Round(minY) . " to " . Round(maxX) . "," . Round(maxY) . ") "
-    debugInfo .= "Aspect:" . Round(recordedAspectRatio, 2) . " "
-
-    if (fitsInWideCanvas) {
-        debugInfo .= "WideOK(" . Round(wideCoverage * 100, 1) . "%) "
-    }
-    if (fitsInNarrowCanvas) {
-        debugInfo .= "NarrowOK(" . Round(narrowCoverage * 100, 1) . "%) "
-    }
-
-    if (useWideCanvas) {
-        debugInfo .= "→ WIDE canvas selected"
-    } else if (useNarrowCanvas) {
-        debugInfo .= "→ NARROW canvas selected"
-    } else {
-        debugInfo .= "→ LEGACY fallback (coordinates exceed canvas bounds)"
-    }
-    ; Enable diagnostic output temporarily
-    UpdateStatus(debugInfo)
-
     ; Store diagnostic info globally for testing
+    debugInfo := "Canvas: " . effectiveMode
+    if (useWideCanvas) {
+        debugInfo .= " (Wide)"
+    } else if (useNarrowCanvas) {
+        debugInfo .= " (Narrow)"
+    } else {
+        debugInfo .= " (Legacy)"
+    }
     global lastCanvasDetection := debugInfo
 
     ; Choose appropriate canvas configuration based on recorded macro characteristics
@@ -604,13 +589,12 @@ InitializeVisualizationSystem() {
             result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiPlusToken, "Ptr", si, "Ptr", 0)
             if (result = 0) {
                 gdiPlusInitialized := true
-                UpdateStatus("Visualization system initialized")
             } else {
-                UpdateStatus("Warning: GDI+ initialization failed (code: " . result . ")")
+                UpdateStatus("⚠️ GDI+ initialization failed")
                 gdiPlusInitialized := false
             }
         } catch Error as e {
-            UpdateStatus("Error: GDI+ startup failed - " . e.Message)
+            UpdateStatus("⚠️ GDI+ startup failed")
             gdiPlusInitialized := false
         }
     }

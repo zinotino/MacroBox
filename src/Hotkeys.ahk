@@ -3,9 +3,6 @@
 ; Dependencies: Core.ahk (for global variables), GUI.ahk (for UpdateButtonLabelsWithWASD, UpdateButtonAppearance)
 
 ; ===== HOTKEY PROFILE SYSTEM =====
-global hotkeyProfileActive := true  ; Enable WASD hotkeys by default
-global capsLockPressed := false
-global wasdHotkeyMap := Map()
 
 ; Initialize WASD hotkey mappings
 InitializeWASDHotkeys() {
@@ -98,12 +95,10 @@ ToggleHotkeyProfile() {
 
     if (hotkeyProfileActive) {
         SetupWASDHotkeys()
-        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED - CapsLock + 1 2 3 q w e a s d z x c enabled")
-        ; Flash status to make it more visible
-        SetTimer(() => UpdateStatus("✅ WASD Profile ACTIVE - Try CapsLock+W to test"), -2000)
+        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED")
     } else {
         DisableWASDHotkeys()
-        UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED - Numpad mode restored")
+        UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED")
     }
 
     ; Update labels immediately when profile state changes
@@ -132,17 +127,16 @@ SetupWASDHotkeys() {
             try {
                 hotkeyCombo := "CapsLock & " . wasdKey
                 Hotkey(hotkeyCombo, ExecuteWASDMacro.Bind(numpadKey), "On")
-            } catch Error as keyError {
+            } catch {
                 ; Skip individual key conflicts but continue with others
-                UpdateStatus("⚠️ Skipped conflicted hotkey: CapsLock & " . wasdKey)
             }
         }
 
         ; Regular standalone keys are only enabled when WASD mode is toggled on
         ; This prevents accidental macro execution when typing normally
 
-    } catch Error as e {
-        UpdateStatus("⚠️ WASD hotkey setup failed: " . e.Message)
+    } catch {
+        ; Silent fail
     }
 }
 
@@ -172,8 +166,8 @@ DisableWASDHotkeys() {
         ; Restore normal CapsLock functionality when profile is disabled
         SetCapsLockState("Off")
 
-    } catch Error as e {
-        UpdateStatus("⚠️ WASD hotkey disable failed: " . e.Message)
+    } catch {
+        ; Silent fail
     }
 }
 
@@ -205,14 +199,12 @@ ExecuteWASDMacro(buttonName, *) {
 
     ; Enhanced validation with better user feedback
     if (!hotkeyProfileActive) {
-        UpdateStatus("⚠️ WASD hotkeys disabled - Press Ctrl+H to activate WASD profile")
         return
     }
 
     ; Note: CapsLock modifier is already enforced by "CapsLock & key" syntax
     ; No need to check capsLockPressed state since hotkey won't trigger without CapsLock
 
-    UpdateStatus("🎹 WASD: CapsLock+" . RegExReplace(buttonName, "Num", "") . " → " . buttonName)
     SafeExecuteMacroByKey(buttonName)
 }
 
@@ -320,9 +312,8 @@ SetupHotkeys() {
             Hotkey(hotkeyEmergency, (*) => EmergencyStop())
         }
 
-        UpdateStatus("✅ Hotkeys configured - F9 isolated for recording only, WASD + CapsLock support added")
     } catch Error as e {
-        UpdateStatus("⚠️ Hotkey setup failed: " . e.Message)
+        UpdateStatus("⚠️ Hotkey setup failed")
         MsgBox("Hotkey error: " . e.Message, "Setup Error", "Icon!")
     }
 }

@@ -313,8 +313,6 @@ DiagnoseConfigSystem() {
 TestConfigSystem() {
     global macroEvents, buttonNames, currentLayer, totalLayers
     
-    UpdateStatus("🔬 Starting config system test...")
-    
     ; Step 1: Count current macros
     originalCount := 0
     Loop Integer(totalLayers) {
@@ -326,13 +324,10 @@ TestConfigSystem() {
             }
         }
     }
-    
-    UpdateStatus("🔬 Original macro count: " . originalCount)
-    
+
     ; Step 2: Force save
     try {
         SaveConfig()
-        UpdateStatus("✅ Save completed")
     } catch Error as e {
         MsgBox("Save test FAILED!`n`n" . e.Message, "Test Failed", "Icon!")
         return
@@ -362,16 +357,14 @@ TestConfigSystem() {
             }
         }
     }
-    
+
     RefreshAllButtonAppearances()
-    UpdateStatus("🗑️ Cleared in-memory macros")
-    
+
     Sleep(500)
-    
+
     ; Step 5: Force load
     try {
         LoadConfig()
-        UpdateStatus("✅ Load completed")
     } catch Error as e {
         MsgBox("Load test FAILED!`n`n" . e.Message, "Test Failed", "Icon!")
         return
@@ -428,22 +421,20 @@ RepairConfigSystem() {
         lockFile := workDir . "\config.lock"
         if (FileExist(lockFile)) {
             FileDelete(lockFile)
-            UpdateStatus("🔓 Removed stuck lock file")
         }
-        
+
         ; Delete old config files
         CleanupOldConfigFiles()
-        
+
         ; Create fresh backup of current config
         if (FileExist(configFile)) {
             backupFile := configFile . ".pre-repair." . FormatTime(A_Now, "yyyyMMdd_HHmmss")
             FileCopy(configFile, backupFile, 0)
-            UpdateStatus("💾 Created pre-repair backup")
         }
-        
+
         ; Force save current state
         SaveConfig()
-        UpdateStatus("✅ Rebuilt config from memory")
+        UpdateStatus("✅ Config system repaired")
         
         ; Verify
         if (FileExist(configFile)) {
@@ -481,11 +472,9 @@ SaveToSlot(slotNumber) {
         ; Save slot info
         slotInfo := "Slot " . slotNumber . " - Saved: " . FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
         FileAppend(slotInfo, slotDir . "\slot_info.txt")
-        
-        UpdateStatus("💾 Saved to slot " . slotNumber)
-        
+
     } catch Error as e {
-        UpdateStatus("⚠️ Save to slot failed: " . e.Message)
+        UpdateStatus("⚠️ Slot save failed: " . e.Message)
     }
 }
 
@@ -494,28 +483,27 @@ LoadFromSlot(slotNumber) {
     
     try {
         slotDir := workDir . "\slots\slot_" . slotNumber
-        
+
         if (!DirExist(slotDir) || !FileExist(slotDir . "\config.ini")) {
-            UpdateStatus("⚠️ Slot " . slotNumber . " is empty")
             return false
         }
-        
+
         ; Copy slot config to current
         FileCopy(slotDir . "\config.ini", configFile, true)
-        
+
         LoadConfig()
-        
+
         ; Refresh UI
         for buttonName in buttonNames {
             UpdateButtonAppearance(buttonName)
         }
         SwitchLayer("")
-        
+
         UpdateStatus("📂 Loaded from slot " . slotNumber)
         return true
-        
+
     } catch Error as e {
-        UpdateStatus("⚠️ Load from slot failed: " . e.Message)
+        UpdateStatus("⚠️ Slot load failed: " . e.Message)
         return false
     }
 }
@@ -539,13 +527,12 @@ ExportConfiguration() {
         
         ; Copy current config to export location
         FileCopy(configFile, exportFile, 1)
-        
+
         MsgBox("✅ Configuration exported successfully!`n`nFile: " . exportFile, "Export Complete", "Icon!")
-        UpdateStatus("📤 Configuration exported")
-        
+
     } catch Error as e {
         MsgBox("❌ Export failed: " . e.Message, "Export Error", "Icon!")
-        UpdateStatus("⚠️ Export failed: " . e.Message)
+        UpdateStatus("⚠️ Export failed")
     }
 }
 
@@ -577,13 +564,12 @@ ImportConfiguration() {
         ; Load new config
         LoadConfig()
         RefreshAllButtonAppearances()
-        
+
         MsgBox("✅ Configuration imported successfully!`n`nBackup saved to:`n" . backupFile, "Import Complete", "Icon!")
-        UpdateStatus("📥 Configuration imported")
-        
+
     } catch Error as e {
         MsgBox("❌ Import failed: " . e.Message, "Import Error", "Icon!")
-        UpdateStatus("⚠️ Import failed: " . e.Message)
+        UpdateStatus("⚠️ Import failed")
     }
 }
 
@@ -680,13 +666,12 @@ CreateMacroPack() {
         }
         
         FileAppend(macrosContent, packDir . "\macros.ini", "UTF-8")
-        
+
         MsgBox("✅ Macro pack created successfully!`n`nPack: " . packName.Value . "`nMacros: " . macroCount . "`n`nLocation: " . packDir, "Pack Created", "Icon!")
-        UpdateStatus("📦 Created macro pack: " . packName.Value)
-        
+
     } catch Error as e {
         MsgBox("❌ Failed to create macro pack: " . e.Message, "Pack Error", "Icon!")
-        UpdateStatus("⚠️ Pack creation failed: " . e.Message)
+        UpdateStatus("⚠️ Pack creation failed")
     }
 }
 
@@ -776,13 +761,12 @@ ImportMacroPack() {
         
         ; Refresh UI
         RefreshAllButtonAppearances()
-        
+
         MsgBox("✅ Macro pack imported successfully!`n`nPack: " . packName . "`nMacros imported: " . importedMacros, "Import Complete", "Icon!")
-        UpdateStatus("📥 Imported pack: " . packName)
-        
+
     } catch Error as e {
         MsgBox("❌ Failed to import macro pack: " . e.Message, "Import Error", "Icon!")
-        UpdateStatus("⚠️ Pack import failed: " . e.Message)
+        UpdateStatus("⚠️ Pack import failed")
     }
 }
 
@@ -801,7 +785,6 @@ InitializeConfigSystem() {
     if (FileExist(lockFile)) {
         try {
             FileDelete(lockFile)
-            UpdateStatus("🔓 Cleaned up stuck lock from previous session")
         } catch {
             ; Ignore
         }
@@ -818,8 +801,6 @@ SetupConfigTestHotkeys() {
 
     ; Ctrl+Shift+F12 - Emergency Repair
     Hotkey("^+F12", (*) => RepairConfigSystem())
-
-    UpdateStatus("🔧 Config test hotkeys enabled: F10=Diagnostics, F11=Test, Ctrl+Shift+F12=Repair")
 }
 
 ; ===== CONFIGURATION LOAD/SAVE FUNCTIONS =====
@@ -835,13 +816,13 @@ LoadConfig() {
         if !DirExist(configDir) {
             DirCreate(configDir)
             if !DirExist(configDir) {
+                UpdateStatus("❌ Failed to create config directory")
                 throw Error("Failed to create config directory: " . configDir)
             }
         }
 
         ; Check if config file exists
         if !FileExist(configFile) {
-            UpdateStatus("📚 No config file found, using defaults")
             return
         }
 
@@ -850,10 +831,9 @@ LoadConfig() {
 
         ; Validate config content
         if (!ValidateConfigData(content)) {
-            UpdateStatus("⚠️ Config file validation failed - using defaults")
+            UpdateStatus("⚠️ Config validation failed - using defaults")
             return
         }
-
         lines := StrSplit(content, "`n")
 
         currentSection := ""
@@ -961,6 +941,13 @@ LoadConfig() {
                     case "AutoSettings":
                         ProcessButtonAutoSetting(key, value)
 
+                    case "Thumbnails":
+                        ; Restore thumbnails (only file paths, not HBITMAP handles)
+                        global buttonThumbnails
+                        if (FileExist(value)) {
+                            buttonThumbnails[key] := value
+                        }
+
                     case "Canvas":
                         ; Process canvas section (matches original implementation)
                         switch key {
@@ -984,88 +971,176 @@ LoadConfig() {
             }
         }
 
-        UpdateStatus("📚 Configuration loaded from " . configFile . " - " . macrosLoaded . " macros, " . settingsLoaded . " settings")
+        ; VALIDATE LOADED CANVAS VALUES - ensure they are valid to prevent visualization failures
+        try {
+            ValidateAndFixCanvasValues()
+        } catch Error as canvasError {
+            UpdateStatus("⚠️ Canvas validation failed")
+            throw canvasError
+        }
 
-        ; Apply loaded settings to GUI
-        ApplyLoadedSettingsToGUI()
+        UpdateStatus("📚 Configuration loaded - " . macrosLoaded . " macros")
+
+        ; DEFER GUI settings application until GUI is confirmed ready
+        ; ApplyLoadedSettingsToGUI() will be called separately after GUI initialization
 
     } catch Error as e {
         UpdateStatus("❌ Configuration load failed: " . e.Message)
+        throw e  ; Re-throw to catch in Main()
     }
 }
 
 ApplyLoadedSettingsToGUI() {
     try {
+        ; CRITICAL: Ensure GUI is fully initialized before applying settings
+        global mainGui, statusBar, modeToggleBtn, layerIndicator, scaleFactor, darkMode, annotationMode, currentLayer, hotkeyProfileActive, wasdLabelsEnabled
+        if (!mainGui || !IsObject(mainGui)) {
+            return
+        }
+
         ; Apply dark mode to main GUI
         if (mainGui) {
-            mainGui.BackColor := darkMode ? "0x2D2D2D" : "0xF0F0F0"
-            mainGui.SetFont("s" . Round(10 * scaleFactor), darkMode ? "c0xFFFFFF" : "c0x000000")
-            mainGui.Redraw()
+            try {
+                mainGui.BackColor := darkMode ? "0x2D2D2D" : "0xF0F0F0"
+            } catch {
+                ; Silent fail
+            }
+
+            try {
+                ; Check scaleFactor before using it
+                if (!IsNumber(scaleFactor) || scaleFactor <= 0) {
+                    scaleFactor := 1.0
+                }
+                fontSize := Round(10 * scaleFactor)
+                mainGui.SetFont("s" . fontSize, darkMode ? "c0xFFFFFF" : "c0x000000")
+            } catch {
+                ; Silent fail
+            }
         }
 
         ; Update status bar color
         if (statusBar) {
-            statusBar.Opt("c" . (darkMode ? "White" : "Black"))
-            statusBar.Redraw()
+            try {
+                statusBar.Opt("c" . (darkMode ? "White" : "Black"))
+                statusBar.Redraw()
+            } catch {
+                ; Silent fail
+            }
         }
 
         ; Update toolbar background
         if (mainGui && mainGui.HasOwnProp("tbBg")) {
-            mainGui.tbBg.BackColor := darkMode ? "0x1E1E1E" : "0xE8E8E8"
-            mainGui.tbBg.Redraw()
+            try {
+                mainGui.tbBg.BackColor := darkMode ? "0x1E1E1E" : "0xE8E8E8"
+                mainGui.tbBg.Redraw()
+            } catch {
+                ; Silent fail
+            }
         }
 
         ; Update mode toggle button
         if (modeToggleBtn && IsObject(modeToggleBtn)) {
-            if (annotationMode = "Narrow") {
-                modeToggleBtn.Text := "📱 Narrow"
-                modeToggleBtn.Opt("+Background0xFF8C00")
-            } else {
-                modeToggleBtn.Text := "🔦 Wide"
-                modeToggleBtn.Opt("+Background0x4169E1")
+            try {
+                if (annotationMode = "Narrow") {
+                    modeToggleBtn.Text := "📱 Narrow"
+                    modeToggleBtn.Opt("+Background0xFF8C00 +cWhite")
+                } else {
+                    modeToggleBtn.Text := "🔦 Wide"
+                    modeToggleBtn.Opt("+Background0x4169E1 +cWhite")
+                }
+                modeToggleBtn.Redraw()
+            } catch {
+                ; Silent fail
             }
-            modeToggleBtn.SetFont(, "cWhite")
-            modeToggleBtn.Redraw()
         }
 
         ; Update layer indicator
         if (layerIndicator) {
-            layerIndicator.Opt("c" . (darkMode ? "White" : "Black"))
-            layerIndicator.Text := "Layer " . currentLayer
-            layerIndicator.Redraw()
+            try {
+                layerIndicator.Opt("c" . (darkMode ? "White" : "Black"))
+                layerIndicator.Text := "Layer " . currentLayer
+                layerIndicator.Redraw()
+            } catch {
+                ; Silent fail
+            }
         }
 
         ; Switch to loaded layer
-        SwitchLayer("")
+        try {
+            SwitchLayer("")
+        } catch {
+            ; Silent fail
+        }
 
         ; Refresh all button appearances
-        RefreshAllButtonAppearances()
+        try {
+            RefreshAllButtonAppearances()
+        } catch {
+            ; Silent fail
+        }
 
         ; Restore WASD state
         if (hotkeyProfileActive) {
-            SetupWASDHotkeys()
-            UpdateStatus("🎹 WASD Hotkey Profile restored from config - CapsLock combinations active")
+            try {
+                SetupWASDHotkeys()
+                UpdateStatus("🎹 WASD Hotkey Profile restored")
+            } catch Error as wasdError {
+                UpdateStatus("⚠️ Failed to setup WASD hotkeys")
+            }
         }
 
         ; Update button labels with WASD
-        UpdateButtonLabelsWithWASD()
+        try {
+            UpdateButtonLabelsWithWASD()
+        } catch {
+            ; Silent fail
+        }
 
         ; Update grid outline
-        UpdateGridOutlineColor()
+        try {
+            UpdateGridOutlineColor()
+        } catch {
+            ; Silent fail
+        }
 
         ; Refresh again for WASD labels
-        RefreshAllButtonAppearances()
+        try {
+            RefreshAllButtonAppearances()
+        } catch {
+            ; Silent fail
+        }
 
         ; Update emergency button text
-        UpdateEmergencyButtonText()
+        try {
+            UpdateEmergencyButtonText()
+        } catch {
+            ; Silent fail
+        }
 
     } catch Error as e {
-        UpdateStatus("⚠️ Failed to apply loaded settings to GUI: " . e.Message)
+        UpdateStatus("❌ Failed to apply loaded settings to GUI: " . e.Message)
+        ; Re-throw to catch in Main()
+        throw e
     }
 }
 
 SaveConfig() {
-    global workDir
+    global workDir, configFile
+    global currentLayer, totalLayers, annotationMode, darkMode
+    global windowWidth, windowHeight, scaleFactor, minWindowWidth, minWindowHeight
+    global canvasWidth, canvasHeight, canvasType, canvasAspectRatio
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode
+    global hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext, hotkeyProfileActive, wasdLabelsEnabled
+    global corpVisualizationMethod, corporateEnvironmentDetected
+    global autoExecutionMode, autoExecutionButton, autoExecutionInterval, autoExecutionMaxCount
+    global layerNames, layerBorderColors
+    global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
+    global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
+    global smartBoxClickDelay, smartMenuClickDelay
+    global macroEvents, buttonNames, buttonCustomLabels, buttonAutoSettings
     local macrosSaved := 0, settingsSaved := 0
 
     try {
@@ -1204,29 +1279,111 @@ SaveConfig() {
 
         ; Labels section
         content .= "`n[Labels]`n"
-        for buttonName, label in buttonCustomLabels {
-            if (label != "") {
-                content .= buttonName . "=" . label . "`n"
+        if (IsSet(buttonCustomLabels) && Type(buttonCustomLabels) = "Map") {
+            for buttonName, label in buttonCustomLabels {
+                try {
+                    if (IsSet(label) && label != "") {
+                        content .= buttonName . "=" . label . "`n"
+                    }
+                } catch {
+                    continue
+                }
             }
         }
 
         ; Auto settings section
         content .= "`n[AutoSettings]`n"
-        for buttonKey, settings in buttonAutoSettings {
-            if (settings.enabled) {
-                content .= buttonKey . "=" . (settings.enabled ? "1" : "0") . "," . settings.interval . "," . settings.maxCount . "`n"
+        if (IsSet(buttonAutoSettings) && Type(buttonAutoSettings) = "Map") {
+            for buttonKey, settings in buttonAutoSettings {
+                try {
+                    if (IsSet(settings) && IsObject(settings) && settings.HasOwnProp("enabled") && settings.enabled) {
+                        content .= buttonKey . "=" . (settings.enabled ? "1" : "0") . "," . settings.interval . "," . settings.maxCount . "`n"
+                    }
+                } catch {
+                    continue
+                }
             }
         }
 
-        ; Write to file
-        file := FileOpen(configFile, "w", "UTF-8")
-        file.Write(content)
-        file.Close()
+        ; Thumbnails section - save custom thumbnails for persistence
+        content .= "`n[Thumbnails]`n"
+        global buttonThumbnails
+        if (IsSet(buttonThumbnails) && Type(buttonThumbnails) = "Map") {
+            for buttonKey, thumbnailPath in buttonThumbnails {
+                ; Validate entry before accessing
+                try {
+                    if (IsSet(thumbnailPath) && thumbnailPath != "" && Type(thumbnailPath) = "String" && FileExist(thumbnailPath)) {
+                        content .= buttonKey . "=" . thumbnailPath . "`n"
+                    }
+                } catch {
+                    ; Skip entries with no value or invalid type
+                    continue
+                }
+            }
+        }
 
-        UpdateStatus("💾 Configuration saved to " . configFile . " - " . macrosSaved . " macros, " . settingsSaved . " settings")
+        ; Write to file with verification
+        try {
+            ; Write to temp file first for atomic save
+            tempFile := configFile . ".tmp"
+            file := FileOpen(tempFile, "w", "UTF-8")
+            if (!file) {
+                throw Error("Failed to open temp file for writing: " . tempFile)
+            }
+            file.Write(content)
+            file.Close()
+
+            ; Verify temp file was written
+            if (!FileExist(tempFile)) {
+                throw Error("Temp file was not created: " . tempFile)
+            }
+
+            ; Atomic replace: backup old config, move temp to config
+            if (FileExist(configFile)) {
+                backupFile := configFile . ".backup"
+                try {
+                    FileDelete(backupFile)
+                } catch {
+                    ; Ignore if backup doesn't exist
+                }
+                FileCopy(configFile, backupFile, 1)
+            }
+
+            FileMove(tempFile, configFile, 1)
+
+            ; Verify final file
+            if (!FileExist(configFile)) {
+                throw Error("Config file was not created after move: " . configFile)
+            }
+
+            UpdateStatus("💾 Configuration saved - " . macrosSaved . " macros")
+
+            ; Log successful save
+            try {
+                logFile := workDir . "\save_log.txt"
+                logContent := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss") . " - Config saved: " . macrosSaved . " macros, " . settingsSaved . " settings`n"
+                FileAppend(logContent, logFile, "UTF-8")
+            } catch {
+                ; Ignore logging errors
+            }
+
+        } catch Error as writeError {
+            UpdateStatus("❌ File write failed: " . writeError.Message)
+            throw writeError  ; Re-throw to catch in outer handler
+        }
 
     } catch Error as e {
         UpdateStatus("❌ Configuration save failed: " . e.Message)
+        ; Log critical save failure
+        try {
+            logFile := workDir . "\save_log.txt"
+            logContent := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss") . " - SAVE FAILED: " . e.Message . "`n"
+            FileAppend(logContent, logFile, "UTF-8")
+        } catch {
+            ; Can't even log - show message box
+            MsgBox("CRITICAL: Failed to save configuration and couldn't write to log!`n`nError: " . e.Message, "Save Error", "Icon!")
+        }
+        throw e  ; Re-throw so caller knows save failed
     }
 }
 
@@ -1281,4 +1438,124 @@ VerifyConfigPaths() {
 
 LoadWASDMappingsFromFile() {
     ; Placeholder - implement as needed
+}
+
+; ===== VALIDATE LOADED CANVAS VALUES =====
+ValidateLoadedCanvasValues() {
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
+    global hbitmapCache
+
+    ; Track if any canvas values were reset
+    canvasReset := false
+
+    ; Validate wide canvas
+    if (!IsNumber(wideCanvasLeft) || !IsNumber(wideCanvasTop) || !IsNumber(wideCanvasRight) || !IsNumber(wideCanvasBottom) ||
+        wideCanvasRight <= wideCanvasLeft || wideCanvasBottom <= wideCanvasTop) {
+        wideCanvasLeft := 0
+        wideCanvasTop := 0
+        wideCanvasRight := 1920
+        wideCanvasBottom := 1080
+        isWideCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; Validate narrow canvas
+    if (!IsNumber(narrowCanvasLeft) || !IsNumber(narrowCanvasTop) || !IsNumber(narrowCanvasRight) || !IsNumber(narrowCanvasBottom) ||
+        narrowCanvasRight <= narrowCanvasLeft || narrowCanvasBottom <= narrowCanvasTop) {
+        narrowCanvasLeft := 240
+        narrowCanvasTop := 0
+        narrowCanvasRight := 1680
+        narrowCanvasBottom := 1080
+        isNarrowCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; Validate user canvas
+    if (!IsNumber(userCanvasLeft) || !IsNumber(userCanvasTop) || !IsNumber(userCanvasRight) || !IsNumber(userCanvasBottom) ||
+        userCanvasRight <= userCanvasLeft || userCanvasBottom <= userCanvasTop) {
+        userCanvasLeft := 0
+        userCanvasTop := 0
+        userCanvasRight := 1920
+        userCanvasBottom := 1080
+        isCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; If any canvas values were reset, clear the HBITMAP cache since cached visualizations may be invalid
+    if (canvasReset && IsObject(hbitmapCache)) {
+        for cacheKey, hbitmap in hbitmapCache {
+            if (hbitmap && hbitmap != 0) {
+                try {
+                    DllCall("DeleteObject", "Ptr", hbitmap)
+                } catch {
+                    ; Ignore cleanup errors
+                }
+            }
+        }
+        hbitmapCache := Map()
+    }
+}
+
+; ===== CANVAS VALIDATION =====
+ValidateAndFixCanvasValues() {
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
+    global hbitmapCache
+
+    ; Track if any canvas values were reset
+    canvasReset := false
+
+    ; Validate wide canvas
+    if (!IsNumber(wideCanvasLeft) || !IsNumber(wideCanvasTop) || !IsNumber(wideCanvasRight) || !IsNumber(wideCanvasBottom) ||
+        wideCanvasRight <= wideCanvasLeft || wideCanvasBottom <= wideCanvasTop) {
+        wideCanvasLeft := 0
+        wideCanvasTop := 0
+        wideCanvasRight := 1920
+        wideCanvasBottom := 1080
+        isWideCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; Validate narrow canvas
+    if (!IsNumber(narrowCanvasLeft) || !IsNumber(narrowCanvasTop) || !IsNumber(narrowCanvasRight) || !IsNumber(narrowCanvasBottom) ||
+        narrowCanvasRight <= narrowCanvasLeft || narrowCanvasBottom <= narrowCanvasTop) {
+        narrowCanvasLeft := 240
+        narrowCanvasTop := 0
+        narrowCanvasRight := 1680
+        narrowCanvasBottom := 1080
+        isNarrowCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; Validate user canvas
+    if (!IsNumber(userCanvasLeft) || !IsNumber(userCanvasTop) || !IsNumber(userCanvasRight) || !IsNumber(userCanvasBottom) ||
+        userCanvasRight <= userCanvasLeft || userCanvasBottom <= userCanvasTop) {
+        userCanvasLeft := 0
+        userCanvasTop := 0
+        userCanvasRight := 1920
+        userCanvasBottom := 1080
+        isCanvasCalibrated := false
+        canvasReset := true
+    }
+
+    ; If any canvas values were reset, clear the HBITMAP cache since cached visualizations may be invalid
+    if (canvasReset && IsObject(hbitmapCache)) {
+        for cacheKey, hbitmap in hbitmapCache {
+            if (hbitmap && hbitmap != 0) {
+                try {
+                    DllCall("DeleteObject", "Ptr", hbitmap)
+                } catch {
+                    ; Ignore cleanup errors
+                }
+            }
+        }
+        hbitmapCache := Map()
+    }
+
+    if (canvasReset) {
+        UpdateStatus("⚠️ Canvas values were reset")
+    }
 }

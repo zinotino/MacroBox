@@ -11,9 +11,6 @@ AssignJsonAnnotation(buttonName, presetName, *) {
     currentMode := annotationMode
     fullPresetName := presetName . (currentMode = "Narrow" ? " Narrow" : "")
 
-    ; Debug logging
-    UpdateStatus("🎨 Assigning " . fullPresetName . " in " . currentMode . " mode")
-
     if (jsonAnnotations.Has(fullPresetName)) {
         parts := StrSplit(presetName, " (")
         typeName := parts[1]
@@ -37,15 +34,10 @@ AssignJsonAnnotation(buttonName, presetName, *) {
             }]
             UpdateButtonAppearance(buttonName)
             SaveConfig()
-            UpdateStatus("🏷️ Assigned " . currentMode . " " . presetName . " to " . buttonName)
-        } else {
-            UpdateStatus("❌ Could not find category ID for " . typeName)
+            UpdateStatus("🏷️ Assigned " . presetName . " to " . buttonName)
         }
     } else {
-        UpdateStatus("❌ Could not find JSON annotation for " . fullPresetName)
-
-        ; Debug: Show what's available
-        UpdateStatus("🔍 Available modes: Wide=" . jsonAnnotations.Has(presetName) . ", Narrow=" . jsonAnnotations.Has(presetName . " Narrow"))
+        UpdateStatus("❌ Annotation not found")
     }
 }
 
@@ -64,7 +56,7 @@ ToggleAutoEnable(buttonName, *) {
     if (buttonAutoSettings.Has(buttonKey)) {
         ; Settings exist - toggle enable state
         buttonAutoSettings[buttonKey].enabled := !buttonAutoSettings[buttonKey].enabled
-        status := buttonAutoSettings[buttonKey].enabled ? "✅ Auto mode enabled for " : "❌ Auto mode disabled for "
+        status := buttonAutoSettings[buttonKey].enabled ? "✅ Auto enabled: " : "❌ Auto disabled: "
         UpdateStatus(status . buttonName)
     } else {
         ; No settings exist - create with global defaults and enable
@@ -73,7 +65,7 @@ ToggleAutoEnable(buttonName, *) {
             interval: autoExecutionInterval,  ; Use global default
             maxCount: 0                        ; infinite default
         }
-        UpdateStatus("✅ Auto mode enabled for " . buttonName . " (default settings)")
+        UpdateStatus("✅ Auto enabled: " . buttonName)
     }
 
     ; Update button appearance and save
@@ -151,12 +143,12 @@ SaveAutoSettings(configDialog, buttonKey, enableCheck, intervalEdit, countEdit, 
 GetButtonThumbnailSize() {
     global windowWidth, windowHeight, scaleFactor
 
-    ; Calculate based on CreateButtonGrid logic
-    margin := 12
+    ; ✅ Use EXACT same values as CreateButtonGrid for consistency
+    margin := 8           ; Changed from 12 to match CreateButtonGrid
     padding := 4
-    toolbarHeight := Round(45 * scaleFactor)
-    gridTopPadding := 8
-    gridBottomPadding := 50
+    toolbarHeight := Round(35 * scaleFactor)  ; Changed from 45
+    gridTopPadding := 4       ; Changed from 8
+    gridBottomPadding := 30   ; Changed from 50
 
     gridWidth := windowWidth - 2 * margin
     gridHeight := windowHeight - toolbarHeight - gridTopPadding - gridBottomPadding
@@ -202,113 +194,6 @@ TestFileAccess() {
     return false
 }
 
-CreateHBITMAPVisualization(macroEvents, buttonSize) {
-    ; Memory-only visualization using HBITMAP with caching for performance
-    global gdiPlusInitialized, degradationColors, hbitmapCache
-
-    ; Early validation
-    if (!gdiPlusInitialized) {
-        ; Attempt to initialize if not already done
-        InitializeVisualizationSystem()
-        if (!gdiPlusInitialized) {
-            return 0
-        }
-    }
-
-    if (!macroEvents || macroEvents.Length = 0) {
-        return 0
-    }
-
-    ; PERFORMANCE: Generate cache key based on macro events content AND recorded mode
-    cacheKey := ""
-    for event in macroEvents {
-        if (event.type = "boundingBox") {
-            cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
-        }
-    }
-    ; Include recorded mode in cache key so narrow/wide are cached separately
-    recordedMode := macroEvents.HasOwnProp("recordedMode") ? macroEvents.recordedMode : "unknown"
-    cacheKey .= buttonSize.width . "x" . buttonSize.height . "_" . recordedMode
-
-    ; Check cache first
-    if (hbitmapCache.Has(cacheKey)) {
-        return hbitmapCache[cacheKey]
-    }
-
-    ; Extract box drawing events
-    boxes := ExtractBoxEvents(macroEvents)
-    if (boxes.Length = 0) {
-        return 0
-    }
-
-    ; Handle button size format
-    if (IsObject(buttonSize)) {
-        buttonWidth := buttonSize.width
-        buttonHeight := buttonSize.height
-    } else {
-        buttonWidth := buttonSize
-        buttonHeight := buttonSize
-    }
-
-    ; Create HBITMAP using GDI+
-    bitmap := 0
-    graphics := 0
-    hbitmap := 0
-
-    try {
-        ; Validate dimensions
-        if (buttonWidth <= 0 || buttonHeight <= 0 || buttonWidth > 4096 || buttonHeight > 4096) {
-            return 0
-        }
-
-        ; Create GDI+ bitmap
-        result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
-        if (result != 0 || !bitmap) {
-            return 0
-        }
-
-        ; Create graphics context from bitmap
-        result := DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
-        if (result != 0 || !graphics) {
-            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
-            return 0
-        }
-
-        ; Fill with black background
-        blackBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
-
-        ; Draw boxes using same logic as PNG version (pass macroEvents for mode detection)
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
-
-        ; Convert GDI+ bitmap to HBITMAP
-        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0x00000000)
-
-        ; Clean up GDI+ objects
-        DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
-        DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
-
-        if (result = 0 && hbitmap) {
-            ; PERFORMANCE: Cache the HBITMAP for future use
-            hbitmapCache[cacheKey] := hbitmap
-            return hbitmap
-        } else {
-            return 0
-        }
-
-    } catch Error as e {
-        ; Clean up on error
-        if (graphics) {
-            DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
-        }
-        if (bitmap) {
-            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
-        }
-        return 0
-    }
-}
 
 CreateMemoryStreamVisualization(macroEvents, buttonSize) {
     ; IStream interface visualization (no file system access)
@@ -392,17 +277,19 @@ CreateVisualizationInPath(macroEvents, buttonSize, filePath) {
         ; Black background for letterboxing contrast
         DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
 
-        ; Draw macro boxes (pass macroEvents for mode detection)
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
+        ; Draw macro boxes optimized for button dimensions
+        recordedMode := macroEvents.HasOwnProp("recordedMode") ? macroEvents.recordedMode : "unknown"
+        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, recordedMode)
 
         ; Save to specified path
-        result := SaveVisualizationPNG(bitmap, filePath)
+        success := SaveVisualizationPNG(bitmap, filePath)
+        actualPath := success ? filePath : ""
 
         ; Cleanup
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
-        return result && FileExist(filePath)
+        return actualPath != ""
 
     } catch Error as e {
         return false
@@ -710,8 +597,9 @@ UpdateButtonAppearance(buttonName) {
     global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache
 
     ; Early return for invalid button names
-    if (!buttonGrid.Has(buttonName))
+    if (!buttonGrid.Has(buttonName)) {
         return
+    }
 
     button := buttonGrid[buttonName]
     picture := buttonPictures[buttonName]
@@ -763,31 +651,22 @@ UpdateButtonAppearance(buttonName) {
         boxes := ExtractBoxEvents(macroEvents[layerMacroName])
 
         if (boxes.Length > 0) {
-            ; Try HBITMAP first (memory-only, no file I/O)
-            hBitmapHandle := CreateHBITMAPVisualization(macroEvents[layerMacroName], buttonSize)
 
-            if (hBitmapHandle) {
-                ; HBITMAP worked - assign directly to picture control
+            ; Use PNG visualization (matches working MacroLauncherX45.ahk)
+            pngFile := CreateMacroVisualization(macroEvents[layerMacroName], buttonSize)
+
+            if (pngFile && FileExist(pngFile)) {
+                ; PNG succeeded - use picture control
                 button.Visible := false
                 picture.Visible := true
-                picture.Text := ""
-                picture.Value := "HBITMAP:*" . hBitmapHandle
-                ; Cache the HBITMAP for performance
-                buttonThumbnails[layerMacroName] := hBitmapHandle
+                picture.Value := pngFile
             } else {
-                ; HBITMAP failed - fall back to PNG file approach
-                pngFile := CreateMacroVisualization(macroEvents[layerMacroName], buttonSize)
-
-                if (pngFile && FileExist(pngFile)) {
-                    ; PNG created successfully - assign to picture control
-                    button.Visible := false
-                    picture.Visible := true
-                    picture.Text := ""
-                    picture.Value := pngFile
-                    ; Schedule cleanup of temporary PNG file after a delay
-                    SetTimer(() => FileDelete(pngFile), -5000)
-                }
-                ; If PNG also fails, button stays as text display
+                ; PNG failed - use text display
+                button.Visible := true
+                picture.Visible := false
+                button.Opt("+Background" . layerBorderColors[currentLayer])
+                button.SetFont("s7 bold", "cWhite")
+                button.Text := "MACRO`n" . boxes.Length . " boxes"
             }
         }
         ; If no boxes found, button stays as text display
@@ -798,9 +677,9 @@ UpdateButtonAppearance(buttonName) {
         picture.Text := ""
         try {
             thumbnailValue := buttonThumbnails[layerMacroName]
-            if (Type(thumbnailValue) = "Integer" && thumbnailValue > 0) {
-                ; HBITMAP handle - assign directly
-                picture.Value := "HBITMAP:*" . thumbnailValue
+            if (Type(thumbnailValue) = "Integer" && thumbnailValue > 0 && thumbnailValue != 1594174808 && thumbnailValue != 520429950) {
+                ; HBITMAP handle - assign directly (validate it's not the invalid handle)
+                picture.Value := "HBITMAP:" . thumbnailValue
             } else {
                 ; File path - use existing method
                 picture.Value := thumbnailValue
@@ -849,11 +728,6 @@ UpdateButtonAppearance(buttonName) {
 
     ; Apply yellow outline for auto mode buttons
     ApplyYellowOutline(buttonName, hasAutoMode)
-
-    if (button.Visible)
-        button.Redraw()
-    if (picture.Visible)
-        picture.Redraw()
 }
 
 ; ===== VISUALIZATION SYSTEM FUNCTIONS =====
@@ -869,11 +743,12 @@ UpdateStatus(text) {
         statusBar.Text := text
         statusBar.Redraw()
     }
+
 }
+
 
 ; ===== BUTTON EVENT HANDLERS =====
 HandleButtonClick(buttonName, *) {
-    UpdateStatus("🖱️ Button: " . buttonName)
     ExecuteMacro(buttonName)
 }
 
@@ -1309,6 +1184,23 @@ ToggleAnnotationMode() {
         modeToggleBtn.Redraw()
     }
 
+    ; Switch active canvas based on annotation mode
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
+
+    if (annotationMode = "Narrow") {
+        userCanvasLeft := narrowCanvasLeft
+        userCanvasTop := narrowCanvasTop
+        userCanvasRight := narrowCanvasRight
+        userCanvasBottom := narrowCanvasBottom
+    } else {
+        userCanvasLeft := wideCanvasLeft
+        userCanvasTop := wideCanvasTop
+        userCanvasRight := wideCanvasRight
+        userCanvasBottom := wideCanvasBottom
+    }
+
     ; Save configuration
     SaveConfig()
 
@@ -1327,11 +1219,11 @@ ToggleBreakMode() {
     if (breakMode) {
         ; Apply break mode UI changes
         ApplyBreakModeUI()
-        UpdateStatus("☕ Break mode active")
+        UpdateStatus("☕ Break active")
     } else {
         ; Restore normal UI
         RestoreNormalUI()
-        UpdateStatus("✅ Back from break")
+        UpdateStatus("✅ Back")
     }
 
     ; Save state
@@ -1353,7 +1245,6 @@ ApplyBreakModeUI() {
     ; Update main GUI appearance
     if (mainGui) {
         mainGui.BackColor := "0x8B0000"  ; Dark red
-        mainGui.Redraw()
     }
 }
 
@@ -1406,7 +1297,7 @@ AddThumbnail(buttonName) {
         buttonThumbnails[layerMacroName] := selectedFile
         UpdateButtonAppearance(buttonName)
         SaveMacroState()
-        UpdateStatus("🖼️ Added thumbnail for " . buttonName . " on Layer " . currentLayer)
+        UpdateStatus("🖼️ Thumbnail added")
     }
 }
 
@@ -1419,7 +1310,7 @@ RemoveThumbnail(buttonName) {
         buttonThumbnails.Delete(layerMacroName)
         UpdateButtonAppearance(buttonName)
         SaveMacroState()
-        UpdateStatus("🗑️ Removed thumbnail for " . buttonName . " on Layer " . currentLayer)
+        UpdateStatus("🗑️ Thumbnail removed")
     }
 }
 
@@ -1506,7 +1397,6 @@ EnableAutoMode(buttonName) {
     layerKey := "L" . currentLayer . "_" . buttonName
 
     if (buttonAutoSettings.Has(layerKey) && buttonAutoSettings[layerKey].enabled) {
-        UpdateStatus("✅ Auto mode enabled for " . buttonName)
         UpdateButtonAppearance(buttonName)
     }
 }
@@ -1518,7 +1408,6 @@ DisableAutoMode(buttonName) {
 
     if (buttonAutoSettings.Has(layerKey)) {
         buttonAutoSettings[layerKey].enabled := false
-        UpdateStatus("❌ Auto mode disabled for " . buttonName)
         UpdateButtonAppearance(buttonName)
     }
 }
@@ -1574,7 +1463,7 @@ SwitchLayer(direction) {
         UpdateButtonAppearance(name)
     }
 
-    UpdateStatus("🔥 Layer " . currentLayer)
+    UpdateStatus("Layer " . currentLayer)
 }
 
 ; ===== SETTINGS APPLY FUNCTIONS =====
@@ -1914,7 +1803,6 @@ UpdateTimingFromEdit(timingVar, editControl, *) {
         Case "smartBoxClickDelay": smartBoxClickDelay := newValue
         Case "smartMenuClickDelay": smartMenuClickDelay := newValue
     }
-    UpdateStatus("⚡ Updated " . timingVar . " to " . newValue . "ms")
 }
 
 ; Apply timing preset
@@ -2008,7 +1896,7 @@ ApplyTimingPreset(preset, settingsGui, *) {
     }
 
     SaveConfig()
-    UpdateStatus("⏱️ Applied " . preset . " timing preset")
+    UpdateStatus("⏱️ " . preset . " preset applied")
 }
 
 ; Browse macro packs
@@ -2019,7 +1907,6 @@ BrowseMacroPacks(*) {
         packDir := workDir . "\packs"
 
         if (!DirExist(packDir)) {
-            UpdateStatus("📚 No macro packs found - create your first pack first")
             MsgBox("No macro packs found. Create a macro pack first using the 'Create Macro Pack' button.", "No Packs Found", "Icon!")
             return
         }
@@ -2051,7 +1938,6 @@ BrowseMacroPacks(*) {
         }
 
         if (packCount = 0) {
-            UpdateStatus("📚 No macro packs found in directory")
             MsgBox("No macro packs found in the packs directory.", "No Packs Found", "Icon!")
             return
         }
@@ -2070,10 +1956,7 @@ BrowseMacroPacks(*) {
 
         browseGui.Show("w450 h" . (160 + packCount * 15))
 
-        UpdateStatus("📚 Found " . packCount . " macro packs")
-
     } catch Error as e {
-        UpdateStatus("⚠️ Browse packs failed: " . e.Message)
         MsgBox("Failed to browse macro packs: " . e.Message, "Browse Error", "Icon!")
     }
 }
@@ -2171,9 +2054,9 @@ ResetStatsFromSettings(settingsGui, *) {
         try {
             ; Call the reset function from Stats.ahk
             ResetAllStats()
-            UpdateStatus("📊 All statistics have been reset successfully")
+            UpdateStatus("📊 Stats reset")
         } catch Error as e {
-            UpdateStatus("⚠️ Error resetting statistics: " . e.Message)
+            UpdateStatus("⚠️ Error resetting stats")
         }
         settingsGui.Destroy()
     }

@@ -19,8 +19,6 @@ InitializeStatsSystem() {
     if (!FileExist(masterStatsCSV)) {
         InitializeCSVFile()
     }
-
-    UpdateStatus("📊 Stats system initialized")
 }
 
 ; ===== CSV FILE INITIALIZATION =====
@@ -31,22 +29,19 @@ InitializeCSVFile() {
         ; Create full directory structure in Documents for portable execution
         if (!DirExist(documentsDir)) {
             DirCreate(documentsDir)
-            UpdateStatus("💾 Created MacroMaster folder in Documents")
         }
 
         if (!DirExist(workDir)) {
             DirCreate(workDir)
-            UpdateStatus("💾 Created data directory in Documents")
         }
 
         ; Create CSV with streamlined header optimized for tracking and display
         if (!FileExist(masterStatsCSV)) {
             header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
             FileAppend(header, masterStatsCSV, "UTF-8")
-            UpdateStatus("📊 CSV stats file initialized")
         }
     } catch as e {
-        UpdateStatus("⚠️ CSV setup failed: " . e.Message)
+        UpdateStatus("⚠️ CSV setup failed")
     }
 }
 
@@ -58,10 +53,7 @@ InitializeRealtimeSession() {
     sessionData["canvas_mode"] := annotationMode
 
     if (!SendDataToIngestionService("/session/start", sessionData)) {
-        UpdateStatus("⚠️ Real-time service unavailable - using fallback mode")
         realtimeEnabled := false
-    } else {
-        UpdateStatus("🔗 Real-time session started: " . currentSessionId)
     }
 }
 
@@ -123,10 +115,9 @@ InitializeOfflineDataFiles() {
         ; Log initialization
         LogOfflineActivity("Offline storage initialized")
 
-        UpdateStatus("💾 Offline data storage initialized successfully")
         return true
     } catch Error as e {
-        UpdateStatus("⚠️ Error initializing offline storage: " . e.Message)
+        UpdateStatus("⚠️ Error initializing offline storage")
         return false
     }
 }
@@ -137,7 +128,6 @@ ShowPythonStats() {
 
     ; Prevent multiple dashboard instances
     if (dashboardRunning) {
-        UpdateStatus("📊 Dashboard already running - use existing window")
         return
     }
 
@@ -154,7 +144,6 @@ ShowPythonStats() {
         ; Build command string properly
         cmd := 'python "' . dashboardScript . '" --csv "' . csvPath . '"'
         Run(cmd, workingDir)
-        UpdateStatus("📊 Live dashboard server starting...")
 
         ; Reset flag after a delay to allow for multiple launches if needed
         SetTimer(() => dashboardRunning := false, -5000)
@@ -162,20 +151,17 @@ ShowPythonStats() {
     } catch Error as e {
         ; Reset flag on error
         dashboardRunning := false
-        UpdateStatus("⚠️ Failed to start live dashboard: " . e.Message)
         ; Fallback to opening static HTML if Python fails
         if FileExist(htmlPath) {
             Run(htmlPath)
-            UpdateStatus("📄 Opened static dashboard (fallback)")
         } else {
-            UpdateStatus("⚠️ Dashboard file not found: " . htmlPath)
+            UpdateStatus("⚠️ Dashboard file not found")
         }
     }
     if (FileExist(htmlPath)) {
         Run htmlPath
-        UpdateStatus("📊 Dashboard launched directly")
     } else {
-        UpdateStatus("⚠️ Dashboard file not found: " . htmlPath)
+        UpdateStatus("⚠️ Dashboard file not found")
     }
 }
 
@@ -265,53 +251,62 @@ GetQuickStatsText() {
 LaunchDashboard(filterMode, statsMenuGui) {
     global masterStatsCSV, documentsDir
 
-    ; Validate CSV file exists
-    if (!FileExist(masterStatsCSV)) {
-        InitializeCSVFile()
+    ; NEW: Use SQLite-based dashboard
+    ; A_ScriptDir points to src/, so stats folder is in parent directory
+    newDashboardScript := A_ScriptDir . "\..\stats\generate_dashboard.py"
+    dashboardHTML := documentsDir . "\stats_dashboard.html"
+
+    if (FileExist(newDashboardScript)) {
+        try {
+            ; Generate the new SQLite dashboard
+            pythonCmd := 'python "' . newDashboardScript . '" --filter all'
+
+            ; Run and wait for generation to complete
+            RunWait(pythonCmd, A_ScriptDir . "\..", "Hide")
+
+            ; Open the dashboard in browser
+            if (FileExist(dashboardHTML)) {
+                Run(dashboardHTML)
+                statsMenuGui.Destroy()
+                return
+            } else {
+                UpdateStatus("⚠️ Dashboard generation failed")
+            }
+
+        } catch {
+            ; Silent fail - will fall back to old dashboard
+        }
     }
 
-    ; Use the unified timeline analytics dashboard for all modes
+    ; Fallback to old dashboard
     timelineScript := A_ScriptDir . "\..\dashboard\timeline_slider_dashboard.py"
 
     if (FileExist(timelineScript)) {
         try {
-            ; Launch the unified timeline analytics dashboard
+            ; Validate CSV file exists
+            if (!FileExist(masterStatsCSV)) {
+                InitializeCSVFile()
+            }
+
+            ; Launch the old timeline analytics dashboard
             pythonCmd := 'python "' . timelineScript . '" "' . masterStatsCSV . '"'
-
-            ; Dashboard launching silently for cleaner UX
             Run(pythonCmd, A_ScriptDir)
-
-            ; Close the menu
             statsMenuGui.Destroy()
-
-            ; Dashboard opened successfully
             return
 
-        } catch Error as e {
-            UpdateStatus("⚠️ Analytics dashboard failed, trying built-in fallback...")
+        } catch {
+            ; Silent fail - try final fallback
         }
-    } else {
-        UpdateStatus("⚠️ Analytics dashboard not found, using built-in fallback...")
     }
 
-    ; Fallback to built-in GUI for workplace restrictions
+    ; Final fallback to built-in GUI
     try {
-        ; Using fallback display
-
-        ; Read stats data using our CSV function
         stats := ReadStatsFromCSV(filterMode = "today")
-
-        ; Create built-in stats dashboard GUI as fallback
         ShowBuiltInStatsGUI(filterMode, stats)
-
-        ; Close the menu
         statsMenuGui.Destroy()
-
-        ; Built-in display ready
 
     } catch Error as e {
         MsgBox("❌ Failed to load data: " . e.Message . "`n`nCSV location: " . masterStatsCSV, "Error", "Icon!")
-        UpdateStatus("❌ Data display failed: " . e.Message)
     }
 }
 
@@ -504,9 +499,8 @@ ReadStatsFromCSV(filterBySession := false) {
 
         ; Performance grades removed
 
-    } catch as e {
+    } catch {
         ; Handle file read errors gracefully
-        UpdateStatus("📊 Stats read warning: " . e.Message)
     }
 
     return stats
@@ -827,8 +821,58 @@ GetLifetimeStats() {
 ; NOTE: InitializeCSVFile function is defined earlier in this file
 
 AppendToCSV(executionData) {
-    ; Use CSV-only approach - no real-time ingestion
-    return AppendToCSVFile(executionData)
+    global currentSessionId, currentUsername, documentsDir
+
+    ; Write to CSV (backup)
+    csvSuccess := AppendToCSVFile(executionData)
+
+    ; Also write to SQLite database
+    try {
+        ; Build JSON for Python script
+        jsonData := "{"
+        jsonData .= '`n  "timestamp": "' . executionData["timestamp"] . '",'
+        jsonData .= '`n  "session_id": "' . currentSessionId . '",'
+        jsonData .= '`n  "username": "' . currentUsername . '",'
+        jsonData .= '`n  "execution_type": "' . executionData["execution_type"] . '",'
+        jsonData .= '`n  "button_key": "' . (executionData.Has("button_key") ? executionData["button_key"] : "") . '",'
+        jsonData .= '`n  "layer": ' . executionData["layer"] . ','
+        jsonData .= '`n  "execution_time_ms": ' . executionData["execution_time_ms"] . ','
+        jsonData .= '`n  "total_boxes": ' . executionData["total_boxes"] . ','
+        jsonData .= '`n  "degradation_assignments": "' . (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . '",'
+        jsonData .= '`n  "severity_level": "' . executionData["severity_level"] . '",'
+        jsonData .= '`n  "canvas_mode": "' . executionData["canvas_mode"] . '",'
+        jsonData .= '`n  "session_active_time_ms": ' . executionData["session_active_time_ms"] . ','
+        jsonData .= '`n  "break_mode_active": ' . (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ','
+        jsonData .= '`n  "smudge_count": ' . (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0) . ','
+        jsonData .= '`n  "glare_count": ' . (executionData.Has("glare_count") ? executionData["glare_count"] : 0) . ','
+        jsonData .= '`n  "splashes_count": ' . (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0) . ','
+        jsonData .= '`n  "partial_blockage_count": ' . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0) . ','
+        jsonData .= '`n  "full_blockage_count": ' . (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0) . ','
+        jsonData .= '`n  "light_flare_count": ' . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0) . ','
+        jsonData .= '`n  "rain_count": ' . (executionData.Has("rain_count") ? executionData["rain_count"] : 0) . ','
+        jsonData .= '`n  "haze_count": ' . (executionData.Has("haze_count") ? executionData["haze_count"] : 0) . ','
+        jsonData .= '`n  "snow_count": ' . (executionData.Has("snow_count") ? executionData["snow_count"] : 0) . ','
+        jsonData .= '`n  "clear_count": ' . (executionData.Has("clear_count") ? executionData["clear_count"] : 0)
+        jsonData .= '`n}'
+
+        ; Write JSON to temp file (safer than command line escaping)
+        tempJsonFile := documentsDir . "\MacroMaster\data\temp_execution.json"
+        try FileDelete(tempJsonFile)  ; Remove if exists
+        FileAppend(jsonData, tempJsonFile, "UTF-8")
+
+        ; Call Python record script with file
+        ; A_ScriptDir points to src/, so stats folder is in parent directory
+        pythonScript := A_ScriptDir . "\..\stats\record_execution.py"
+        if (FileExist(pythonScript) && FileExist(tempJsonFile)) {
+            RunWait('python "' . pythonScript . '" --file "' . tempJsonFile . '"', A_ScriptDir . "\..", "Hide")
+            ; Clean up temp file
+            try FileDelete(tempJsonFile)
+        }
+    } catch Error as e {
+        ; Silent fail - CSV backup ensures no data loss
+    }
+
+    return csvSuccess
 }
 
 AppendToCSVFile(executionData) {
@@ -876,8 +920,7 @@ AppendToCSVFile(executionData) {
         FileAppend(row, masterStatsCSV)
         return true
 
-    } catch Error as e {
-        UpdateStatus("⚠️ CSV write failed: " . e.Message)
+    } catch {
         return false
     }
 }
@@ -897,7 +940,6 @@ ExportStatsData(statsMenuGui := "") {
     try {
         FileCopy(masterStatsCSV, exportPath)
         MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel or other tools.", "Export Complete", "Icon!")
-        UpdateStatus("💾 Stats data exported to " . exportPath)
     } catch Error as e {
         MsgBox("❌ Export failed: " . e.Message, "Error", "Icon!")
     }
@@ -953,9 +995,8 @@ SendDataToIngestionService(endpoint, data) {
         result := SendHttpPost(ingestionServiceUrl . endpoint, jsonData)
 
         return (result != "")
-    } catch Error as e {
+    } catch {
         ; Log error but don't break execution
-        UpdateStatus("⚠️ Data send failed: " . e.Message)
         return false
     }
 }
@@ -990,11 +1031,10 @@ ResetAllStats() {
             ; Reinitialize CSV file
             InitializeCSVFile()
 
-            UpdateStatus("📊 All statistics have been reset")
             MsgBox("Statistics reset complete!`n`nAll execution data has been cleared.", "Reset Complete", "Icon!")
 
         } catch Error as e {
-            UpdateStatus("⚠️ Failed to reset statistics: " . e.Message)
+            UpdateStatus("⚠️ Failed to reset statistics")
             MsgBox("Failed to reset statistics: " . e.Message, "Error", "Icon!")
         }
     }

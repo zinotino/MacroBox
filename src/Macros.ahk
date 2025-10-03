@@ -9,21 +9,18 @@ SafeExecuteMacroByKey(buttonName) {
 
     ; CRITICAL: Block ALL execution during break mode
     if (breakMode) {
-        UpdateStatus("☕ BREAK MODE ACTIVE - All macro execution blocked")
         return
     }
 
     ; CRITICAL: Prevent rapid execution race conditions (minimum 50ms between executions)
     currentTime := A_TickCount
     if (lastExecutionTime && (currentTime - lastExecutionTime) < 50) {
-        UpdateStatus("⚡ Execution too rapid - please wait")
         return
     }
     lastExecutionTime := currentTime
 
     ; CRITICAL: Double-check playback state before proceeding
     if (playback) {
-        UpdateStatus("⌚ Execution in progress - please wait")
         return
     }
 
@@ -75,12 +72,10 @@ ExecuteMacro(buttonName) {
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
     if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length = 0) {
-        UpdateStatus("⌛ No macro: " . buttonName . " L" . currentLayer . " | F9 to record")
         return
     }
 
     if (playback) {
-        UpdateStatus("⌚ Already executing")
         return
     }
 
@@ -95,10 +90,8 @@ ExecuteMacro(buttonName) {
         startTime := A_TickCount
 
         if (events.Length = 1 && events[1].type = "jsonAnnotation") {
-            UpdateStatus("⚡ JSON " . events[1].mode . " L" . currentLayer)
             ExecuteJsonAnnotation(events[1])
         } else {
-            UpdateStatus("▶️ Playing macro...")
             PlayEventsOptimized(events)
         }
 
@@ -144,7 +137,7 @@ ExecuteMacro(buttonName) {
 
     } catch Error as e {
         ; CRITICAL: Force state reset on any execution error
-        UpdateStatus("⚠️ Execution error: " . e.Message . " - State reset")
+        UpdateStatus("⚠️ Execution error - State reset")
     } finally {
         ; Simple execution time monitoring
         executionTime := A_TickCount - executionStartTime
@@ -568,7 +561,6 @@ FocusBrowser() {
                     ; Verify focus succeeded by checking if window is active
                     if (WinActive(browser.exe)) {
                         ; Sleep(focusDelay) - REMOVED for rapid labeling performance
-                        UpdateStatus("🌐 Focused " . browser.name . " browser")
                         return true
                     }
 
@@ -580,7 +572,6 @@ FocusBrowser() {
 
                     if (WinActive(browser.exe)) {
                         ; Sleep(focusDelay) - REMOVED for rapid labeling performance
-                        UpdateStatus("🌐 Focused " . browser.name . " browser (restored)")
                         return true
                     }
 
@@ -664,7 +655,6 @@ MouseProc(nCode, wParam, lParam) {
                     time: timestamp
                 }
                 events.Push(boundingBoxEvent)
-                UpdateStatus("📦 Box created → Press 1-9 to tag")
             } else {
                 events.Push({type: "click", button: "left", x: x, y: y, time: timestamp})
             }
@@ -1011,7 +1001,6 @@ ForceStopRecording() {
     global recording, currentMacro, macroEvents, awaitingAssignment, mainGui, pendingBoxForTagging
 
     if (!recording) {
-        UpdateStatus("⚠️ Not recording - F9 ignored")
         return
     }
 
@@ -1024,7 +1013,6 @@ ForceStopRecording() {
 
     eventCount := macroEvents.Has(currentMacro) ? macroEvents[currentMacro].Length : 0
     if (eventCount = 0) {
-        UpdateStatus("🎬 Recording stopped - No events captured")
         if (macroEvents.Has(currentMacro)) {
             macroEvents.Delete(currentMacro)
         }
@@ -1110,9 +1098,7 @@ PerformChromeMemoryCleanup() {
             Send("^w")   ; Close the reopened tab
             ; Sleep(200) - REMOVED: Between-execution delay
         }
-
-        UpdateStatus("🧹 Chrome memory cleanup performed")
-    } catch Error as e {
+    } catch {
         ; Silently continue if cleanup fails
     }
 }
