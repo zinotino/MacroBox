@@ -123,192 +123,275 @@ InitializeOfflineDataFiles() {
 }
 
 ; ===== STATISTICS DISPLAY FUNCTIONS =====
-ShowPythonStats() {
-    static dashboardRunning := false
-
-    ; Prevent multiple dashboard instances
-    if (dashboardRunning) {
-        return
-    }
-
-    ; Run the live dashboard server instead of opening static HTML
-    dashboardScript := A_ScriptDir . "\..\dashboard\run_live_dashboard.py"
-    csvPath := A_ScriptDir . "\..\data\master_stats.csv"
-    workingDir := A_ScriptDir . "\..\dashboard"
-    htmlPath := A_ScriptDir . "\..\dashboard\output\macromaster_timeline_slider.html"
-
-    try {
-        ; Mark dashboard as running
-        dashboardRunning := true
-
-        ; Build command string properly
-        cmd := 'python "' . dashboardScript . '" --csv "' . csvPath . '"'
-        Run(cmd, workingDir)
-
-        ; Reset flag after a delay to allow for multiple launches if needed
-        SetTimer(() => dashboardRunning := false, -5000)
-
-    } catch Error as e {
-        ; Reset flag on error
-        dashboardRunning := false
-        ; Fallback to opening static HTML if Python fails
-        if FileExist(htmlPath) {
-            Run(htmlPath)
-        } else {
-            UpdateStatus("⚠️ Dashboard file not found")
-        }
-    }
-    if (FileExist(htmlPath)) {
-        Run htmlPath
-    } else {
-        UpdateStatus("⚠️ Dashboard file not found")
-    }
-}
-
 ShowStatsMenu() {
-    global masterStatsCSV, dailyResetActive, darkMode
+    global masterStatsCSV, darkMode, currentSessionId
 
-    ; Create modern stats menu with proper sizing
-    statsMenuGui := Gui("+Resize +MinSize450x280", "📊 MacroMaster Analytics")
-    statsMenuGui.BackColor := darkMode ? "0x2A2A2A" : "White"
-    statsMenuGui.SetFont("s10", "Segoe UI")
+    ; Create simple text-based stats display
+    statsGui := Gui("+Resize", "📊 MacroMaster Statistics")
+    statsGui.BackColor := darkMode ? "0x1E1E1E" : "0xF5F5F5"
+    statsGui.SetFont("s9", "Consolas")
 
-    ; Header
-    headerText := statsMenuGui.Add("Text", "x20 y20 w410 h30 Center", "📊 Execution Data")
-    headerText.SetFont("s12 bold", "Segoe UI")
-    headerText.Opt("c" . (darkMode ? "White" : "Black"))
+    ; Get all-time and today's stats
+    allStats := ReadStatsFromCSV(false)
+    todayStats := GetTodayStats()
 
-    ; Quick stats overview
-    quickStatsY := 60
-    quickStats := GetQuickStatsText()
-    quickStatsText := statsMenuGui.Add("Text", "x20 y" . quickStatsY . " w410 h70 Center", quickStats)
-    quickStatsText.SetFont("s9", "Segoe UI")
-    quickStatsText.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+    ; Build text display
+    y := 10
 
-    ; Dashboard options with proper spacing
-    btnY := quickStatsY + 85
-    btnWidth := 160
-    btnHeight := 35
-    btnSpacing := 20
+    ; === ALL-TIME STATS ===
+    AddStatsHeader(statsGui, y, "═══ ALL-TIME STATISTICS ═══")
+    y += 30
 
-    ; Unified Analytics Dashboard (full width)
-    btnAnalytics := statsMenuGui.Add("Button", "x20 y" . btnY . " w410 h" . (btnHeight + 5), "📊 MacroMaster Analytics Dashboard")
-    btnAnalytics.SetFont("s11 bold")
-    btnAnalytics.OnEvent("Click", (*) => LaunchDashboard("unified", statsMenuGui))
+    AddStatsLine(statsGui, y, "Total Executions:", allStats["total_executions"])
+    y += 20
+    AddStatsLine(statsGui, y, "Total Boxes:", allStats["total_boxes"])
+    y += 20
+    AddStatsLine(statsGui, y, "Average Time:", allStats["average_execution_time"] . " ms")
+    y += 20
+    AddStatsLine(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"])
+    y += 20
+    AddStatsLine(statsGui, y, "Executions/Hour:", allStats["executions_per_hour"])
+    y += 20
 
-    ; Second row buttons with proper spacing
-    btnY2 := btnY + btnHeight + 15
+    ; Session info
+    sessionTime := FormatMilliseconds(allStats["session_active_time"])
+    AddStatsLine(statsGui, y, "Active Time:", sessionTime)
+    y += 30
 
-    ; Data Export
-    btnExport := statsMenuGui.Add("Button", "x20 y" . btnY2 . " w180 h32", "💾 Export Data")
+    ; === DEGRADATION BREAKDOWN (ALL-TIME) ===
+    AddStatsHeader(statsGui, y, "═══ DEGRADATION TOTALS (ALL-TIME) ═══")
+    y += 30
+
+    AddStatsLine(statsGui, y, "Smudge:", allStats["smudge_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Glare:", allStats["glare_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Splashes:", allStats["splashes_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Partial Blockage:", allStats["partial_blockage_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Full Blockage:", allStats["full_blockage_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Light Flare:", allStats["light_flare_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Rain:", allStats["rain_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Haze:", allStats["haze_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Snow:", allStats["snow_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Clear:", allStats["clear_total"])
+    y += 30
+
+    ; === TODAY'S STATS ===
+    AddStatsHeader(statsGui, y, "═══ TODAY'S STATISTICS ═══")
+    y += 30
+
+    AddStatsLine(statsGui, y, "Executions:", todayStats["total_executions"])
+    y += 20
+    AddStatsLine(statsGui, y, "Boxes:", todayStats["total_boxes"])
+    y += 20
+    AddStatsLine(statsGui, y, "Average Time:", todayStats["average_execution_time"] . " ms")
+    y += 20
+    AddStatsLine(statsGui, y, "Active Time:", FormatMilliseconds(todayStats["session_active_time"]))
+    y += 20
+    AddStatsLine(statsGui, y, "Boxes/Hour:", todayStats["boxes_per_hour"])
+    y += 20
+    AddStatsLine(statsGui, y, "Executions/Hour:", todayStats["executions_per_hour"])
+    y += 30
+
+    ; === TODAY'S DEGRADATIONS ===
+    AddStatsHeader(statsGui, y, "═══ DEGRADATION TOTALS (TODAY) ═══")
+    y += 30
+
+    AddStatsLine(statsGui, y, "Smudge:", todayStats["smudge_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Glare:", todayStats["glare_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Splashes:", todayStats["splashes_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Partial Blockage:", todayStats["partial_blockage_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Full Blockage:", todayStats["full_blockage_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Light Flare:", todayStats["light_flare_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Rain:", todayStats["rain_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Haze:", todayStats["haze_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Snow:", todayStats["snow_total"])
+    y += 20
+    AddStatsLine(statsGui, y, "Clear:", todayStats["clear_total"])
+    y += 30
+
+    ; === MACRO DETAILS ===
+    AddStatsHeader(statsGui, y, "═══ MACRO DETAILS ═══")
+    y += 30
+
+    AddStatsLine(statsGui, y, "Most Used Button:", allStats["most_used_button"])
+    y += 20
+    AddStatsLine(statsGui, y, "Most Active Layer:", allStats["most_active_layer"])
+    y += 20
+    AddStatsLine(statsGui, y, "Session ID:", SubStr(currentSessionId, 6))
+    y += 30
+
+    ; Buttons
+    btnExport := statsGui.Add("Button", "x20 y" . (y + 10) . " w120 h30", "💾 Export")
     btnExport.SetFont("s9")
-    btnExport.OnEvent("Click", (*) => ExportStatsData(statsMenuGui))
+    btnExport.OnEvent("Click", (*) => ExportStatsData(statsGui))
 
-    ; Close button
-    btnClose := statsMenuGui.Add("Button", "x250 y" . btnY2 . " w180 h32", "❌ Close")
+    btnReset := statsGui.Add("Button", "x150 y" . (y + 10) . " w120 h30", "🗑️ Reset")
+    btnReset.SetFont("s9")
+    btnReset.OnEvent("Click", (*) => ResetAllStats())
+
+    btnClose := statsGui.Add("Button", "x280 y" . (y + 10) . " w120 h30", "❌ Close")
     btnClose.SetFont("s9")
-    btnClose.OnEvent("Click", (*) => statsMenuGui.Destroy())
+    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
 
-    ; Dynamic window height with proper spacing
-    windowHeight := btnY2 + 55
-    statsMenuGui.Show("w450 h" . windowHeight)
+    statsGui.Show("w420 h" . (y + 60))
 }
 
-GetQuickStatsText() {
-    global masterStatsCSV, systemHealthStatus
+; Helper function to add section headers
+AddStatsHeader(gui, y, text) {
+    global darkMode
+    header := gui.Add("Text", "x20 y" . y . " w380", text)
+    header.SetFont("s9 bold", "Consolas")
+    header.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
 
-    if (!FileExist(masterStatsCSV)) {
-        return "📊 No data recorded yet`nStart using macros to see raw statistics!"
-    }
+; Helper function to add stat lines
+AddStatsLine(gui, y, label, value) {
+    global darkMode
+    labelCtrl := gui.Add("Text", "x40 y" . y . " w200", label)
+    labelCtrl.SetFont("s9", "Consolas")
+    labelCtrl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
+
+    valueCtrl := gui.Add("Text", "x250 y" . y . " w150 Right", String(value))
+    valueCtrl.SetFont("s9 bold", "Consolas")
+    valueCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
+
+; Get today's stats only
+GetTodayStats() {
+    global masterStatsCSV
+
+    stats := Map()
+    stats["total_executions"] := 0
+    stats["total_boxes"] := 0
+    stats["total_execution_time"] := 0
+    stats["average_execution_time"] := 0
+    stats["session_active_time"] := 0
+    stats["boxes_per_hour"] := 0
+    stats["executions_per_hour"] := 0
+    stats["smudge_total"] := 0
+    stats["glare_total"] := 0
+    stats["splashes_total"] := 0
+    stats["partial_blockage_total"] := 0
+    stats["full_blockage_total"] := 0
+    stats["light_flare_total"] := 0
+    stats["rain_total"] := 0
+    stats["haze_total"] := 0
+    stats["snow_total"] := 0
+    stats["clear_total"] := 0
 
     try {
-        ; Get raw statistical data
-        stats := ReadStatsFromCSV(false) ; Get all-time stats
-
-        if (stats["total_executions"] = 0) {
-            return "📊 No executions recorded yet`nStart using macros to see raw statistics!"
+        if (!FileExist(masterStatsCSV)) {
+            return stats
         }
 
-        ; Raw data display - no AI inference
-        totalExecs := stats["total_executions"]
-        totalBoxes := stats["total_boxes"]
-        avgTime := stats["average_execution_time"]
-        execsPerHour := stats["executions_per_hour"]
+        csvContent := FileRead(masterStatsCSV, "UTF-8")
+        lines := StrSplit(csvContent, "`n")
 
-        ; System status (technical only)
-        statusIcon := systemHealthStatus = "healthy" ? "🟢" : systemHealthStatus = "degraded" ? "🟡" : "🔴"
-
-        if (totalExecs = 1) {
-            return statusIcon . " System: " . systemHealthStatus . " | Data: " . totalExecs . " record`n📊 " . totalBoxes . " boxes | " . avgTime . "ms avg | " . execsPerHour . "/hr rate"
-        } else {
-            return statusIcon . " System: " . systemHealthStatus . " | Data: " . totalExecs . " records`n📊 " . totalBoxes . " boxes | " . avgTime . "ms avg | " . execsPerHour . "/hr rate"
+        if (lines.Length <= 1) {
+            return stats
         }
+
+        ; Get today's date in YYYY-MM-DD format
+        today := FormatTime(A_Now, "yyyy-MM-dd")
+
+        Loop lines.Length - 1 {
+            lineIndex := A_Index + 1
+            if (lineIndex > lines.Length || Trim(lines[lineIndex]) = "") {
+                continue
+            }
+
+            fields := StrSplit(lines[lineIndex], ",")
+            if (fields.Length < 14) {
+                continue
+            }
+
+            ; Check if timestamp starts with today's date
+            timestamp := Trim(fields[1])
+            if (SubStr(timestamp, 1, 10) = today) {
+                try {
+                    execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
+                    total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
+                    session_active_time := IsNumber(fields[12]) ? Integer(fields[12]) : 0
+
+                    stats["total_executions"]++
+                    stats["total_boxes"] += total_boxes
+                    stats["total_execution_time"] += execution_time
+
+                    if (session_active_time > stats["session_active_time"]) {
+                        stats["session_active_time"] := session_active_time
+                    }
+
+                    ; Parse degradations
+                    if (fields.Length >= 14) {
+                        stats["smudge_total"] += IsNumber(fields[14]) ? Integer(fields[14]) : 0
+                        stats["glare_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
+                        stats["splashes_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
+                        stats["partial_blockage_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
+                        stats["full_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
+                        stats["light_flare_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
+                        stats["rain_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
+                        stats["haze_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
+                        stats["snow_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
+                        stats["clear_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
+                    }
+                } catch {
+                    continue
+                }
+            }
+        }
+
+        ; Calculate average
+        if (stats["total_executions"] > 0) {
+            stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
+        }
+
+        ; Calculate hourly rates based on active time
+        if (stats["session_active_time"] > 5000) { ; At least 5 seconds
+            activeTimeHours := stats["session_active_time"] / 3600000
+            stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
+            stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
+        }
+
     } catch {
-        return "📊 Raw data ready | System status: " . systemHealthStatus . "`nView detailed statistics below"
+        ; Return empty stats on error
+    }
+
+    return stats
+}
+
+; Format milliseconds to readable time
+FormatMilliseconds(ms) {
+    if (ms < 1000) {
+        return ms . " ms"
+    } else if (ms < 60000) {
+        return Round(ms / 1000, 1) . " sec"
+    } else if (ms < 3600000) {
+        minutes := Floor(ms / 60000)
+        seconds := Round(Mod(ms, 60000) / 1000)
+        return minutes . " min " . seconds . " sec"
+    } else {
+        hours := Floor(ms / 3600000)
+        minutes := Round(Mod(ms, 3600000) / 60000)
+        return hours . " hr " . minutes . " min"
     }
 }
 
-LaunchDashboard(filterMode, statsMenuGui) {
-    global masterStatsCSV, documentsDir
-
-    ; NEW: Use SQLite-based dashboard
-    ; A_ScriptDir points to src/, so stats folder is in parent directory
-    newDashboardScript := A_ScriptDir . "\..\stats\generate_dashboard.py"
-    dashboardHTML := documentsDir . "\stats_dashboard.html"
-
-    if (FileExist(newDashboardScript)) {
-        try {
-            ; Generate the new SQLite dashboard
-            pythonCmd := 'python "' . newDashboardScript . '" --filter all'
-
-            ; Run and wait for generation to complete
-            RunWait(pythonCmd, A_ScriptDir . "\..", "Hide")
-
-            ; Open the dashboard in browser
-            if (FileExist(dashboardHTML)) {
-                Run(dashboardHTML)
-                statsMenuGui.Destroy()
-                return
-            } else {
-                UpdateStatus("⚠️ Dashboard generation failed")
-            }
-
-        } catch {
-            ; Silent fail - will fall back to old dashboard
-        }
-    }
-
-    ; Fallback to old dashboard
-    timelineScript := A_ScriptDir . "\..\dashboard\timeline_slider_dashboard.py"
-
-    if (FileExist(timelineScript)) {
-        try {
-            ; Validate CSV file exists
-            if (!FileExist(masterStatsCSV)) {
-                InitializeCSVFile()
-            }
-
-            ; Launch the old timeline analytics dashboard
-            pythonCmd := 'python "' . timelineScript . '" "' . masterStatsCSV . '"'
-            Run(pythonCmd, A_ScriptDir)
-            statsMenuGui.Destroy()
-            return
-
-        } catch {
-            ; Silent fail - try final fallback
-        }
-    }
-
-    ; Final fallback to built-in GUI
-    try {
-        stats := ReadStatsFromCSV(filterMode = "today")
-        ShowBuiltInStatsGUI(filterMode, stats)
-        statsMenuGui.Destroy()
-
-    } catch Error as e {
-        MsgBox("❌ Failed to load data: " . e.Message . "`n`nCSV location: " . masterStatsCSV, "Error", "Icon!")
-    }
-}
 
 ; ===== CSV STATISTICS FUNCTIONS =====
 ReadStatsFromCSV(filterBySession := false) {
@@ -1044,32 +1127,6 @@ ResetAllStats() {
 ; NOTE: TestStatsRecording function removed as it depends on ExecuteMacro which is defined in the main application
 ; Use external test files for comprehensive testing
 
-; ===== BUILT-IN STATS GUI =====
-ShowBuiltInStatsGUI(filterMode, stats) {
-    ; Create a simple built-in stats display
-    statsGui := Gui("+Resize", "📊 MacroMaster Statistics")
-    statsGui.BackColor := "0xF0F0F0"
-    statsGui.SetFont("s10")
-
-    statsGui.Add("Text", "x20 y20 w400 h30 Center", "📊 Execution Statistics")
-
-    ; Display basic stats
-    y := 60
-    statsGui.Add("Text", "x20 y" . y, "Total Executions: " . stats["total_executions"])
-    y += 25
-    statsGui.Add("Text", "x20 y" . y, "Total Boxes: " . stats["total_boxes"])
-    y += 25
-    statsGui.Add("Text", "x20 y" . y, "Average Time: " . stats["average_execution_time"] . "ms")
-    y += 25
-    statsGui.Add("Text", "x20 y" . y, "Boxes/Hour: " . stats["boxes_per_hour"])
-    y += 25
-    statsGui.Add("Text", "x20 y" . y, "Executions/Hour: " . stats["executions_per_hour"])
-
-    ; Close button
-    statsGui.Add("Button", "x150 y" . (y + 30) . " w100 h30", "Close").OnEvent("Click", (*) => statsGui.Destroy())
-
-    statsGui.Show("w450 h" . (y + 80))
-}
 
 ; ===== RECORD CLEAR DEGRADATION EXECUTION =====
 RecordClearDegradationExecution(buttonName, executionStartTime) {

@@ -710,6 +710,9 @@ Main() {
         ; Refresh all button appearances after loading config
         RefreshAllButtonAppearances()
 
+        ; Show GUI now that everything is loaded and configured
+        ShowGui()
+
         ; Setup time tracking, auto-save, and state monitoring
         SetTimer(UpdateActiveTime, 30000)
         SetTimer(AutoSave, 30000)  ; Auto-save every 30 seconds for better persistence

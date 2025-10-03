@@ -406,6 +406,12 @@ InitializeGui() {
     mainGui.OnEvent("Size", GuiResize)
     mainGui.OnEvent("Close", (*) => SafeExit())
 
+    ; Don't show GUI yet - will be shown after config is loaded
+}
+
+; Show GUI after everything is initialized
+ShowGui() {
+    global mainGui, windowWidth, windowHeight
     mainGui.Show("w" . windowWidth . " h" . windowHeight)
 }
 
@@ -483,7 +489,7 @@ CreateToolbar() {
     btnWidth := Round((rightWidth - 20) / 3)
 
     btnStats := mainGui.Add("Button", "x" . rightSection . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📊 Stats")
-    btnStats.OnEvent("Click", (*) => ShowPythonStats())
+    btnStats.OnEvent("Click", (*) => ShowStatsMenu())
     btnStats.SetFont("s8 bold")
     mainGui.btnStats := btnStats
 

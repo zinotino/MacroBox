@@ -229,9 +229,9 @@ SetupHotkeys() {
             Hotkey(hotkeyRecordToggle, F9_RecordingOnly, "On")
         }
 
-        ; Stats display - use configured key (default F12) - now opens real-time dashboard
+        ; Stats display - use configured key (default F12)
         if (hotkeyStats != "") {
-            Hotkey(hotkeyStats, (*) => ShowPythonStats())
+            Hotkey(hotkeyStats, (*) => ShowStatsMenu())
         }
 
         ; Break mode toggle - use configured key (default Ctrl+B)
