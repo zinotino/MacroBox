@@ -17,11 +17,17 @@ GetDegradationTypeByName(degradationName) {
 }
 
 IsNumberKey(keyName) {
-    return RegExMatch(keyName, "^[1-9]$")
+    ; Match plain numbers 1-9 or D1-D9 format
+    return RegExMatch(keyName, "^([1-9]|D[1-9])$")
 }
 
 GetNumberFromKey(keyName) {
+    ; Handle plain number keys 1-9
     if (RegExMatch(keyName, "^([1-9])$", &match)) {
+        return Integer(match[1])
+    }
+    ; Handle D1-D9 format (top row number keys)
+    if (RegExMatch(keyName, "^D([1-9])$", &match)) {
         return Integer(match[1])
     }
     return 0

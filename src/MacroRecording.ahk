@@ -135,6 +135,11 @@ KeyboardProc(nCode, wParam, lParam) {
 
     if (wParam = WM_KEYDOWN) {
         events.Push({type: "keyDown", key: keyName, time: timestamp})
+        ; Debug: Log keypresses during recording
+        try {
+            global workDir
+            FileAppend("RECORDING KeyDown: key='" . keyName . "' vkCode=" . vkCode . "`n", workDir . "\degradation_debug.log", "UTF-8")
+        }
     } else if (wParam = WM_KEYUP) {
         events.Push({type: "keyUp", key: keyName, time: timestamp})
     }
@@ -230,12 +235,24 @@ AnalyzeRecordedMacro(macroKey) {
     local events := macroEvents[macroKey]
     local boundingBoxCount := 0
 
+    ; Process degradation assignments - this modifies the events in-place
     local degradationAnalysis := GetDegradationData(events)
 
-    for event in events {
-        if (event.type = "boundingBox") {
-            boundingBoxCount++
+    ; Debug: Verify degradation types were assigned
+    try {
+        global workDir
+        debugMsg := "RECORDING ANALYSIS for " . macroKey . ":`n"
+        for event in events {
+            if (event.type = "boundingBox") {
+                boundingBoxCount++
+                if (event.HasOwnProp("degradationType")) {
+                    debugMsg .= "  Box has degradationType=" . event.degradationType . "`n"
+                } else {
+                    debugMsg .= "  Box MISSING degradationType!`n"
+                }
+            }
         }
+        FileAppend(debugMsg, workDir . "\degradation_debug.log", "UTF-8")
     }
 
     if (boundingBoxCount > 0) {
@@ -250,11 +267,17 @@ AnalyzeRecordedMacro(macroKey) {
 }
 
 GetDegradationData(events) {
-    global degradationTypes
+    global degradationTypes, workDir
+
+    try {
+        FileAppend("`n=== GetDegradationData CALLED ===`n", workDir . "\degradation_debug.log", "UTF-8")
+        FileAppend("Total events to analyze: " . events.Length . "`n", workDir . "\degradation_debug.log", "UTF-8")
+    }
 
     local boxes := []
     local keyPresses := []
 
+    ; Collect boxes and keypresses
     for event in events {
         if (event.type = "boundingBox") {
             boxes.Push({
@@ -264,15 +287,37 @@ GetDegradationData(events) {
                 degradationType: 1,
                 assignedBy: "default"
             })
-        } else if (event.type = "keyDown" && IsNumberKey(event.key)) {
-            local keyNum := GetNumberFromKey(event.key)
-            if (keyNum >= 1 && keyNum <= 9) {
-                keyPresses.Push({
-                    time: event.time,
-                    degradationType: keyNum,
-                    key: event.key
-                })
+        } else if (event.type = "keyDown") {
+            ; Debug: Log ALL keyDown events to see what we're getting
+            try {
+                FileAppend("  RAW KeyDown: key='" . event.key . "' at time=" . event.time . "`n", workDir . "\degradation_debug.log", "UTF-8")
             }
+
+            if (IsNumberKey(event.key)) {
+                local keyNum := GetNumberFromKey(event.key)
+                if (keyNum >= 1 && keyNum <= 9) {
+                    keyPresses.Push({
+                        time: event.time,
+                        degradationType: keyNum,
+                        key: event.key
+                    })
+                    try {
+                        FileAppend("    -> MATCHED as number key! keyNum=" . keyNum . "`n", workDir . "\degradation_debug.log", "UTF-8")
+                    }
+                } else {
+                    try {
+                        FileAppend("    -> IsNumberKey=true but keyNum out of range: " . keyNum . "`n", workDir . "\degradation_debug.log", "UTF-8")
+                    }
+                }
+            }
+        }
+    }
+
+    ; Debug logging
+    try {
+        FileAppend("GetDegradationData: Found " . boxes.Length . " boxes and " . keyPresses.Length . " keypresses`n", workDir . "\degradation_debug.log", "UTF-8")
+        for kp in keyPresses {
+            FileAppend("  Keypress: " . kp.key . " -> degType=" . kp.degradationType . " at time=" . kp.time . "`n", workDir . "\degradation_debug.log", "UTF-8")
         }
     }
 
@@ -283,16 +328,38 @@ GetDegradationData(events) {
         degradationCounts[id] := 0
     }
 
+    ; Assign degradation types to boxes
     for boxIndex, box in boxes {
-        local nextBoxTime := (boxIndex < boxes.Length) ? boxes[boxIndex + 1].time : 999999999
+        local nextBoxTime := (boxIndex < boxes.Length) ? Integer(boxes[boxIndex + 1].time) : 999999999
+
+        try {
+            FileAppend("  Matching Box #" . boxIndex . " (time=" . box.time . ", nextBoxTime=" . nextBoxTime . ")`n", workDir . "\degradation_debug.log", "UTF-8")
+        }
 
         local closestKeyPress := ""
-        local closestTime := 999999999
+        local closestTime := 9999999999  ; Larger number to ensure first match works
 
+        ; Find closest keypress AFTER this box
         for keyPress in keyPresses {
-            if (keyPress.time > box.time && keyPress.time < nextBoxTime && keyPress.time < closestTime) {
+            local kpTime := Integer(keyPress.time)
+            local boxTime := Integer(box.time)
+            local nbtTime := Integer(nextBoxTime)
+
+            ; Check each condition separately
+            local cond1 := (kpTime > boxTime)
+            local cond2 := (kpTime < nbtTime)
+            local cond3 := (kpTime < closestTime)
+
+            try {
+                FileAppend("    KP=" . kpTime . " Box=" . boxTime . " Next=" . nbtTime . " Closest=" . closestTime . " | " . cond1 . " && " . cond2 . " && " . cond3 . "`n", workDir . "\degradation_debug.log", "UTF-8")
+            }
+
+            if (cond1 && cond2 && cond3) {
                 closestKeyPress := keyPress
-                closestTime := keyPress.time
+                closestTime := kpTime
+                try {
+                    FileAppend("      -> MATCHED! Setting closestTime=" . closestTime . " degType=" . keyPress.degradationType . "`n", workDir . "\degradation_debug.log", "UTF-8")
+                }
             }
         }
 
@@ -307,9 +374,21 @@ GetDegradationData(events) {
 
         degradationCounts[box.degradationType]++
 
+        ; CRITICAL: Assign to the actual event object
         box.event.degradationType := box.degradationType
         box.event.degradationName := degradationTypes[box.degradationType]
         box.event.assignedBy := box.assignedBy
+
+        ; Debug logging
+        try {
+            FileAppend("  -> Box #" . boxIndex . " FINAL: degType=" . box.degradationType . " (" . box.assignedBy . ")`n", workDir . "\degradation_debug.log", "UTF-8")
+            ; Verify the assignment worked
+            if (box.event.HasOwnProp("degradationType")) {
+                FileAppend("     VERIFIED: box.event.degradationType = " . box.event.degradationType . "`n", workDir . "\degradation_debug.log", "UTF-8")
+            } else {
+                FileAppend("     ERROR: box.event does NOT have degradationType property!`n", workDir . "\degradation_debug.log", "UTF-8")
+            }
+        }
     }
 
     local totalBoxes := 0

@@ -63,8 +63,18 @@ ProcessMacroLine(key, value) {
                     event.top := EnsureInteger(parts[3], 0)
                     event.right := EnsureInteger(parts[4], 0)
                     event.bottom := EnsureInteger(parts[5], 0)
+
+                    ; Parse additional parameters (deg=, isTagged=)
                     if (parts.Length >= 6) {
-                        event.isTagged := (parts[6] = "1")
+                        Loop parts.Length - 5 {
+                            param := parts[5 + A_Index]
+                            if (InStr(param, "deg=")) {
+                                degValue := StrReplace(param, "deg=", "")
+                                event.degradationType := EnsureInteger(degValue, 1)
+                            } else if (param = "1") {
+                                event.isTagged := true
+                            }
+                        }
                     }
                     validEvent := true
                 }

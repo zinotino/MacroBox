@@ -139,6 +139,10 @@ SaveConfig() {
                         }
                         if (event.type = "boundingBox") {
                             eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
+                            ; Save degradation type if present
+                            if (event.HasOwnProp("degradationType")) {
+                                eventString .= ",deg=" . event.degradationType
+                            }
                         } else if (event.type = "jsonAnnotation") {
                             eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
                         } else if (event.type = "keyDown") {
@@ -659,6 +663,10 @@ CreateMacroPack() {
 
                         if (event.type = "boundingBox") {
                             eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
+                            ; Save degradation type if present
+                            if (event.HasOwnProp("degradationType")) {
+                                eventString .= ",deg=" . event.degradationType
+                            }
                         } else if (event.type = "jsonAnnotation") {
                             eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
                         } else if (event.type = "keyDown") {
