@@ -207,6 +207,8 @@ ShowStatsMenu() {
     y += 18
     AddHorizontalStatRowLive(statsGui, y, "Boxes:", "all_boxes", "today_boxes")
     y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Active Time:", "all_active_time", "today_active_time")
+    y += 18
     AddHorizontalStatRowLive(statsGui, y, "Avg Time:", "all_avg_time", "today_avg_time")
     y += 18
     AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
@@ -371,6 +373,15 @@ UpdateStatsDisplay() {
         allStats := ReadStatsFromCSV(false)
         todayStats := GetTodayStats()
 
+        ; CRITICAL: Recalculate hourly rates with LIVE active time
+        currentActiveTime := GetCurrentSessionActiveTime()
+        if (currentActiveTime > 5000) { ; At least 5 seconds
+            activeTimeHours := currentActiveTime / 3600000
+            allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
+            allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
+            allStats["session_active_time"] := currentActiveTime
+        }
+
         ; Update general stats
         if (statsControls.Has("all_exec"))
             statsControls["all_exec"].Value := allStats["total_executions"]
@@ -381,6 +392,11 @@ UpdateStatsDisplay() {
             statsControls["all_boxes"].Value := allStats["total_boxes"]
         if (statsControls.Has("today_boxes"))
             statsControls["today_boxes"].Value := todayStats["total_boxes"]
+
+        if (statsControls.Has("all_active_time"))
+            statsControls["all_active_time"].Value := FormatMilliseconds(allStats["session_active_time"])
+        if (statsControls.Has("today_active_time"))
+            statsControls["today_active_time"].Value := FormatMilliseconds(todayStats["session_active_time"])
 
         if (statsControls.Has("all_avg_time"))
             statsControls["all_avg_time"].Value := allStats["average_execution_time"] . " ms"
