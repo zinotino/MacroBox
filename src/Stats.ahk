@@ -158,9 +158,9 @@ InitializeOfflineDataFiles() {
 
 ; ===== STATISTICS DISPLAY FUNCTIONS =====
 ShowStatsMenu() {
-    global masterStatsCSV, darkMode, currentSessionId
+    global masterStatsCSV, darkMode, currentSessionId, permanentStatsFile
 
-    ; Create simple text-based stats display
+    ; Create horizontal-optimized stats display
     statsGui := Gui("+Resize", "📊 MacroMaster Statistics")
     statsGui.BackColor := darkMode ? "0x1E1E1E" : "0xF5F5F5"
     statsGui.SetFont("s9", "Consolas")
@@ -169,161 +169,141 @@ ShowStatsMenu() {
     allStats := ReadStatsFromCSV(false)
     todayStats := GetTodayStats()
 
-    ; Build text display
-    y := 10
+    ; Layout parameters
+    leftCol := 20
+    midCol := 250
+    rightCol := 480
+    y := 15
 
-    ; === ALL-TIME STATS ===
-    AddStatsHeader(statsGui, y, "═══ ALL-TIME STATISTICS ═══")
-    y += 30
+    ; === TITLE & DATE ===
+    todayDate := FormatTime(A_Now, "MMMM d, yyyy (dddd)")
+    titleText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660 Center", todayDate)
+    titleText.SetFont("s10 bold")
+    titleText.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+    y += 35
 
-    AddStatsLine(statsGui, y, "Total Executions:", allStats["total_executions"])
-    y += 20
-    AddStatsLine(statsGui, y, "Total Boxes:", allStats["total_boxes"])
-    y += 20
-    AddStatsLine(statsGui, y, "Avg Execution Time:", allStats["average_execution_time"] . " ms")
-    y += 20
+    ; === COLUMN HEADERS ===
+    AddStatsHeader(statsGui, y, "ALL-TIME (Since Reset)", leftCol, 210)
+    AddStatsHeader(statsGui, y, "TODAY", rightCol, 210)
+    y += 25
 
-    ; Session info
-    sessionTime := FormatMilliseconds(allStats["session_active_time"])
-    AddStatsLine(statsGui, y, "Active Time:", sessionTime)
-    y += 20
+    ; === GENERAL STATS ===
+    AddSectionDivider(statsGui, y, "GENERAL STATISTICS", 660)
+    y += 25
 
-    ; Hourly rates
-    AddStatsLine(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"])
-    y += 20
-    AddStatsLine(statsGui, y, "Executions/Hour:", allStats["executions_per_hour"])
-    y += 30
+    AddHorizontalStatRow(statsGui, y, "Executions:", allStats["total_executions"], todayStats["total_executions"])
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Boxes:", allStats["total_boxes"], todayStats["total_boxes"])
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Avg Time:", allStats["average_execution_time"] . " ms", todayStats["average_execution_time"] . " ms")
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"], todayStats["boxes_per_hour"])
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Exec/Hour:", allStats["executions_per_hour"], todayStats["executions_per_hour"])
+    y += 25
 
-    ; === DEGRADATION BREAKDOWN (ALL-TIME) ===
-    AddStatsHeader(statsGui, y, "═══ DEGRADATION TOTALS (ALL-TIME) ═══")
-    y += 30
+    ; === DEGRADATION BREAKDOWN ===
+    AddSectionDivider(statsGui, y, "DEGRADATION BREAKDOWN", 660)
+    y += 25
 
-    AddStatsLine(statsGui, y, "Smudge:", allStats["smudge_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Glare:", allStats["glare_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Splashes:", allStats["splashes_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Partial Blockage:", allStats["partial_blockage_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Full Blockage:", allStats["full_blockage_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Light Flare:", allStats["light_flare_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Rain:", allStats["rain_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Haze:", allStats["haze_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Snow:", allStats["snow_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Clear:", allStats["clear_total"])
-    y += 30
+    degradationTypes := [
+        ["Smudge", "smudge_total"],
+        ["Glare", "glare_total"],
+        ["Splashes", "splashes_total"],
+        ["Partial Block", "partial_blockage_total"],
+        ["Full Block", "full_blockage_total"],
+        ["Light Flare", "light_flare_total"],
+        ["Rain", "rain_total"],
+        ["Haze", "haze_total"],
+        ["Snow", "snow_total"],
+        ["Clear", "clear_total"]
+    ]
 
-    ; === TODAY'S STATS ===
-    AddStatsHeader(statsGui, y, "═══ TODAY'S STATISTICS ═══")
-    y += 30
-
-    AddStatsLine(statsGui, y, "Executions:", todayStats["total_executions"])
-    y += 20
-    AddStatsLine(statsGui, y, "Boxes:", todayStats["total_boxes"])
-    y += 20
-    AddStatsLine(statsGui, y, "Avg Execution Time:", todayStats["average_execution_time"] . " ms")
-    y += 20
-    AddStatsLine(statsGui, y, "Active Time:", FormatMilliseconds(todayStats["session_active_time"]))
-    y += 20
-    AddStatsLine(statsGui, y, "Boxes/Hour:", todayStats["boxes_per_hour"])
-    y += 20
-    AddStatsLine(statsGui, y, "Executions/Hour:", todayStats["executions_per_hour"])
-    y += 30
-
-    ; === TODAY'S DEGRADATIONS ===
-    AddStatsHeader(statsGui, y, "═══ DEGRADATION TOTALS (TODAY) ═══")
-    y += 30
-
-    AddStatsLine(statsGui, y, "Smudge:", todayStats["smudge_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Glare:", todayStats["glare_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Splashes:", todayStats["splashes_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Partial Blockage:", todayStats["partial_blockage_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Full Blockage:", todayStats["full_blockage_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Light Flare:", todayStats["light_flare_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Rain:", todayStats["rain_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Haze:", todayStats["haze_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Snow:", todayStats["snow_total"])
-    y += 20
-    AddStatsLine(statsGui, y, "Clear:", todayStats["clear_total"])
-    y += 30
+    for degInfo in degradationTypes {
+        AddHorizontalStatRow(statsGui, y, degInfo[1] . ":", allStats[degInfo[2]], todayStats[degInfo[2]])
+        y += 18
+    }
+    y += 15
 
     ; === MACRO DETAILS ===
-    AddStatsHeader(statsGui, y, "═══ MACRO DETAILS ═══")
+    AddSectionDivider(statsGui, y, "MACRO DETAILS", 660)
+    y += 25
+
+    AddHorizontalStatRow(statsGui, y, "Most Used Button:", allStats["most_used_button"], "")
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Most Active Layer:", allStats["most_active_layer"], "")
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "Macro Executions:", allStats["macro_executions_count"], todayStats["total_executions"])
+    y += 18
+    AddHorizontalStatRow(statsGui, y, "JSON Executions:", allStats["json_profile_executions_count"], "")
+    y += 25
+
+    ; === FILE LOCATIONS ===
+    AddSectionDivider(statsGui, y, "DATA FILES", 660)
+    y += 25
+
+    infoText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Display Stats: " . masterStatsCSV)
+    infoText.SetFont("s8")
+    infoText.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
+    y += 18
+
+    infoText2 := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Permanent Master: " . permanentStatsFile)
+    infoText2.SetFont("s8")
+    infoText2.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
     y += 30
 
-    AddStatsLine(statsGui, y, "Most Used Button:", allStats["most_used_button"])
-    y += 20
-    AddStatsLine(statsGui, y, "Most Active Layer:", allStats["most_active_layer"])
-    y += 20
-
-    ; Calculate efficiency metrics
-    if (allStats["total_executions"] > 0 && allStats["session_active_time"] > 0) {
-        activeTimeSeconds := allStats["session_active_time"] / 1000.0
-        totalExecTimeSeconds := allStats["total_execution_time"] / 1000.0
-        efficiency := Round((totalExecTimeSeconds / activeTimeSeconds) * 100, 1)
-        AddStatsLine(statsGui, y, "Efficiency Ratio:", efficiency . "%")
-        y += 20
-
-        avgBoxesPerExec := Round(allStats["total_boxes"] / allStats["total_executions"], 1)
-        AddStatsLine(statsGui, y, "Avg Boxes/Execution:", avgBoxesPerExec)
-        y += 20
-    }
-
-    AddStatsLine(statsGui, y, "Macro Executions:", allStats["macro_executions_count"])
-    y += 20
-    AddStatsLine(statsGui, y, "JSON Executions:", allStats["json_profile_executions_count"])
-    y += 20
-    AddStatsLine(statsGui, y, "Session ID:", SubStr(currentSessionId, 6))
-    y += 30
-
-    ; Buttons
-    btnExport := statsGui.Add("Button", "x20 y" . (y + 10) . " w120 h30", "💾 Export")
+    ; === BUTTONS ===
+    btnExport := statsGui.Add("Button", "x" . leftCol . " y" . y . " w120 h30", "💾 Export")
     btnExport.SetFont("s9")
     btnExport.OnEvent("Click", (*) => ExportStatsData(statsGui))
 
-    btnReset := statsGui.Add("Button", "x150 y" . (y + 10) . " w120 h30", "🗑️ Reset")
+    btnReset := statsGui.Add("Button", "x" . (leftCol + 130) . " y" . y . " w120 h30", "🗑️ Reset")
     btnReset.SetFont("s9")
     btnReset.OnEvent("Click", (*) => ResetAllStats())
 
-    btnClose := statsGui.Add("Button", "x280 y" . (y + 10) . " w120 h30", "❌ Close")
+    btnClose := statsGui.Add("Button", "x" . (leftCol + 260) . " y" . y . " w120 h30", "❌ Close")
     btnClose.SetFont("s9")
     btnClose.OnEvent("Click", (*) => statsGui.Destroy())
 
-    statsGui.Show("w420 h" . (y + 60))
+    statsGui.Show("w700 h" . (y + 50))
 }
 
-; Helper function to add section headers
-AddStatsHeader(gui, y, text) {
+; Add horizontal stat row (label in left, all-time value in middle, today value in right)
+AddHorizontalStatRow(gui, y, label, allValue, todayValue) {
     global darkMode
-    header := gui.Add("Text", "x20 y" . y . " w380", text)
+
+    ; Label
+    labelCtrl := gui.Add("Text", "x20 y" . y . " w140", label)
+    labelCtrl.SetFont("s9", "Consolas")
+    labelCtrl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x555555"))
+
+    ; All-time value
+    allCtrl := gui.Add("Text", "x170 y" . y . " w70 Right", String(allValue))
+    allCtrl.SetFont("s9 bold", "Consolas")
+    allCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+
+    ; Today value
+    if (todayValue != "") {
+        todayCtrl := gui.Add("Text", "x480 y" . y . " w70 Right", String(todayValue))
+        todayCtrl.SetFont("s9 bold", "Consolas")
+        todayCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+    }
+}
+
+; Add section divider
+AddSectionDivider(gui, y, text, width) {
+    global darkMode
+    divider := gui.Add("Text", "x20 y" . y . " w" . width, "═══ " . text . " ═══")
+    divider.SetFont("s9 bold", "Consolas")
+    divider.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
+
+; Helper function to add column headers
+AddStatsHeader(gui, y, text, x, width) {
+    global darkMode
+    header := gui.Add("Text", "x" . x . " y" . y . " w" . width . " Center", text)
     header.SetFont("s9 bold", "Consolas")
     header.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
-}
-
-; Helper function to add stat lines
-AddStatsLine(gui, y, label, value) {
-    global darkMode
-    labelCtrl := gui.Add("Text", "x40 y" . y . " w200", label)
-    labelCtrl.SetFont("s9", "Consolas")
-    labelCtrl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x333333"))
-
-    valueCtrl := gui.Add("Text", "x250 y" . y . " w150 Right", String(value))
-    valueCtrl.SetFont("s9 bold", "Consolas")
-    valueCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
 }
 
 ; Get today's stats only
