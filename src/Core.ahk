@@ -85,6 +85,7 @@ global configFile := workDir . "\config.ini"
 global documentsDir := A_MyDocuments . "\MacroMaster"  ; For thumbnails
 global thumbnailDir := documentsDir . "\thumbnails"
 global masterStatsCSV := workDir . "\master_stats.csv"
+global permanentStatsFile := workDir . "\master_stats_permanent.csv"  ; NEVER gets reset
 
 ; ===== THUMBNAIL SUPPORT =====
 global buttonThumbnails := Map()

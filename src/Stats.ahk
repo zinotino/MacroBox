@@ -8,17 +8,33 @@
 ; - thumbnailDir
 ; - sessionId
 ; - currentUsername
-; - masterStatsCSV
+; - masterStatsCSV (reset-able display stats)
+; - permanentStatsFile (PERMANENT master stats - NEVER reset)
 ; And functions: UpdateStatus, RunWaitOne
+
+; ===== PERMANENT STATS PERSISTENCE SYSTEM =====
+; Two-tier stats storage system:
+; 1. masterStatsCSV - Display stats (Today/All-Time shown in GUI) - CAN be reset by user
+; 2. permanentStatsFile - PERMANENT master archive - NEVER gets reset
+;
+; This ensures user data is NEVER lost even if they visually "reset" their stats.
+; The permanent file preserves complete historical data forever.
+
+; ===== DEGRADATION TRACKING ACCURACY IMPROVEMENTS =====
+; Enhanced degradation tracking to directly extract degradationType from bounding box events.
+; This ensures accurate per-box degradation counts across all execution types.
 
 ; ===== STATISTICS SYSTEM INITIALIZATION =====
 InitializeStatsSystem() {
-    global masterStatsCSV, workDir, sessionId, currentUsername
+    global masterStatsCSV, workDir, sessionId, currentUsername, permanentStatsFile
 
     ; Ensure CSV file exists
     if (!FileExist(masterStatsCSV)) {
         InitializeCSVFile()
     }
+
+    ; Initialize permanent master stats file (NEVER gets reset)
+    InitializePermanentStatsFile()
 }
 
 ; ===== CSV FILE INITIALIZATION =====
@@ -42,6 +58,24 @@ InitializeCSVFile() {
         }
     } catch as e {
         UpdateStatus("⚠️ CSV setup failed")
+    }
+}
+
+; ===== PERMANENT STATS FILE INITIALIZATION =====
+; This file NEVER gets reset - it's the permanent archive of ALL user data
+InitializePermanentStatsFile() {
+    global workDir, permanentStatsFile
+
+    try {
+        ; Create permanent stats file in Documents/MacroMaster/data/
+        permanentStatsFile := workDir . "\master_stats_permanent.csv"
+
+        if (!FileExist(permanentStatsFile)) {
+            header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
+            FileAppend(header, permanentStatsFile, "UTF-8")
+        }
+    } catch as e {
+        ; Silent fail - don't break execution if permanent file can't be created
     }
 }
 
@@ -643,45 +677,59 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
     ; Process data based on execution type with improved accuracy
     if (executionType = "macro") {
-        ; For macro executions: analyze events and analysis record
-        if (IsObject(analysisRecord) && analysisRecord.HasOwnProp("boundingBoxCount")) {
-            executionData["total_boxes"] := analysisRecord.boundingBoxCount
-            if (analysisRecord.HasOwnProp("degradationAssignments") && analysisRecord.degradationAssignments != "") {
-                executionData["degradation_assignments"] := analysisRecord.degradationAssignments
-                ProcessDegradationCounts(executionData, analysisRecord.degradationAssignments)
-            } else {
-                ; No degradation assignments means clear
-                executionData["degradation_assignments"] := "clear"
-                executionData["clear_count"] := 1
+        ; IMPROVED: Always extract degradation types directly from bounding box events
+        bbox_count := 0
+        degradation_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
+
+        for event in events {
+            if (event.type = "boundingBox") {
+                bbox_count++
+                ; Extract degradation type directly from the box event
+                if (event.HasOwnProp("degradationType")) {
+                    degType := event.degradationType
+                    if (degradation_counts_map.Has(degType)) {
+                        degradation_counts_map[degType]++
+                    }
+                }
             }
+        }
+
+        executionData["total_boxes"] := bbox_count
+
+        ; Convert degradation type IDs to counts
+        executionData["smudge_count"] := degradation_counts_map[1]
+        executionData["glare_count"] := degradation_counts_map[2]
+        executionData["splashes_count"] := degradation_counts_map[3]
+        executionData["partial_blockage_count"] := degradation_counts_map[4]
+        executionData["full_blockage_count"] := degradation_counts_map[5]
+        executionData["light_flare_count"] := degradation_counts_map[6]
+        executionData["rain_count"] := degradation_counts_map[7]
+        executionData["haze_count"] := degradation_counts_map[8]
+        executionData["snow_count"] := degradation_counts_map[9]
+        executionData["clear_count"] := degradation_counts_map[0]
+
+        ; Build degradation assignments string
+        degradation_names := []
+        if (degradation_counts_map[1] > 0) degradation_names.Push("smudge")
+        if (degradation_counts_map[2] > 0) degradation_names.Push("glare")
+        if (degradation_counts_map[3] > 0) degradation_names.Push("splashes")
+        if (degradation_counts_map[4] > 0) degradation_names.Push("partial_blockage")
+        if (degradation_counts_map[5] > 0) degradation_names.Push("full_blockage")
+        if (degradation_counts_map[6] > 0) degradation_names.Push("light_flare")
+        if (degradation_counts_map[7] > 0) degradation_names.Push("rain")
+        if (degradation_counts_map[8] > 0) degradation_names.Push("haze")
+        if (degradation_counts_map[9] > 0) degradation_names.Push("snow")
+        if (degradation_counts_map[0] > 0) degradation_names.Push("clear")
+
+        if (degradation_names.Length > 0) {
+            degradation_string := ""
+            for i, name in degradation_names {
+                degradation_string .= (i > 1 ? "," : "") . name
+            }
+            executionData["degradation_assignments"] := degradation_string
         } else {
-            ; Fallback: analyze events directly
-            bbox_count := 0
-            degradation_list := []
-
-            for event in events {
-                if (event.type = "drag" || event.type = "bbox" || event.type = "boundingBox") {
-                    bbox_count++
-                }
-                ; Extract degradation assignments from events if available
-                if (event.HasOwnProp("degradation") && event.degradation != "") {
-                    degradation_list.Push(event.degradation)
-                }
-            }
-
-            executionData["total_boxes"] := bbox_count
-            if (degradation_list.Length > 0) {
-                degradation_string := ""
-                for i, deg in degradation_list {
-                    degradation_string .= (i > 1 ? "," : "") . deg
-                }
-                executionData["degradation_assignments"] := degradation_string
-                ProcessDegradationCounts(executionData, degradation_string)
-            } else {
-                ; No degradations found means clear
-                executionData["degradation_assignments"] := "clear"
-                executionData["clear_count"] := executionData["total_boxes"] > 0 ? executionData["total_boxes"] : 1
-            }
+            executionData["degradation_assignments"] := "clear"
+            executionData["clear_count"] := bbox_count > 0 ? bbox_count : 1
         }
 
     } else if (executionType = "json_profile") {
@@ -900,10 +948,17 @@ GetLifetimeStats() {
 ; NOTE: InitializeCSVFile function is defined earlier in this file
 
 AppendToCSV(executionData) {
-    global currentSessionId, currentUsername, documentsDir
+    global currentSessionId, currentUsername, documentsDir, permanentStatsFile
 
     ; Write to CSV (backup)
     csvSuccess := AppendToCSVFile(executionData)
+
+    ; CRITICAL: Also write to permanent master stats file (NEVER gets reset)
+    try {
+        AppendToPermanentStatsFile(executionData)
+    } catch {
+        ; Silent fail - don't break execution
+    }
 
     ; Also write to SQLite database
     try {
@@ -1004,6 +1059,58 @@ AppendToCSVFile(executionData) {
     }
 }
 
+; ===== APPEND TO PERMANENT STATS FILE =====
+; This function writes to the permanent master stats file that NEVER gets reset
+AppendToPermanentStatsFile(executionData) {
+    global permanentStatsFile, currentSessionId, currentUsername
+
+    try {
+        ; Ensure permanent stats file exists
+        if (!FileExist(permanentStatsFile)) {
+            header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
+            FileAppend(header, permanentStatsFile, "UTF-8")
+        }
+
+        ; Build CSV row with all required fields (identical to AppendToCSVFile)
+        row := executionData["timestamp"] . ","
+        row .= currentSessionId . ","
+        row .= currentUsername . ","
+        row .= executionData["execution_type"] . ","
+        row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . ","
+        row .= executionData["layer"] . ","
+        row .= executionData["execution_time_ms"] . ","
+        row .= executionData["total_boxes"] . ","
+        row .= (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . ","
+        row .= executionData["severity_level"] . ","
+        row .= executionData["canvas_mode"] . ","
+        row .= executionData["session_active_time_ms"] . ","
+        row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
+
+        ; Degradation counts (ensure all are included)
+        row .= (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0) . ","
+        row .= (executionData.Has("glare_count") ? executionData["glare_count"] : 0) . ","
+        row .= (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0) . ","
+        row .= (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0) . ","
+        row .= (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0) . ","
+        row .= (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0) . ","
+        row .= (executionData.Has("rain_count") ? executionData["rain_count"] : 0) . ","
+        row .= (executionData.Has("haze_count") ? executionData["haze_count"] : 0) . ","
+        row .= (executionData.Has("snow_count") ? executionData["snow_count"] : 0) . ","
+        row .= (executionData.Has("clear_count") ? executionData["clear_count"] : 0) . ","
+
+        ; Additional fields
+        row .= (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . ","
+        row .= (executionData.Has("execution_success") ? executionData["execution_success"] : "true") . ","
+        row .= (executionData.Has("error_details") ? executionData["error_details"] : "") . "`n"
+
+        FileAppend(row, permanentStatsFile, "UTF-8")
+        return true
+
+    } catch {
+        return false
+    }
+}
+
 ; ===== EXPORT FUNCTIONS =====
 ExportStatsData(statsMenuGui := "") {
     global masterStatsCSV
@@ -1096,13 +1203,13 @@ SendHttpPost(url, jsonData) {
 
 ; ===== RESET STATS FUNCTION =====
 ResetAllStats() {
-    global masterStatsCSV
+    global masterStatsCSV, permanentStatsFile
 
-    result := MsgBox("This will permanently delete all macro execution statistics!`n`nAre you sure you want to reset all stats?", "Reset Statistics", "YesNo Icon!")
+    result := MsgBox("This will reset the DISPLAY statistics (Today and All-Time shown in the stats menu).`n`n⚠️ Your permanent master stats file will NOT be deleted - all your historical data is safe!`n`nReset display stats?", "Reset Statistics", "YesNo Icon!")
 
     if (result = "Yes") {
         try {
-            ; Delete the CSV file
+            ; Delete the CSV file (display stats)
             if FileExist(masterStatsCSV) {
                 FileDelete(masterStatsCSV)
             }
@@ -1110,7 +1217,8 @@ ResetAllStats() {
             ; Reinitialize CSV file
             InitializeCSVFile()
 
-            MsgBox("Statistics reset complete!`n`nAll execution data has been cleared.", "Reset Complete", "Icon!")
+            ; NOTE: We do NOT delete permanentStatsFile - it persists forever!
+            MsgBox("Display statistics reset complete!`n`n✅ Your permanent master stats file is safe at:`n" . permanentStatsFile . "`n`nAll historical data is preserved!", "Reset Complete", "Icon!")
 
         } catch Error as e {
             UpdateStatus("⚠️ Failed to reset statistics")
