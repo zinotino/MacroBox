@@ -238,7 +238,7 @@ ShowStatsMenu() {
     y += 15
 
     ; === JSON DEGRADATION BREAKDOWN ===
-    AddSectionDivider(statsGui, y, "JSON DEGRADATION BREAKDOWN", 660)
+    AddSectionDivider(statsGui, y, "JSON DEGRADATION SELECTION COUNT", 660)
     y += 25
 
     for degInfo in degradationTypes {
@@ -591,16 +591,30 @@ GetTodayStats() {
 
                         ; Separate by execution type
                         if (execution_type = "json_profile") {
-                            stats["json_smudge"] += smudge
-                            stats["json_glare"] += glare
-                            stats["json_splashes"] += splashes
-                            stats["json_partial"] += partial
-                            stats["json_full"] += full
-                            stats["json_flare"] += flare
-                            stats["json_rain"] += rain
-                            stats["json_haze"] += haze
-                            stats["json_snow"] += snow
-                            stats["json_clear"] += clear
+                            ; For JSON: just count which degradation type was selected (1 per execution)
+                            degradation_name := Trim(fields[9])  ; degradation_assignments field
+                            switch StrLower(degradation_name) {
+                                case "smudge", "1":
+                                    stats["json_smudge"]++
+                                case "glare", "2":
+                                    stats["json_glare"]++
+                                case "splashes", "3":
+                                    stats["json_splashes"]++
+                                case "partial_blockage", "4":
+                                    stats["json_partial"]++
+                                case "full_blockage", "5":
+                                    stats["json_full"]++
+                                case "light_flare", "6":
+                                    stats["json_flare"]++
+                                case "rain", "7":
+                                    stats["json_rain"]++
+                                case "haze", "8":
+                                    stats["json_haze"]++
+                                case "snow", "9":
+                                    stats["json_snow"]++
+                                case "clear", "none":
+                                    stats["json_clear"]++
+                            }
                         } else if (execution_type = "macro") {
                             stats["macro_smudge"] += smudge
                             stats["macro_glare"] += glare
@@ -836,16 +850,30 @@ ReadStatsFromCSV(filterBySession := false) {
 
                         ; Separate by execution type
                         if (execution_type = "json_profile") {
-                            stats["json_smudge"] += smudge
-                            stats["json_glare"] += glare
-                            stats["json_splashes"] += splashes
-                            stats["json_partial"] += partial
-                            stats["json_full"] += full
-                            stats["json_flare"] += flare
-                            stats["json_rain"] += rain
-                            stats["json_haze"] += haze
-                            stats["json_snow"] += snow
-                            stats["json_clear"] += clear
+                            ; For JSON: just count which degradation type was selected (1 per execution)
+                            degradation_name := Trim(fields[9])  ; degradation_assignments field
+                            switch StrLower(degradation_name) {
+                                case "smudge", "1":
+                                    stats["json_smudge"]++
+                                case "glare", "2":
+                                    stats["json_glare"]++
+                                case "splashes", "3":
+                                    stats["json_splashes"]++
+                                case "partial_blockage", "4":
+                                    stats["json_partial"]++
+                                case "full_blockage", "5":
+                                    stats["json_full"]++
+                                case "light_flare", "6":
+                                    stats["json_flare"]++
+                                case "rain", "7":
+                                    stats["json_rain"]++
+                                case "haze", "8":
+                                    stats["json_haze"]++
+                                case "snow", "9":
+                                    stats["json_snow"]++
+                                case "clear", "none":
+                                    stats["json_clear"]++
+                            }
                         } else if (execution_type = "macro") {
                             stats["macro_smudge"] += smudge
                             stats["macro_glare"] += glare
