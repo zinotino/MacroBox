@@ -373,13 +373,22 @@ UpdateStatsDisplay() {
         allStats := ReadStatsFromCSV(false)
         todayStats := GetTodayStats()
 
-        ; CRITICAL: Recalculate hourly rates with LIVE active time
+        ; CRITICAL: Recalculate hourly rates with LIVE active time for ALL-TIME
         currentActiveTime := GetCurrentSessionActiveTime()
         if (currentActiveTime > 5000) { ; At least 5 seconds
             activeTimeHours := currentActiveTime / 3600000
             allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
             allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
             allStats["session_active_time"] := currentActiveTime
+        }
+
+        ; CRITICAL: Recalculate hourly rates with LIVE active time for TODAY
+        ; Today's active time is same as current session (resets daily)
+        if (currentActiveTime > 5000) {
+            activeTimeHours := currentActiveTime / 3600000
+            todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
+            todayStats["executions_per_hour"] := Round(todayStats["total_executions"] / activeTimeHours, 1)
+            todayStats["session_active_time"] := currentActiveTime
         }
 
         ; Update general stats
