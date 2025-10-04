@@ -214,8 +214,8 @@ ShowStatsMenu() {
     AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
     y += 25
 
-    ; === DEGRADATION BREAKDOWN ===
-    AddSectionDivider(statsGui, y, "DEGRADATION BREAKDOWN", 660)
+    ; === MACRO DEGRADATION BREAKDOWN ===
+    AddSectionDivider(statsGui, y, "MACRO DEGRADATION BREAKDOWN", 660)
     y += 25
 
     degradationTypes := [
@@ -232,7 +232,17 @@ ShowStatsMenu() {
     ]
 
     for degInfo in degradationTypes {
-        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_" . degInfo[2], "today_" . degInfo[2])
+        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_macro_" . degInfo[2], "today_macro_" . degInfo[2])
+        y += 18
+    }
+    y += 15
+
+    ; === JSON DEGRADATION BREAKDOWN ===
+    AddSectionDivider(statsGui, y, "JSON DEGRADATION BREAKDOWN", 660)
+    y += 25
+
+    for degInfo in degradationTypes {
+        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_json_" . degInfo[2], "today_json_" . degInfo[2])
         y += 18
     }
     y += 15
@@ -387,18 +397,21 @@ UpdateStatsDisplay() {
         if (statsControls.Has("today_exec_rate"))
             statsControls["today_exec_rate"].Value := todayStats["executions_per_hour"]
 
-        ; Update degradations
+        ; Update macro degradations
         degradationKeys := ["smudge", "glare", "splashes", "partial", "full", "flare", "rain", "haze", "snow", "clear"]
-        degradationFields := ["smudge_total", "glare_total", "splashes_total", "partial_blockage_total",
-                              "full_blockage_total", "light_flare_total", "rain_total", "haze_total",
-                              "snow_total", "clear_total"]
 
-        for i, key in degradationKeys {
-            field := degradationFields[i]
-            if (statsControls.Has("all_" . key))
-                statsControls["all_" . key].Value := allStats[field]
-            if (statsControls.Has("today_" . key))
-                statsControls["today_" . key].Value := todayStats[field]
+        for key in degradationKeys {
+            ; Macro degradations
+            if (statsControls.Has("all_macro_" . key))
+                statsControls["all_macro_" . key].Value := allStats["macro_" . key]
+            if (statsControls.Has("today_macro_" . key))
+                statsControls["today_macro_" . key].Value := todayStats["macro_" . key]
+
+            ; JSON degradations
+            if (statsControls.Has("all_json_" . key))
+                statsControls["all_json_" . key].Value := allStats["json_" . key]
+            if (statsControls.Has("today_json_" . key))
+                statsControls["today_json_" . key].Value := todayStats["json_" . key]
         }
 
         ; Update execution type breakdown
@@ -472,6 +485,26 @@ GetTodayStats() {
     stats["haze_total"] := 0
     stats["snow_total"] := 0
     stats["clear_total"] := 0
+    stats["macro_smudge"] := 0
+    stats["macro_glare"] := 0
+    stats["macro_splashes"] := 0
+    stats["macro_partial"] := 0
+    stats["macro_full"] := 0
+    stats["macro_flare"] := 0
+    stats["macro_rain"] := 0
+    stats["macro_haze"] := 0
+    stats["macro_snow"] := 0
+    stats["macro_clear"] := 0
+    stats["json_smudge"] := 0
+    stats["json_glare"] := 0
+    stats["json_splashes"] := 0
+    stats["json_partial"] := 0
+    stats["json_full"] := 0
+    stats["json_flare"] := 0
+    stats["json_rain"] := 0
+    stats["json_haze"] := 0
+    stats["json_snow"] := 0
+    stats["json_clear"] := 0
     stats["severity_low"] := 0
     stats["severity_medium"] := 0
     stats["severity_high"] := 0
@@ -534,16 +567,52 @@ GetTodayStats() {
 
                     ; Parse degradations from fields 14-23
                     if (fields.Length >= 23) {
-                        stats["smudge_total"] += IsNumber(fields[14]) ? Integer(fields[14]) : 0
-                        stats["glare_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
-                        stats["splashes_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
-                        stats["partial_blockage_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
-                        stats["full_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
-                        stats["light_flare_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
-                        stats["rain_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
-                        stats["haze_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
-                        stats["snow_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
-                        stats["clear_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
+                        smudge := IsNumber(fields[14]) ? Integer(fields[14]) : 0
+                        glare := IsNumber(fields[15]) ? Integer(fields[15]) : 0
+                        splashes := IsNumber(fields[16]) ? Integer(fields[16]) : 0
+                        partial := IsNumber(fields[17]) ? Integer(fields[17]) : 0
+                        full := IsNumber(fields[18]) ? Integer(fields[18]) : 0
+                        flare := IsNumber(fields[19]) ? Integer(fields[19]) : 0
+                        rain := IsNumber(fields[20]) ? Integer(fields[20]) : 0
+                        haze := IsNumber(fields[21]) ? Integer(fields[21]) : 0
+                        snow := IsNumber(fields[22]) ? Integer(fields[22]) : 0
+                        clear := IsNumber(fields[23]) ? Integer(fields[23]) : 0
+
+                        stats["smudge_total"] += smudge
+                        stats["glare_total"] += glare
+                        stats["splashes_total"] += splashes
+                        stats["partial_blockage_total"] += partial
+                        stats["full_blockage_total"] += full
+                        stats["light_flare_total"] += flare
+                        stats["rain_total"] += rain
+                        stats["haze_total"] += haze
+                        stats["snow_total"] += snow
+                        stats["clear_total"] += clear
+
+                        ; Separate by execution type
+                        if (execution_type = "json_profile") {
+                            stats["json_smudge"] += smudge
+                            stats["json_glare"] += glare
+                            stats["json_splashes"] += splashes
+                            stats["json_partial"] += partial
+                            stats["json_full"] += full
+                            stats["json_flare"] += flare
+                            stats["json_rain"] += rain
+                            stats["json_haze"] += haze
+                            stats["json_snow"] += snow
+                            stats["json_clear"] += clear
+                        } else if (execution_type = "macro") {
+                            stats["macro_smudge"] += smudge
+                            stats["macro_glare"] += glare
+                            stats["macro_splashes"] += splashes
+                            stats["macro_partial"] += partial
+                            stats["macro_full"] += full
+                            stats["macro_flare"] += flare
+                            stats["macro_rain"] += rain
+                            stats["macro_haze"] += haze
+                            stats["macro_snow"] += snow
+                            stats["macro_clear"] += clear
+                        }
                     }
                 } catch {
                     continue
@@ -620,6 +689,30 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["haze_total"] := 0
     stats["snow_total"] := 0
     stats["clear_total"] := 0
+
+    ; Initialize MACRO degradation counters
+    stats["macro_smudge"] := 0
+    stats["macro_glare"] := 0
+    stats["macro_splashes"] := 0
+    stats["macro_partial"] := 0
+    stats["macro_full"] := 0
+    stats["macro_flare"] := 0
+    stats["macro_rain"] := 0
+    stats["macro_haze"] := 0
+    stats["macro_snow"] := 0
+    stats["macro_clear"] := 0
+
+    ; Initialize JSON degradation counters
+    stats["json_smudge"] := 0
+    stats["json_glare"] := 0
+    stats["json_splashes"] := 0
+    stats["json_partial"] := 0
+    stats["json_full"] := 0
+    stats["json_flare"] := 0
+    stats["json_rain"] := 0
+    stats["json_haze"] := 0
+    stats["json_snow"] := 0
+    stats["json_clear"] := 0
 
     ; Initialize severity counters
     stats["severity_low"] := 0
@@ -718,16 +811,53 @@ ReadStatsFromCSV(filterBySession := false) {
                     ; Read degradation counts directly from CSV fields (14-23)
                     ; Headers: ...break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count...
                     if (fields.Length >= 23) {
-                        stats["smudge_total"] += IsNumber(fields[14]) ? Integer(fields[14]) : 0
-                        stats["glare_total"] += IsNumber(fields[15]) ? Integer(fields[15]) : 0
-                        stats["splashes_total"] += IsNumber(fields[16]) ? Integer(fields[16]) : 0
-                        stats["partial_blockage_total"] += IsNumber(fields[17]) ? Integer(fields[17]) : 0
-                        stats["full_blockage_total"] += IsNumber(fields[18]) ? Integer(fields[18]) : 0
-                        stats["light_flare_total"] += IsNumber(fields[19]) ? Integer(fields[19]) : 0
-                        stats["rain_total"] += IsNumber(fields[20]) ? Integer(fields[20]) : 0
-                        stats["haze_total"] += IsNumber(fields[21]) ? Integer(fields[21]) : 0
-                        stats["snow_total"] += IsNumber(fields[22]) ? Integer(fields[22]) : 0
-                        stats["clear_total"] += IsNumber(fields[23]) ? Integer(fields[23]) : 0
+                        smudge := IsNumber(fields[14]) ? Integer(fields[14]) : 0
+                        glare := IsNumber(fields[15]) ? Integer(fields[15]) : 0
+                        splashes := IsNumber(fields[16]) ? Integer(fields[16]) : 0
+                        partial := IsNumber(fields[17]) ? Integer(fields[17]) : 0
+                        full := IsNumber(fields[18]) ? Integer(fields[18]) : 0
+                        flare := IsNumber(fields[19]) ? Integer(fields[19]) : 0
+                        rain := IsNumber(fields[20]) ? Integer(fields[20]) : 0
+                        haze := IsNumber(fields[21]) ? Integer(fields[21]) : 0
+                        snow := IsNumber(fields[22]) ? Integer(fields[22]) : 0
+                        clear := IsNumber(fields[23]) ? Integer(fields[23]) : 0
+
+                        ; Add to totals
+                        stats["smudge_total"] += smudge
+                        stats["glare_total"] += glare
+                        stats["splashes_total"] += splashes
+                        stats["partial_blockage_total"] += partial
+                        stats["full_blockage_total"] += full
+                        stats["light_flare_total"] += flare
+                        stats["rain_total"] += rain
+                        stats["haze_total"] += haze
+                        stats["snow_total"] += snow
+                        stats["clear_total"] += clear
+
+                        ; Separate by execution type
+                        if (execution_type = "json_profile") {
+                            stats["json_smudge"] += smudge
+                            stats["json_glare"] += glare
+                            stats["json_splashes"] += splashes
+                            stats["json_partial"] += partial
+                            stats["json_full"] += full
+                            stats["json_flare"] += flare
+                            stats["json_rain"] += rain
+                            stats["json_haze"] += haze
+                            stats["json_snow"] += snow
+                            stats["json_clear"] += clear
+                        } else if (execution_type = "macro") {
+                            stats["macro_smudge"] += smudge
+                            stats["macro_glare"] += glare
+                            stats["macro_splashes"] += splashes
+                            stats["macro_partial"] += partial
+                            stats["macro_full"] += full
+                            stats["macro_flare"] += flare
+                            stats["macro_rain"] += rain
+                            stats["macro_haze"] += haze
+                            stats["macro_snow"] += snow
+                            stats["macro_clear"] += clear
+                        }
                     }
 
                 } catch {
