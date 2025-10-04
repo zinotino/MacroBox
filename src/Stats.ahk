@@ -157,17 +157,29 @@ InitializeOfflineDataFiles() {
 }
 
 ; ===== STATISTICS DISPLAY FUNCTIONS =====
+; Global variables for live stats GUI
+global statsGui := ""
+global statsGuiOpen := false
+global statsControls := Map()
+
 ShowStatsMenu() {
     global masterStatsCSV, darkMode, currentSessionId, permanentStatsFile
+    global statsGui, statsGuiOpen, statsControls
+
+    ; Close existing if open
+    if (statsGuiOpen) {
+        CloseStatsMenu()
+        return
+    }
 
     ; Create horizontal-optimized stats display
-    statsGui := Gui("+Resize", "📊 MacroMaster Statistics")
+    statsGui := Gui("+AlwaysOnTop", "📊 MacroMaster Statistics")
     statsGui.BackColor := darkMode ? "0x1E1E1E" : "0xF5F5F5"
     statsGui.SetFont("s9", "Consolas")
+    statsGui.OnEvent("Close", (*) => CloseStatsMenu())
 
-    ; Get all-time and today's stats
-    allStats := ReadStatsFromCSV(false)
-    todayStats := GetTodayStats()
+    ; Clear controls map
+    statsControls := Map()
 
     ; Layout parameters
     leftCol := 20
@@ -191,15 +203,15 @@ ShowStatsMenu() {
     AddSectionDivider(statsGui, y, "GENERAL STATISTICS", 660)
     y += 25
 
-    AddHorizontalStatRow(statsGui, y, "Executions:", allStats["total_executions"], todayStats["total_executions"])
+    AddHorizontalStatRowLive(statsGui, y, "Executions:", "all_exec", "today_exec")
     y += 18
-    AddHorizontalStatRow(statsGui, y, "Boxes:", allStats["total_boxes"], todayStats["total_boxes"])
+    AddHorizontalStatRowLive(statsGui, y, "Boxes:", "all_boxes", "today_boxes")
     y += 18
-    AddHorizontalStatRow(statsGui, y, "Avg Time:", allStats["average_execution_time"] . " ms", todayStats["average_execution_time"] . " ms")
+    AddHorizontalStatRowLive(statsGui, y, "Avg Time:", "all_avg_time", "today_avg_time")
     y += 18
-    AddHorizontalStatRow(statsGui, y, "Boxes/Hour:", allStats["boxes_per_hour"], todayStats["boxes_per_hour"])
+    AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
     y += 18
-    AddHorizontalStatRow(statsGui, y, "Exec/Hour:", allStats["executions_per_hour"], todayStats["executions_per_hour"])
+    AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
     y += 25
 
     ; === DEGRADATION BREAKDOWN ===
@@ -207,35 +219,56 @@ ShowStatsMenu() {
     y += 25
 
     degradationTypes := [
-        ["Smudge", "smudge_total"],
-        ["Glare", "glare_total"],
-        ["Splashes", "splashes_total"],
-        ["Partial Block", "partial_blockage_total"],
-        ["Full Block", "full_blockage_total"],
-        ["Light Flare", "light_flare_total"],
-        ["Rain", "rain_total"],
-        ["Haze", "haze_total"],
-        ["Snow", "snow_total"],
-        ["Clear", "clear_total"]
+        ["Smudge", "smudge"],
+        ["Glare", "glare"],
+        ["Splashes", "splashes"],
+        ["Partial Block", "partial"],
+        ["Full Block", "full"],
+        ["Light Flare", "flare"],
+        ["Rain", "rain"],
+        ["Haze", "haze"],
+        ["Snow", "snow"],
+        ["Clear", "clear"]
     ]
 
     for degInfo in degradationTypes {
-        AddHorizontalStatRow(statsGui, y, degInfo[1] . ":", allStats[degInfo[2]], todayStats[degInfo[2]])
+        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_" . degInfo[2], "today_" . degInfo[2])
         y += 18
     }
     y += 15
+
+    ; === EXECUTION TYPE BREAKDOWN ===
+    AddSectionDivider(statsGui, y, "EXECUTION TYPE BREAKDOWN", 660)
+    y += 25
+
+    AddHorizontalStatRowLive(statsGui, y, "Macro Executions:", "all_macro_exec", "today_macro_exec")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "JSON Executions:", "all_json_exec", "today_json_exec")
+    y += 25
+
+    ; === JSON SEVERITY TRACKING ===
+    AddSectionDivider(statsGui, y, "JSON SEVERITY BREAKDOWN", 660)
+    y += 25
+
+    severityTypes := [
+        ["Low Severity", "severity_low"],
+        ["Medium Severity", "severity_medium"],
+        ["High Severity", "severity_high"]
+    ]
+
+    for sevInfo in severityTypes {
+        AddHorizontalStatRowLive(statsGui, y, sevInfo[1] . ":", "all_" . sevInfo[2], "today_" . sevInfo[2])
+        y += 18
+    }
+    y += 25
 
     ; === MACRO DETAILS ===
     AddSectionDivider(statsGui, y, "MACRO DETAILS", 660)
     y += 25
 
-    AddHorizontalStatRow(statsGui, y, "Most Used Button:", allStats["most_used_button"], "")
+    AddHorizontalStatRowLive(statsGui, y, "Most Used Button:", "most_used_btn", "")
     y += 18
-    AddHorizontalStatRow(statsGui, y, "Most Active Layer:", allStats["most_active_layer"], "")
-    y += 18
-    AddHorizontalStatRow(statsGui, y, "Macro Executions:", allStats["macro_executions_count"], todayStats["total_executions"])
-    y += 18
-    AddHorizontalStatRow(statsGui, y, "JSON Executions:", allStats["json_profile_executions_count"], "")
+    AddHorizontalStatRowLive(statsGui, y, "Most Active Layer:", "most_active_layer", "")
     y += 25
 
     ; === FILE LOCATIONS ===
@@ -263,30 +296,38 @@ ShowStatsMenu() {
 
     btnClose := statsGui.Add("Button", "x" . (leftCol + 260) . " y" . y . " w120 h30", "❌ Close")
     btnClose.SetFont("s9")
-    btnClose.OnEvent("Click", (*) => statsGui.Destroy())
+    btnClose.OnEvent("Click", (*) => CloseStatsMenu())
 
+    ; Show GUI and start live refresh
     statsGui.Show("w700 h" . (y + 50))
+    statsGuiOpen := true
+
+    ; Initial update and start refresh timer (500ms)
+    UpdateStatsDisplay()
+    SetTimer(UpdateStatsDisplay, 500)
 }
 
-; Add horizontal stat row (label in left, all-time value in middle, today value in right)
-AddHorizontalStatRow(gui, y, label, allValue, todayValue) {
-    global darkMode
+; Add horizontal stat row with live updating
+AddHorizontalStatRowLive(gui, y, label, allKey, todayKey) {
+    global darkMode, statsControls
 
     ; Label
     labelCtrl := gui.Add("Text", "x20 y" . y . " w140", label)
     labelCtrl.SetFont("s9", "Consolas")
     labelCtrl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x555555"))
 
-    ; All-time value
-    allCtrl := gui.Add("Text", "x170 y" . y . " w70 Right", String(allValue))
+    ; All-time value control (store for live updates)
+    allCtrl := gui.Add("Text", "x170 y" . y . " w70 Right", "0")
     allCtrl.SetFont("s9 bold", "Consolas")
     allCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+    statsControls[allKey] := allCtrl
 
-    ; Today value
-    if (todayValue != "") {
-        todayCtrl := gui.Add("Text", "x480 y" . y . " w70 Right", String(todayValue))
+    ; Today value control (if provided)
+    if (todayKey != "") {
+        todayCtrl := gui.Add("Text", "x480 y" . y . " w70 Right", "0")
         todayCtrl.SetFont("s9 bold", "Consolas")
         todayCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+        statsControls[todayKey] := todayCtrl
     }
 }
 
@@ -304,6 +345,109 @@ AddStatsHeader(gui, y, text, x, width) {
     header := gui.Add("Text", "x" . x . " y" . y . " w" . width . " Center", text)
     header.SetFont("s9 bold", "Consolas")
     header.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
+
+; ===== LIVE STATS UPDATE FUNCTION =====
+UpdateStatsDisplay() {
+    global statsGuiOpen, statsControls
+
+    if (!statsGuiOpen) {
+        SetTimer(UpdateStatsDisplay, 0)
+        return
+    }
+
+    try {
+        ; Get fresh stats data
+        allStats := ReadStatsFromCSV(false)
+        todayStats := GetTodayStats()
+
+        ; Update general stats
+        if (statsControls.Has("all_exec"))
+            statsControls["all_exec"].Value := allStats["total_executions"]
+        if (statsControls.Has("today_exec"))
+            statsControls["today_exec"].Value := todayStats["total_executions"]
+
+        if (statsControls.Has("all_boxes"))
+            statsControls["all_boxes"].Value := allStats["total_boxes"]
+        if (statsControls.Has("today_boxes"))
+            statsControls["today_boxes"].Value := todayStats["total_boxes"]
+
+        if (statsControls.Has("all_avg_time"))
+            statsControls["all_avg_time"].Value := allStats["average_execution_time"] . " ms"
+        if (statsControls.Has("today_avg_time"))
+            statsControls["today_avg_time"].Value := todayStats["average_execution_time"] . " ms"
+
+        if (statsControls.Has("all_box_rate"))
+            statsControls["all_box_rate"].Value := allStats["boxes_per_hour"]
+        if (statsControls.Has("today_box_rate"))
+            statsControls["today_box_rate"].Value := todayStats["boxes_per_hour"]
+
+        if (statsControls.Has("all_exec_rate"))
+            statsControls["all_exec_rate"].Value := allStats["executions_per_hour"]
+        if (statsControls.Has("today_exec_rate"))
+            statsControls["today_exec_rate"].Value := todayStats["executions_per_hour"]
+
+        ; Update degradations
+        degradationKeys := ["smudge", "glare", "splashes", "partial", "full", "flare", "rain", "haze", "snow", "clear"]
+        degradationFields := ["smudge_total", "glare_total", "splashes_total", "partial_blockage_total",
+                              "full_blockage_total", "light_flare_total", "rain_total", "haze_total",
+                              "snow_total", "clear_total"]
+
+        for i, key in degradationKeys {
+            field := degradationFields[i]
+            if (statsControls.Has("all_" . key))
+                statsControls["all_" . key].Value := allStats[field]
+            if (statsControls.Has("today_" . key))
+                statsControls["today_" . key].Value := todayStats[field]
+        }
+
+        ; Update execution type breakdown
+        if (statsControls.Has("all_macro_exec"))
+            statsControls["all_macro_exec"].Value := allStats["macro_executions_count"]
+        if (statsControls.Has("today_macro_exec"))
+            statsControls["today_macro_exec"].Value := allStats["macro_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"])
+        if (statsControls.Has("all_json_exec"))
+            statsControls["all_json_exec"].Value := allStats["json_profile_executions_count"]
+        if (statsControls.Has("today_json_exec"))
+            statsControls["today_json_exec"].Value := allStats["json_profile_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"])
+
+        ; Update severity tracking
+        if (statsControls.Has("all_severity_low"))
+            statsControls["all_severity_low"].Value := allStats["severity_low"]
+        if (statsControls.Has("today_severity_low"))
+            statsControls["today_severity_low"].Value := todayStats["severity_low"]
+        if (statsControls.Has("all_severity_medium"))
+            statsControls["all_severity_medium"].Value := allStats["severity_medium"]
+        if (statsControls.Has("today_severity_medium"))
+            statsControls["today_severity_medium"].Value := todayStats["severity_medium"]
+        if (statsControls.Has("all_severity_high"))
+            statsControls["all_severity_high"].Value := allStats["severity_high"]
+        if (statsControls.Has("today_severity_high"))
+            statsControls["today_severity_high"].Value := todayStats["severity_high"]
+
+        ; Update macro details
+        if (statsControls.Has("most_used_btn"))
+            statsControls["most_used_btn"].Value := allStats["most_used_button"]
+        if (statsControls.Has("most_active_layer"))
+            statsControls["most_active_layer"].Value := allStats["most_active_layer"]
+
+    } catch as err {
+        ; Silently handle errors
+    }
+}
+
+; ===== CLOSE STATS MENU =====
+CloseStatsMenu() {
+    global statsGui, statsGuiOpen
+
+    SetTimer(UpdateStatsDisplay, 0)
+
+    if (statsGui) {
+        try statsGui.Destroy()
+        statsGui := ""
+    }
+
+    statsGuiOpen := false
 }
 
 ; Get today's stats only
@@ -328,6 +472,9 @@ GetTodayStats() {
     stats["haze_total"] := 0
     stats["snow_total"] := 0
     stats["clear_total"] := 0
+    stats["severity_low"] := 0
+    stats["severity_medium"] := 0
+    stats["severity_high"] := 0
 
     try {
         if (!FileExist(masterStatsCSV)) {
@@ -359,8 +506,10 @@ GetTodayStats() {
             timestamp := Trim(fields[1])
             if (SubStr(timestamp, 1, 10) = today) {
                 try {
+                    execution_type := Trim(fields[4])
                     execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
                     total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
+                    severity_level := Trim(fields[10])
                     session_active_time := IsNumber(fields[12]) ? Integer(fields[12]) : 0
 
                     stats["total_executions"]++
@@ -369,6 +518,18 @@ GetTodayStats() {
 
                     if (session_active_time > stats["session_active_time"]) {
                         stats["session_active_time"] := session_active_time
+                    }
+
+                    ; Track severity levels (JSON executions)
+                    if (execution_type = "json_profile" && severity_level != "") {
+                        switch StrLower(severity_level) {
+                            case "low":
+                                stats["severity_low"]++
+                            case "medium":
+                                stats["severity_medium"]++
+                            case "high":
+                                stats["severity_high"]++
+                        }
                     }
 
                     ; Parse degradations from fields 14-23
@@ -460,6 +621,11 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["snow_total"] := 0
     stats["clear_total"] := 0
 
+    ; Initialize severity counters
+    stats["severity_low"] := 0
+    stats["severity_medium"] := 0
+    stats["severity_high"] := 0
+
     try {
         if (!FileExist(masterStatsCSV)) {
             return stats
@@ -501,6 +667,7 @@ ReadStatsFromCSV(filterBySession := false) {
                     layer := IsNumber(fields[6]) ? Integer(fields[6]) : 1
                     execution_time := IsNumber(fields[7]) ? Integer(fields[7]) : 0
                     total_boxes := IsNumber(fields[8]) ? Integer(fields[8]) : 0
+                    severity_level := Trim(fields[10])
                     session_active_time := IsNumber(fields[12]) ? Integer(fields[12]) : 0
 
                     ; Track latest active time for rate calculations
@@ -535,6 +702,18 @@ ReadStatsFromCSV(filterBySession := false) {
                     layerCount[layer]++
 
                     ; Performance grade tracking removed
+
+                    ; Track severity levels (JSON executions)
+                    if (execution_type = "json_profile" && severity_level != "") {
+                        switch StrLower(severity_level) {
+                            case "low":
+                                stats["severity_low"]++
+                            case "medium":
+                                stats["severity_medium"]++
+                            case "high":
+                                stats["severity_high"]++
+                        }
+                    }
 
                     ; Read degradation counts directly from CSV fields (14-23)
                     ; Headers: ...break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count...
