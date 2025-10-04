@@ -102,7 +102,35 @@ ExecuteMacro(buttonName) {
         ; Create basic analysis record for stats tracking
         analysisRecord := {
             boundingBoxCount: 0,
-            degradationAssignments: ""
+            degradationAssignments: "",
+            jsonDegradationName: "",
+            severity: "medium"
+        }
+
+        ; For JSON executions, extract category_id and map to degradation name
+        if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+            jsonEvent := events[1]
+            categoryId := jsonEvent.categoryId
+            severity := jsonEvent.severity
+
+            ; If not available, parse from stored annotation
+            if (!categoryId || !severity) {
+                storedJson := jsonEvent.annotation
+                if (InStr(storedJson, '"category_id":') && InStr(storedJson, '"severity":"')) {
+                    RegExMatch(storedJson, '"category_id":(\d+)', &catMatch)
+                    RegExMatch(storedJson, '"severity":"([^"]+)"', &sevMatch)
+                    if (catMatch && sevMatch) {
+                        categoryId := Integer(catMatch[1])
+                        severity := sevMatch[1]
+                    }
+                }
+            }
+
+            ; Map category_id to degradation name
+            if (categoryId && degradationTypes.Has(categoryId)) {
+                analysisRecord.jsonDegradationName := degradationTypes[categoryId]
+                analysisRecord.severity := severity
+            }
         }
 
         ; Count bounding boxes and extract degradation data for macro executions
