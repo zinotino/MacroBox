@@ -55,13 +55,6 @@ archive/                        # Archived files
 └── stats_docs/                 # Old stats documentation
 ```
 
-## Analytics & Dashboard (Optional)
-```
-analytics/                      # Analytics tools
-dashboard/                      # Python-based dashboards
-stats/                          # Database integration scripts
-```
-
 ## Key Features
 - **Permanent Stats**: `master_stats_permanent.csv` never gets deleted
 - **Live Stats Display**: 500ms refresh with horizontal layout

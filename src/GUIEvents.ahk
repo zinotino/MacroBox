@@ -380,7 +380,7 @@ RestoreNormalUI() {
 
 ; ===== WELCOME MESSAGE =====
 ShowWelcomeMessage() {
-    UpdateStatus("🚀 Ready - WASD hotkeys active (CapsLock+123qweasdzxc) - Real-time dashboard enabled - Currently in " . (annotationMode = "Wide" ? "🔦 WIDE MODE" : "📱 NARROW MODE") . " - F9 to record, F12 for dashboard")
+    UpdateStatus("🚀 Ready - WASD hotkeys active (CapsLock+123qweasdzxc) - Live stats tracking active - Currently in " . (annotationMode = "Wide" ? "🔦 WIDE MODE" : "📱 NARROW MODE") . " - F9 to record, F12 for stats")
 }
 
 ; ===== UTILITY FUNCTIONS =====

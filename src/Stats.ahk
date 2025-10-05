@@ -79,81 +79,9 @@ InitializePermanentStatsFile() {
     }
 }
 
-InitializeRealtimeSession() {
-    ; Start a new session with the real-time service
-    sessionData := Map()
-    sessionData["session_id"] := currentSessionId
-    sessionData["username"] := currentUsername
-    sessionData["canvas_mode"] := annotationMode
-
-    if (!SendDataToIngestionService("/session/start", sessionData)) {
-        realtimeEnabled := false
-    }
-}
-
 LoadStatsData() {
     ; Load statistics data from CSV
     return ReadStatsFromCSV(false)
-}
-
-; ===== OFFLINE DATA MANAGEMENT =====
-InitializeOfflineDataFiles() {
-    global persistentDataFile, dailyStatsFile, offlineLogFile
-
-    try {
-        ; Create data directory in Documents for portable execution
-        if (!DirExist(workDir)) {
-            DirCreate(workDir)
-        }
-        if (!DirExist(thumbnailDir)) {
-            DirCreate(thumbnailDir)
-        }
-
-        ; Initialize persistent data file if it doesn't exist
-        if (!FileExist(persistentDataFile)) {
-            initialData := "{`n"
-            initialData .= "  `"version`": `"1.0.0`",`n"
-            initialData .= "  `"created`": `"" . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`",`n"
-            initialData .= "  `"users`": {},`n"
-            initialData .= "  `"totalStats`": {`n"
-            initialData .= "    `"totalBoxCount`": 0,`n"
-            initialData .= "    `"totalExecutionTimeMs`": 0,`n"
-            initialData .= "    `"totalActiveTimeSeconds`": 0,`n"
-            initialData .= "    `"totalExecutionCount`": 0,`n"
-            initialData .= "    `"totalSessions`": 0,`n"
-            initialData .= "    `"firstSessionDate`": null,`n"
-            initialData .= "    `"lastSessionDate`": null`n"
-            initialData .= "  }`n"
-            initialData .= "}"
-            FileAppend(initialData, persistentDataFile)
-        }
-
-        ; Initialize daily stats file if it doesn't exist
-        if (!FileExist(dailyStatsFile)) {
-            currentDay := FormatTime(, "dddd, MMMM d, yyyy")
-            initialDaily := "{`n"
-            initialDaily .= "  `"lastReset`": `"" . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`",`n"
-            initialDaily .= "  `"currentDay`": `"" . currentDay . "`",`n"
-            initialDaily .= "  `"resetTime`": `"18:00:00`",`n"
-            initialDaily .= "  `"stats`": {`n"
-            initialDaily .= "    `"totalBoxCount`": 0,`n"
-            initialDaily .= "    `"totalExecutionTimeMs`": 0,`n"
-            initialDaily .= "    `"activeTimeSeconds`": 0,`n"
-            initialDaily .= "    `"executionCount`": 0,`n"
-            initialDaily .= "    `"sessions`": []`n"
-            initialDaily .= "  }`n"
-            initialDaily .= "}"
-            FileAppend(initialDaily, dailyStatsFile)
-        }
-
-        ; Log initialization
-        LogOfflineActivity("Offline storage initialized")
-
-        return true
-    } catch Error as e {
-        UpdateStatus("⚠️ Error initializing offline storage")
-        return false
-    }
 }
 
 ; ===== STATISTICS DISPLAY FUNCTIONS =====
@@ -442,12 +370,16 @@ UpdateStatsDisplay() {
         ; Update execution type breakdown
         if (statsControls.Has("all_macro_exec"))
             statsControls["all_macro_exec"].Value := allStats["macro_executions_count"]
-        if (statsControls.Has("today_macro_exec"))
-            statsControls["today_macro_exec"].Value := allStats["macro_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"])
+        if (statsControls.Has("today_macro_exec")) {
+            todayMacroExec := todayStats.Has("macro_executions_count") ? todayStats["macro_executions_count"] : Max(0, allStats["macro_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"]))
+            statsControls["today_macro_exec"].Value := Max(0, todayMacroExec)
+        }
         if (statsControls.Has("all_json_exec"))
             statsControls["all_json_exec"].Value := allStats["json_profile_executions_count"]
-        if (statsControls.Has("today_json_exec"))
-            statsControls["today_json_exec"].Value := allStats["json_profile_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"])
+        if (statsControls.Has("today_json_exec")) {
+            todayJsonExec := todayStats.Has("json_profile_executions_count") ? todayStats["json_profile_executions_count"] : Max(0, allStats["json_profile_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"]))
+            statsControls["today_json_exec"].Value := Max(0, todayJsonExec)
+        }
 
         ; Update severity tracking
         if (statsControls.Has("all_severity_low"))
@@ -494,6 +426,8 @@ GetTodayStats() {
 
     stats := Map()
     stats["total_executions"] := 0
+    stats["macro_executions_count"] := 0
+    stats["json_profile_executions_count"] := 0
     stats["total_boxes"] := 0
     stats["total_execution_time"] := 0
     stats["average_execution_time"] := 0
@@ -573,6 +507,13 @@ GetTodayStats() {
                     stats["total_executions"]++
                     stats["total_boxes"] += total_boxes
                     stats["total_execution_time"] += execution_time
+
+                    ; Count execution types
+                    if (execution_type = "json_profile") {
+                        stats["json_profile_executions_count"]++
+                    } else if (execution_type = "macro") {
+                        stats["macro_executions_count"]++
+                    }
 
                     if (session_active_time > stats["session_active_time"]) {
                         stats["session_active_time"] := session_active_time
@@ -1106,10 +1047,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         executionData["degradation_assignments"] := "clear"
     }
 
-    ; Visual feedback for successful recording
-    UpdateStatus("📊 RECORDED: " . macroKey . " (" . executionType . ") - " . executionData["total_boxes"] . " boxes, " . execution_time_ms . "ms")
-
-    ; Record to CSV with comprehensive data
+    ; Record to CSV with comprehensive data (removed excessive UpdateStatus call)
     AppendToCSV(executionData)
 }
 
@@ -1150,147 +1088,12 @@ ProcessDegradationCounts(executionData, degradationString) {
     }
 }
 
-; ===== OFFLINE DATA MANAGEMENT =====
-AggregateMetrics() {
-    global applicationStartTime, totalActiveTime, lastActiveTime, masterStatsCSV
-
-    ; Use CSV data for metrics aggregation
-    if (!FileExist(masterStatsCSV)) {
-        return {}
-    }
-
-    ; Get CSV stats for aggregation
-    csvStats := ReadStatsFromCSV(false)
-    totalBoxCount := csvStats["total_boxes"]
-    totalExecutionTimeMs := csvStats["average_execution_time"] * csvStats["total_executions"]
-    executionCount := csvStats["total_executions"]
-
-    ; Use CSV degradation data
-    degradationSummaryStr := "CSV-based degradation summary"
-
-    ; Calculate active time in seconds
-    currentActiveTime := totalActiveTime
-    if (lastActiveTime > 0) {
-        currentActiveTime += (A_TickCount - lastActiveTime)
-    }
-    activeTimeSeconds := Round(currentActiveTime / 1000, 2)
-
-    ; Generate safe taskId - applicationStartTime is A_TickCount (number), not a timestamp
-    safeTaskId := "session_" . (IsSet(currentSessionId) ? StrReplace(currentSessionId, "sess_", "") : FormatTime(A_Now, "yyyyMMdd_HHmmss"))
-
-    return {
-        timestamp: FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss"),
-        taskId: safeTaskId,
-        totalBoxCount: totalBoxCount,
-        totalExecutionTimeMs: totalExecutionTimeMs,
-        activeTimeSeconds: activeTimeSeconds,
-        executionCount: executionCount,
-        degradationSummary: degradationSummaryStr
-    }
-}
-
-SaveMetricsToFile(metrics) {
-    global currentUsername, persistentDataFile, dailyStatsFile, offlineLogFile
-
-    try {
-        ; For simplified implementation, append to log files
-        ; In a full JSON implementation, you'd parse and update the JSON objects
-
-        timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
-
-        ; Append to persistent log
-        persistentLog := A_ScriptDir . "\data\persistent_log.txt"
-        logEntry := timestamp . " - " . currentUsername . " - Boxes:" . metrics.totalBoxCount . " Time:" . metrics.totalExecutionTimeMs . "ms Sessions:" . metrics.executionCount . "`n"
-        FileAppend(logEntry, persistentLog)
-
-        ; Append to daily log
-        dailyLog := A_ScriptDir . "\data\daily_log.txt"
-        FileAppend(logEntry, dailyLog)
-
-        ; Log successful save
-        LogOfflineActivity("Saved metrics for " . currentUsername . ": " . metrics.totalBoxCount . " boxes")
-
-    } catch Error as e {
-        throw Error("Failed to save metrics: " . e.Message)
-    }
-}
-
-GetDailyStats() {
-    dailyLog := A_ScriptDir . "\data\daily_log.txt"
-
-    stats := {
-        totalBoxes: 0,
-        totalTime: 0,
-        totalSessions: 0
-    }
-
-    if (FileExist(dailyLog)) {
-        try {
-            content := FileRead(dailyLog)
-
-            ; Count sessions (lines in log)
-            Loop Parse, content, "`n", "`r" {
-                if (Trim(A_LoopField) != "") {
-                    stats.totalSessions++
-
-                    ; Extract boxes and time from each line
-                    ; Format: timestamp - username - Boxes:X Time:Yms Sessions:Z
-                    if (RegExMatch(A_LoopField, "Boxes:(\d+)", &boxMatch)) {
-                        stats.totalBoxes += Integer(boxMatch[1])
-                    }
-                    if (RegExMatch(A_LoopField, "Time:(\d+)ms", &timeMatch)) {
-                        stats.totalTime += Integer(timeMatch[1])
-                    }
-                }
-            }
-        } catch {
-            ; If reading fails, return zeros
-        }
-    }
-
-    return stats
-}
-
-GetLifetimeStats() {
-    persistentLog := A_ScriptDir . "\data\persistent_log.txt"
-
-    stats := {
-        totalBoxes: 0,
-        totalTime: 0,
-        totalSessions: 0
-    }
-
-    if (FileExist(persistentLog)) {
-        try {
-            content := FileRead(persistentLog)
-
-            ; Count sessions (lines in log)
-            Loop Parse, content, "`n", "`r" {
-                if (Trim(A_LoopField) != "") {
-                    stats.totalSessions++
-
-                    ; Extract boxes and time from each line
-                    if (RegExMatch(A_LoopField, "Boxes:(\d+)", &boxMatch)) {
-                        stats.totalBoxes += Integer(boxMatch[1])
-                    }
-                    if (RegExMatch(A_LoopField, "Time:(\d+)ms", &timeMatch)) {
-                        stats.totalTime += Integer(timeMatch[1])
-                    }
-                }
-            }
-        } catch {
-            ; If reading fails, return zeros
-        }
-    }
-
-    return stats
-}
 
 ; ===== CSV FUNCTIONS =====
 ; NOTE: InitializeCSVFile function is defined earlier in this file
 
 AppendToCSV(executionData) {
-    global currentSessionId, currentUsername, documentsDir, permanentStatsFile
+    global permanentStatsFile
 
     ; Write to CSV (backup)
     csvSuccess := AppendToCSVFile(executionData)
@@ -1300,52 +1103,6 @@ AppendToCSV(executionData) {
         AppendToPermanentStatsFile(executionData)
     } catch {
         ; Silent fail - don't break execution
-    }
-
-    ; Also write to SQLite database
-    try {
-        ; Build JSON for Python script
-        jsonData := "{"
-        jsonData .= '`n  "timestamp": "' . executionData["timestamp"] . '",'
-        jsonData .= '`n  "session_id": "' . currentSessionId . '",'
-        jsonData .= '`n  "username": "' . currentUsername . '",'
-        jsonData .= '`n  "execution_type": "' . executionData["execution_type"] . '",'
-        jsonData .= '`n  "button_key": "' . (executionData.Has("button_key") ? executionData["button_key"] : "") . '",'
-        jsonData .= '`n  "layer": ' . executionData["layer"] . ','
-        jsonData .= '`n  "execution_time_ms": ' . executionData["execution_time_ms"] . ','
-        jsonData .= '`n  "total_boxes": ' . executionData["total_boxes"] . ','
-        jsonData .= '`n  "degradation_assignments": "' . (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . '",'
-        jsonData .= '`n  "severity_level": "' . executionData["severity_level"] . '",'
-        jsonData .= '`n  "canvas_mode": "' . executionData["canvas_mode"] . '",'
-        jsonData .= '`n  "session_active_time_ms": ' . executionData["session_active_time_ms"] . ','
-        jsonData .= '`n  "break_mode_active": ' . (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ','
-        jsonData .= '`n  "smudge_count": ' . (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0) . ','
-        jsonData .= '`n  "glare_count": ' . (executionData.Has("glare_count") ? executionData["glare_count"] : 0) . ','
-        jsonData .= '`n  "splashes_count": ' . (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0) . ','
-        jsonData .= '`n  "partial_blockage_count": ' . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0) . ','
-        jsonData .= '`n  "full_blockage_count": ' . (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0) . ','
-        jsonData .= '`n  "light_flare_count": ' . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0) . ','
-        jsonData .= '`n  "rain_count": ' . (executionData.Has("rain_count") ? executionData["rain_count"] : 0) . ','
-        jsonData .= '`n  "haze_count": ' . (executionData.Has("haze_count") ? executionData["haze_count"] : 0) . ','
-        jsonData .= '`n  "snow_count": ' . (executionData.Has("snow_count") ? executionData["snow_count"] : 0) . ','
-        jsonData .= '`n  "clear_count": ' . (executionData.Has("clear_count") ? executionData["clear_count"] : 0)
-        jsonData .= '`n}'
-
-        ; Write JSON to temp file (safer than command line escaping)
-        tempJsonFile := documentsDir . "\MacroMaster\data\temp_execution.json"
-        try FileDelete(tempJsonFile)  ; Remove if exists
-        FileAppend(jsonData, tempJsonFile, "UTF-8")
-
-        ; Call Python record script with file
-        ; A_ScriptDir points to src/, so stats folder is in parent directory
-        pythonScript := A_ScriptDir . "\..\stats\record_execution.py"
-        if (FileExist(pythonScript) && FileExist(tempJsonFile)) {
-            RunWait('python "' . pythonScript . '" --file "' . tempJsonFile . '"', A_ScriptDir . "\..", "Hide")
-            ; Clean up temp file
-            try FileDelete(tempJsonFile)
-        }
-    } catch Error as e {
-        ; Silent fail - CSV backup ensures no data loss
     }
 
     return csvSuccess
@@ -1497,52 +1254,6 @@ GetCurrentSessionActiveTime() {
     }
 }
 
-; ===== REAL-TIME DATA INGESTION =====
-SendDataToIngestionService(endpoint, data) {
-    global ingestionServiceUrl, realtimeEnabled
-
-    if (!realtimeEnabled) {
-        return false
-    }
-
-    try {
-        ; Convert data to JSON
-        jsonData := ""
-        for key, value in data {
-            if (jsonData != "") {
-                jsonData .= ","
-            }
-            ; Escape quotes in values
-            escapedValue := StrReplace(StrReplace(value, "\", "\\"), '"', '\"')
-            jsonData .= '"' . key . '":"' . escapedValue . '"'
-        }
-        jsonData := "{" . jsonData . "}"
-
-        ; Use curl or similar to send HTTP POST
-        ; For Windows, we'll use a simple COM object approach or PowerShell
-        result := SendHttpPost(ingestionServiceUrl . endpoint, jsonData)
-
-        return (result != "")
-    } catch {
-        ; Log error but don't break execution
-        return false
-    }
-}
-
-SendHttpPost(url, jsonData) {
-    ; Use PowerShell to send HTTP request (most reliable on Windows)
-    ; Run silently without showing command prompt
-    psCommand := 'powershell -WindowStyle Hidden -Command "& {'
-    psCommand .= '$headers = @{\"Content-Type\"=\"application/json\"}; '
-    psCommand .= '$body = @\"' . jsonData . '\"@; '
-    psCommand .= 'try { $response = Invoke-WebRequest -Uri \"' . url . '\" -Method POST -Headers $headers -Body $body -TimeoutSec 5; $response.StatusCode } catch { \"ERROR\" }'
-    psCommand .= '}"'
-
-    ; Execute PowerShell command silently
-    execResult := RunWaitOne(psCommand)
-    return execResult
-}
-
 ; ===== RESET STATS FUNCTION =====
 ResetAllStats() {
     global masterStatsCSV, permanentStatsFile
@@ -1618,14 +1329,3 @@ RecordClearDegradationExecution(buttonName, executionStartTime) {
     AppendToCSV(executionData)
 }
 
-; ===== OFFLINE ACTIVITY LOGGING =====
-LogOfflineActivity(message) {
-    global offlineLogFile
-    timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
-    logEntry := timestamp . " - " . message . "`n"
-    try {
-        FileAppend(logEntry, offlineLogFile)
-    } catch {
-        ; Silent fail for logging to prevent cascading errors
-    }
-}

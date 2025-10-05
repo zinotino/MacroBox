@@ -202,23 +202,8 @@ CalibrateNarrowCanvasArea() {
     Canvas_Calibrate("narrow")
 }
 
-; ===== REAL-TIME DASHBOARD INTEGRATION =====
-global ingestionServiceUrl := "http://localhost:5001"  ; Data ingestion service URL
+; ===== SESSION IDENTIFIERS =====
 global currentSessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
-global realtimeEnabled := true  ; Enable real-time data sending
-
-; ===== PRODUCTION STATS SYSTEM GLOBALS =====
-global statsQueue := []
-global statsWorkerActive := false
-global statsErrorCount := 0
-global lastHealthCheck := 0
-global systemHealthStatus := "healthy"
-
-; ===== OFFLINE DATA STORAGE GLOBALS =====
-global persistentDataFile := workDir . "\persistent_data.json"
-global dailyStatsFile := workDir . "\daily_stats.json"
-global offlineLogFile := workDir . "\offline_log.txt"
-global dataQueue := []
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -373,12 +358,6 @@ Main() {
             throw e
         }
 
-        try {
-            InitializeOfflineDataFiles()  ; Initialize offline data storage
-        } catch Error as e {
-            UpdateStatus("❌ Offline data files initialization failed: " . e.Message)
-            throw e
-        }
 
         ; Legacy execution data loading removed - CSV system handles all stats
 
@@ -404,7 +383,6 @@ Main() {
         }
 
         ; Initialize real-time session
-        InitializeRealtimeSession()
 
         ; Setup UI and interactions
         InitializeGui()
@@ -473,7 +451,7 @@ Main() {
         OnExit((exitReason, exitCode) => CleanupAndExit())
 
         ; Show welcome message
-        UpdateStatus("🚀 Ready - WASD hotkeys active (CapsLock+123qweasdzxc) - Real-time dashboard enabled - Currently in " . (annotationMode = "Wide" ? "🔦 WIDE MODE" : "📱 NARROW MODE") . " - F9 to record, F12 for dashboard")
+        UpdateStatus("🚀 Ready - WASD hotkeys active (CapsLock+123qweasdzxc) - Live stats tracking active - Currently in " . (annotationMode = "Wide" ? "🔦 WIDE MODE" : "📱 NARROW MODE") . " - F9 to record, F12 for stats")
         SetTimer(ShowWelcomeMessage, -2000)
 
     } catch Error as e {
@@ -717,7 +695,6 @@ CleanupAndExit() {
 
         ; Final stats update
         UpdateActiveTime()
-        AggregateMetrics()
 
     } catch Error as e {
         ; Silently continue on cleanup errors
