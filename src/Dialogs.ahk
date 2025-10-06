@@ -643,14 +643,14 @@ BrowseMacroPacks(*) {
 ; ===== CANVAS CONFIGURATION =====
 ConfigureWideCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
-    CalibrateWideCanvasArea()
+    Canvas_Calibrate("wide")
     settingsGui.Destroy()
     ShowSettings()  ; Refresh the settings dialog
 }
 
 ConfigureNarrowCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
-    CalibrateNarrowCanvasArea()
+    Canvas_Calibrate("narrow")
     settingsGui.Destroy()
     ShowSettings()  ; Refresh the settings dialog
 }

@@ -55,7 +55,7 @@ UpdateButtonAppearance(buttonName) {
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
-        jsonInfo := annotationMode . "`n" . typeName . " " . StrUpper(jsonEvent.severity)
+        jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
 
         if (degradationColors.Has(jsonEvent.categoryId)) {
             jsonColor := Format("0x{:X}", degradationColors[jsonEvent.categoryId])
@@ -114,9 +114,24 @@ UpdateButtonAppearance(buttonName) {
         button.Opt("-Background")
 
         if (isJsonAnnotation) {
-            button.Opt("+Background" . jsonColor)
-            button.SetFont("s7 bold", "cBlack")
-            button.Text := jsonInfo
+            global annotationMode
+
+            ; Both modes use picture control with colored visualization
+            buttonSize := GetButtonThumbnailSize()
+            hbitmap := DrawJsonWithLetterboxBars(jsonColor, buttonSize, annotationMode, jsonInfo)
+
+            if (hbitmap) {
+                button.Visible := false
+                picture.Visible := true
+                picture.Value := "HBITMAP:" . hbitmap
+            } else {
+                ; Fallback to button control
+                button.Visible := true
+                picture.Visible := false
+                button.Opt("+Background" . jsonColor)
+                button.SetFont("s7 bold", "cBlack")
+                button.Text := jsonInfo
+            }
         } else if (hasMacro) {
             events := macroEvents[layerMacroName]
             if (hasAutoMode) {
@@ -145,6 +160,7 @@ UpdateButtonAppearance(buttonName) {
     ; Label control - always visible with button name/custom label
     buttonLabels[buttonName].Visible := true
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
+    buttonLabels[buttonName].Redraw()
 
     ; Apply yellow outline for auto mode buttons
     ApplyYellowOutline(buttonName, hasAutoMode)

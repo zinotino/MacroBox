@@ -18,10 +18,6 @@ global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
 
-; ===== LIVE STATS SYSTEM =====
-global liveStatsGui := 0
-global liveStatsTimer := 0
-global liveStatsLastUpdate := 0
 
 ; ===== PERFORMANCE OPTIMIZATION =====
 global hbitmapCache := Map()  ; Cache for HBITMAP visualizations
@@ -62,12 +58,8 @@ global autoExecutionTimer := 0
 global autoExecutionInterval := 5000  ; Default 5 seconds
 global autoExecutionCount := 0
 global autoExecutionMaxCount := 0  ; 0 = infinite
-global autoExecutionButtons := Map()  ; Track which buttons have automation enabled
 global buttonAutoSettings := Map()  ; Store auto settings per button (interval, count, etc.)
 global autoStartBtn := 0
-global autoStopBtn := 0
-global autoIntervalControl := 0
-global autoCountControl := 0
 global chromeMemoryCleanupCount := 0
 global chromeMemoryCleanupInterval := 50  ; Clean memory every 50 executions
 
@@ -149,11 +141,6 @@ global lastCanvasDetection := ""
 
 ; ===== STREAMLINED STATS SYSTEM =====
 ; Legacy macroExecutionLog removed - using CSV-only approach
-global macroStats := Map()
-global severityBreakdown := Map()
-global executionTimeLog := []
-global totalExecutionTime := 0
-global persistentStatsFile := documentsDir . "\persistent_stats.json"
 
 ; ===== DEGRADATION TRACKING =====
 global pendingBoxForTagging := ""
@@ -161,46 +148,16 @@ global pendingBoxForTagging := ""
 ; ===== TIME TRACKING & BREAK MODE =====
 ; NOTE: Time stats reset on every program startup for clean daily labeling sessions
 ; This ensures fresh time calculations (boxes_per_hour, executions_per_hour) while preserving CSV data
-global applicationStartTime := A_TickCount
 global totalActiveTime := 0
 global lastActiveTime := A_TickCount
 global breakMode := false
-global breakStartTime := 0
 
 ; ===== CSV STATS SYSTEM - OPTIMIZED FOR PORTABLE EXECUTION =====
 ; Configure for Documents folder to work from zipped state
 global sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
 global currentUsername := A_UserName
-global dailyResetActive := false
 global sessionStartTime := 0
 global clearDegradationCount := 0
-
-; ===== CANVAS CALIBRATION FUNCTIONS =====
-; Legacy wrappers for backwards compatibility
-CalibrateCanvasArea() {
-    Canvas_Calibrate("user")
-}
-
-ResetCanvasCalibration() {
-    Canvas_Reset("user")
-}
-
-; Legacy wrappers for canvas calibration
-CalibrateWideCanvasArea() {
-    Canvas_Calibrate("wide")
-}
-
-ResetWideCanvasCalibration() {
-    Canvas_Reset("wide")
-}
-
-ResetNarrowCanvasCalibration() {
-    Canvas_Reset("narrow")
-}
-
-CalibrateNarrowCanvasArea() {
-    Canvas_Calibrate("narrow")
-}
 
 ; ===== SESSION IDENTIFIERS =====
 global currentSessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
@@ -474,10 +431,6 @@ InitializeVariables() {
         buttonCustomLabels[buttonName] := buttonName
     }
 
-    ; Initialize severity breakdown
-    for severity in severityLevels {
-        severityBreakdown[severity] := {count: 0, percentage: 0}
-    }
 
     ; Initialize tracking system
     pendingBoxForTagging := ""
@@ -653,16 +606,13 @@ AssignJsonProfilesToLayer6() {
 
 ; ===== CLEANUP AND EXIT FUNCTIONS =====
 CleanupAndExit() {
-    global mouseHook, keyboardHook, liveStatsTimer, autoExecutionTimer
+    global mouseHook, keyboardHook, autoExecutionTimer
 
     try {
         ; Stop all timers
         SetTimer(UpdateActiveTime, 0)
         SetTimer(AutoSave, 0)
         SetTimer(MonitorExecutionState, 0)
-        if (liveStatsTimer) {
-            SetTimer(liveStatsTimer, 0)
-        }
         if (autoExecutionTimer) {
             SetTimer(autoExecutionTimer, 0)
         }
@@ -1013,3 +963,4 @@ TestPersistenceSystem() {
         UpdateStatus("❌ Persistence test FAILED: " . e.Message)
     }
 }
+
