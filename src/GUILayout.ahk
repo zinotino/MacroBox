@@ -279,6 +279,7 @@ GuiResize(GuiObj, MinMax, Width, Height) {
             buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
+            buttonLabels[buttonName].SetFont("s" . Round(8 * scaleFactor) . " bold")
         }
     }
 
@@ -328,6 +329,7 @@ MoveButtonGridFast() {
             buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
+            buttonLabels[buttonName].SetFont("s" . Round(8 * scaleFactor) . " bold")
         }
     }
 }

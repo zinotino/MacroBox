@@ -346,7 +346,6 @@ ApplyBreakModeUI() {
         if (buttonGrid.Has(buttonName)) {
             button := buttonGrid[buttonName]
             button.Opt("+Disabled")
-            button.Redraw()
         }
     }
 
@@ -364,14 +363,12 @@ RestoreNormalUI() {
         if (buttonGrid.Has(buttonName)) {
             button := buttonGrid[buttonName]
             button.Opt("-Disabled")
-            button.Redraw()
         }
     }
 
     ; Restore main GUI appearance
     if (mainGui) {
         mainGui.BackColor := darkMode ? "0x2D2D2D" : "0xF0F0F0"
-        mainGui.Redraw()
     }
 
     ; Refresh button appearances

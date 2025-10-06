@@ -167,41 +167,55 @@ ShowSettings() {
     ; Main Utility Hotkeys Section (clean layout without WASD clutter)
     settingsGui.Add("Text", "x30 y170 w480 h20", "🎮 Main Utility Hotkeys:")
     hotkeyY := 195
+    hotkeyDefaults := GetHotkeyDefaults()
+
+    recordValue := hotkeyRecordToggle != "" ? hotkeyRecordToggle : hotkeyDefaults["recordToggle"]
+    submitValue := hotkeySubmit != "" ? hotkeySubmit : hotkeyDefaults["submit"]
+    directClearValue := hotkeyDirectClear != "" ? hotkeyDirectClear : hotkeyDefaults["directClear"]
+    statsValue := hotkeyStats != "" ? hotkeyStats : hotkeyDefaults["stats"]
+    breakModeValue := hotkeyBreakMode != "" ? hotkeyBreakMode : hotkeyDefaults["breakMode"]
+    settingsValue := hotkeySettings != "" ? hotkeySettings : hotkeyDefaults["settings"]
+    layerPrevValue := hotkeyLayerPrev != "" ? hotkeyLayerPrev : hotkeyDefaults["layerPrev"]
+    layerNextValue := hotkeyLayerNext != "" ? hotkeyLayerNext : hotkeyDefaults["layerNext"]
+
+    ; Capture guidance for hotkey assignment
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h16 c0x666666", "Click a field, then press the key or combination you want to assign.")
+    hotkeyY += 22
 
     ; Record Toggle
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Record Toggle:")
-    editRecordToggle := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyRecordToggle)
-    hotkeyY += 25
+    hkRecordToggle := settingsGui.Add("Hotkey", "x165 y" . (hotkeyY-2) . " w110 h22", recordValue)
+    hotkeyY += 26
 
     ; Submit/Direct Clear keys
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Submit:")
-    editSubmit := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeySubmit)
+    hkSubmit := settingsGui.Add("Hotkey", "x165 y" . (hotkeyY-2) . " w110 h22", submitValue)
     settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Direct Clear:")
-    editDirectClear := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeyDirectClear)
-    hotkeyY += 25
+    hkDirectClear := settingsGui.Add("Hotkey", "x375 y" . (hotkeyY-2) . " w110 h22", directClearValue)
+    hotkeyY += 26
 
     ; Stats key (on separate row)
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Stats:")
-    editStats := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyStats)
-    hotkeyY += 25
+    hkStats := settingsGui.Add("Hotkey", "x165 y" . (hotkeyY-2) . " w110 h22", statsValue)
+    hotkeyY += 26
 
     ; Break Mode/Settings keys
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Break Mode:")
-    editBreakMode := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyBreakMode)
+    hkBreakMode := settingsGui.Add("Hotkey", "x165 y" . (hotkeyY-2) . " w110 h22", breakModeValue)
     settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Settings:")
-    editSettings := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w90 h20", hotkeySettings)
-    hotkeyY += 25
+    hkSettings := settingsGui.Add("Hotkey", "x375 y" . (hotkeyY-2) . " w110 h22", settingsValue)
+    hotkeyY += 26
 
     ; Layer Navigation
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Layer Prev:")
-    editLayerPrev := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyLayerPrev)
+    hkLayerPrev := settingsGui.Add("Hotkey", "x165 y" . (hotkeyY-2) . " w110 h22", layerPrevValue)
     settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Layer Next:")
-    editLayerNext := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w90 h20", hotkeyLayerNext)
-    hotkeyY += 30
+    hkLayerNext := settingsGui.Add("Hotkey", "x375 y" . (hotkeyY-2) . " w110 h22", layerNextValue)
+    hotkeyY += 32
 
     ; Apply/Reset buttons for hotkeys
     btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w100 h25", "🎮 Apply Keys")
-    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui))
+    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(hkRecordToggle, hkSubmit, hkDirectClear, hkStats, hkBreakMode, hkSettings, hkLayerPrev, hkLayerNext, settingsGui))
 
     btnResetHotkeys := settingsGui.Add("Button", "x150 y" . hotkeyY . " w100 h25", "🔄 Reset Keys")
     btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
@@ -255,21 +269,22 @@ SaveSettings(settingsGui) {
     UpdateStatus("💾 Settings saved")
 }
 
-ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui) {
+ApplyHotkeySettings(hkRecordToggle, hkSubmit, hkDirectClear, hkStats, hkBreakMode, hkSettings, hkLayerPrev, hkLayerNext, settingsGui) {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
 
     try {
-        ; Get new values from edit controls
-        newRecordToggle := Trim(editRecordToggle.Text)
-        newSubmit := Trim(editSubmit.Text)
-        newDirectClear := Trim(editDirectClear.Text)
-        newStats := Trim(editStats.Text)
-        newBreakMode := Trim(editBreakMode.Text)
-        newSettings := Trim(editSettings.Text)
-        newLayerPrev := Trim(editLayerPrev.Text)
-        newLayerNext := Trim(editLayerNext.Text)
+        defaults := GetHotkeyDefaults()
+        ; Pull values from hotkey capture controls, falling back to defaults when blank
+        newRecordToggle := GetHotkeyControlValue(hkRecordToggle, defaults["recordToggle"])
+        newSubmit := GetHotkeyControlValue(hkSubmit, defaults["submit"])
+        newDirectClear := GetHotkeyControlValue(hkDirectClear, defaults["directClear"])
+        newStats := GetHotkeyControlValue(hkStats, defaults["stats"])
+        newBreakMode := GetHotkeyControlValue(hkBreakMode, defaults["breakMode"])
+        newSettings := GetHotkeyControlValue(hkSettings, defaults["settings"])
+        newLayerPrev := GetHotkeyControlValue(hkLayerPrev, defaults["layerPrev"])
+        newLayerNext := GetHotkeyControlValue(hkLayerNext, defaults["layerNext"])
 
-        ; Basic validation - ensure no empty values
+        ; Safety check - ensure values resolved
         if (newRecordToggle = "" || newSubmit = "" || newDirectClear = "" || newStats = "" || newBreakMode = "" || newSettings = "" || newLayerPrev = "" || newLayerNext = "") {
             MsgBox("All hotkey fields must be filled out.", "Invalid Hotkeys", "Icon!")
             return
@@ -314,10 +329,52 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
     }
 }
 
+GetHotkeyControlValue(hotkeyCtrl, fallback := "") {
+    value := hotkeyCtrl.Value
+    if (Type(value) = "Integer") {
+        if (value = 0) {
+            return fallback
+        }
+        value := String(value)
+    }
+    if (Type(value) != "String") {
+        value := String(value)
+    }
+    value := Trim(value)
+    if (value = "" || value = "None") {
+        return fallback
+    }
+    return value
+}
+
+GetHotkeyDefaults() {
+    defaults := Map()
+    defaults["recordToggle"] := "F9"
+    defaults["submit"] := "+Enter"
+    defaults["directClear"] := "NumpadEnter"
+    defaults["stats"] := "F12"
+    defaults["breakMode"] := "^b"
+    defaults["settings"] := "^k"
+    defaults["layerPrev"] := "NumpadDiv"
+    defaults["layerNext"] := "NumpadSub"
+    return defaults
+}
+
 ResetHotkeySettings(settingsGui) {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
 
-    result := MsgBox("Reset all hotkeys to defaults?`n`nRecord: F9`nSubmit: NumpadEnter`nDirect Clear: +Enter`nStats: F12`nBreak: ^b`nSettings: ^k`nLayer Prev: NumpadDiv`nLayer Next: NumpadSub", "Reset Hotkeys", "YesNo Icon?")
+    defaults := GetHotkeyDefaults()
+    resetSummary := "Reset all hotkeys to defaults?`n`n"
+    resetSummary .= "Record: " . defaults["recordToggle"] . "`n"
+    resetSummary .= "Submit: " . defaults["submit"] . "`n"
+    resetSummary .= "Direct Clear: " . defaults["directClear"] . "`n"
+    resetSummary .= "Stats: " . defaults["stats"] . "`n"
+    resetSummary .= "Break: " . defaults["breakMode"] . "`n"
+    resetSummary .= "Settings: " . defaults["settings"] . "`n"
+    resetSummary .= "Layer Prev: " . defaults["layerPrev"] . "`n"
+    resetSummary .= "Layer Next: " . defaults["layerNext"]
+
+    result := MsgBox(resetSummary, "Reset Hotkeys", "YesNo Icon?")
 
     if (result = "Yes") {
         ; Clear existing hotkeys
@@ -334,14 +391,14 @@ ResetHotkeySettings(settingsGui) {
         }
 
         ; Reset to defaults
-        hotkeyRecordToggle := "F9"
-        hotkeySubmit := "NumpadEnter"
-        hotkeyDirectClear := "+Enter"
-        hotkeyStats := "F12"
-        hotkeyBreakMode := "^b"
-        hotkeySettings := "^k"
-        hotkeyLayerPrev := "NumpadDiv"
-        hotkeyLayerNext := "NumpadSub"
+        hotkeyRecordToggle := defaults["recordToggle"]
+        hotkeySubmit := defaults["submit"]
+        hotkeyDirectClear := defaults["directClear"]
+        hotkeyStats := defaults["stats"]
+        hotkeyBreakMode := defaults["breakMode"]
+        hotkeySettings := defaults["settings"]
+        hotkeyLayerPrev := defaults["layerPrev"]
+        hotkeyLayerNext := defaults["layerNext"]
 
         ; Re-setup hotkeys
         SetupHotkeys()

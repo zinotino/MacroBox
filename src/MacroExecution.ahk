@@ -172,10 +172,7 @@ ExecuteMacro(buttonName) {
         ; Simple execution time monitoring
         executionTime := A_TickCount - executionStartTime
 
-        ; Add timing info to status for JSON profiles
-        if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0 && macroEvents[layerMacroName][1].type = "jsonAnnotation")) {
-            UpdateStatus("✅ JSON executed (" . executionTime . "ms)")
-        }
+        ; Removed excessive status update for JSON execution timing
 
         ; CRITICAL: Always reset playback state and button flash
         FlashButton(buttonName, false)

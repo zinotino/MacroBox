@@ -253,7 +253,7 @@ InitializeCSVFile() {
 
 
 
-        UpdateStatus("�s��,? CSV setup failed")
+        UpdateStatus("CSV setup failed")
 
 
 
@@ -365,7 +365,7 @@ ReadStatsFromCSV(filterBySession := false) {
 
 
 
-    global masterStatsCSV, sessionId, totalActiveTime
+    global masterStatsCSV, sessionId, totalActiveTime, currentUsername
 
 
 
@@ -374,6 +374,10 @@ ReadStatsFromCSV(filterBySession := false) {
 
 
     stats := Map()
+
+
+
+    stats["current_username"] := currentUsername
 
 
 
@@ -412,6 +416,10 @@ ReadStatsFromCSV(filterBySession := false) {
     stats["boxes_per_hour"] := 0
 
 
+
+    stats["user_summary"] := Map()
+
+    stats["distinct_user_count"] := 0
 
     stats["executions_per_hour"] := 0
 
@@ -641,7 +649,7 @@ ReadStatsFromCSV(filterBySession := false) {
 
 
 
-        latestActiveTime := 0
+        sessionActiveMap := Map()
 
 
 
@@ -729,17 +737,13 @@ ReadStatsFromCSV(filterBySession := false) {
 
 
 
-                    if (session_active_time > latestActiveTime) {
-
-
-
-                        latestActiveTime := session_active_time
-
-
-
+                    sessionKey := Trim(fields[2])
+                    if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
+                        sessionActiveMap[sessionKey] := session_active_time
                     }
 
-
+                    username := Trim(fields[3])
+                    UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
 
                     ; Accumulate basic stats
 
@@ -1153,17 +1157,33 @@ ReadStatsFromCSV(filterBySession := false) {
 
 
 
-        if (latestActiveTime > 0) {
-
-
-
-            stats["session_active_time"] := latestActiveTime
-
-
-
+        totalSessionActive := 0
+        for _, activeMs in sessionActiveMap {
+            if (activeMs > 0) {
+                totalSessionActive += activeMs
+            }
         }
 
+        if (sessionActiveMap.Has(sessionId)) {
+            stats["current_session_active_time"] := sessionActiveMap[sessionId]
+        } else {
+            stats["current_session_active_time"] := 0
+        }
 
+        if (totalSessionActive > 0) {
+            stats["session_active_time"] := totalSessionActive
+        }
+
+        stats["session_active_time_map"] := sessionActiveMap
+
+        stats["distinct_user_count"] := stats["user_summary"].Count
+        for username, userData in stats["user_summary"] {
+            if (userData.Has("sessions")) {
+                userData["session_count"] := userData["sessions"].Count
+            } else {
+                userData["session_count"] := 0
+            }
+        }
 
         ; Calculate derived stats
 
@@ -1293,11 +1313,15 @@ GetTodayStats() {
 
 
 
-    global masterStatsCSV
+    global masterStatsCSV, sessionId, currentUsername
 
 
 
     stats := Map()
+
+
+
+    stats["current_username"] := currentUsername
 
 
 
@@ -1325,7 +1349,13 @@ GetTodayStats() {
 
 
 
+    stats["user_summary"] := Map()
+
+    stats["distinct_user_count"] := 0
+
     stats["session_active_time"] := 0
+
+    sessionActiveMap := Map()
 
 
 
@@ -1621,17 +1651,13 @@ GetTodayStats() {
 
 
 
-                    if (session_active_time > stats["session_active_time"]) {
-
-
-
-                        stats["session_active_time"] := session_active_time
-
-
-
+                    sessionKey := Trim(fields[2])
+                    if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
+                        sessionActiveMap[sessionKey] := session_active_time
                     }
 
-
+                    username := Trim(fields[3])
+                    UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
 
                     ; Track severity levels (JSON executions)
 
@@ -1941,6 +1967,34 @@ GetTodayStats() {
 
 
 
+        totalSessionActive := 0
+        for _, activeMs in sessionActiveMap {
+            if (activeMs > 0) {
+                totalSessionActive += activeMs
+            }
+        }
+
+        if (sessionActiveMap.Has(sessionId)) {
+            stats["current_session_active_time"] := sessionActiveMap[sessionId]
+        } else {
+            stats["current_session_active_time"] := 0
+        }
+
+        if (totalSessionActive > 0) {
+            stats["session_active_time"] := totalSessionActive
+        }
+
+        stats["session_active_time_map"] := sessionActiveMap
+
+        stats["distinct_user_count"] := stats["user_summary"].Count
+        for username, userData in stats["user_summary"] {
+            if (userData.Has("sessions")) {
+                userData["session_count"] := userData["sessions"].Count
+            } else {
+                userData["session_count"] := 0
+            }
+        }
+
         ; Calculate average
 
 
@@ -2118,6 +2172,90 @@ ProcessDegradationCounts(executionData, degradationString) {
 
 
                 executionData["clear_count"]++
+
+
+
+        }
+
+
+
+    }
+
+
+
+}
+
+
+
+UpdateUserSummary(userSummaryMap, username, totalBoxes, sessionId) {
+
+
+
+    if (username = "") {
+
+
+
+        username := "unknown"
+
+
+
+    }
+
+
+
+    if (!userSummaryMap.Has(username)) {
+
+
+
+        userSummaryMap[username] := Map(
+
+
+
+            "total_executions", 0,
+
+
+
+            "total_boxes", 0,
+
+
+
+            "sessions", Map()
+
+
+
+        )
+
+
+
+    }
+
+
+
+    userData := userSummaryMap[username]
+
+
+
+    userData["total_executions"] := userData["total_executions"] + 1
+
+
+
+    userData["total_boxes"] := userData["total_boxes"] + totalBoxes
+
+
+
+    if (sessionId != "") {
+
+
+
+        sessions := userData["sessions"]
+
+
+
+        if (!sessions.Has(sessionId)) {
+
+
+
+            sessions[sessionId] := true
 
 
 

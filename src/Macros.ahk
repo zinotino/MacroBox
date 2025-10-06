@@ -73,7 +73,7 @@ SaveMacroState() {
 
         ; CRITICAL: Actually save the config now
         SaveConfig()
-        UpdateStatus("💾 Macro state saved (" . savedMacros . " macros)")
+        ; Silent save - removed excessive status update
         return savedMacros
 
     } catch Error as e {
