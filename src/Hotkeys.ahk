@@ -105,8 +105,14 @@ SetupWASDHotkeys() {
             }
         }
 
-        ; Regular standalone keys are only enabled when WASD mode is toggled on
-        ; This prevents accidental macro execution when typing normally
+        ; Setup standalone WASD keys for macro execution
+        for wasdKey, numpadKey in wasdHotkeyMap {
+            try {
+                Hotkey(wasdKey, ExecuteWASDMacro.Bind(numpadKey), "On")
+            } catch {
+                ; Skip individual key conflicts but continue with others
+            }
+        }
 
     } catch {
         ; Silent fail
@@ -131,6 +137,15 @@ DisableWASDHotkeys() {
             try {
                 hotkeyCombo := "CapsLock & " . wasdKey
                 Hotkey(hotkeyCombo, "Off")
+            } catch Error as keyError {
+                ; Skip individual key errors but continue with others
+            }
+        }
+
+        ; Disable standalone WASD keys
+        for wasdKey, buttonName in wasdHotkeyMap {
+            try {
+                Hotkey(wasdKey, "Off")
             } catch Error as keyError {
                 ; Skip individual key errors but continue with others
             }
