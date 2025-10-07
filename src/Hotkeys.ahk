@@ -55,33 +55,6 @@ UpdateButtonLabelsWithWASD() {
     }
 }
 
-; ===== TOGGLE WASD LABELS =====
-ToggleWASDLabels() {
-    global wasdLabelsEnabled, wasdToggleBtn, wasdHotkeyMap, buttonNames
-
-    ; Toggle the state (visual only - no standalone hotkeys)
-    wasdLabelsEnabled := !wasdLabelsEnabled
-
-    ; REMOVED: Standalone key hotkeys to prevent typing interference
-    ; WASD hotkeys now ONLY work with CapsLock modifier (CapsLock & key)
-    ; This ensures zero interference with normal typing
-
-    ; Update grid outline color to show WASD mode state
-    UpdateGridOutlineColor()
-
-    ; Clear any potentially conflicting labels and rebuild properly
-    UpdateButtonLabelsWithWASD()
-
-    ; Force visual update of all buttons to show new labels
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-
-    ; Save configuration immediately to persist state
-    SaveConfig()
-
-    UpdateStatus(wasdLabelsEnabled ? "WASD mode enabled - button labels show key mappings" : "WASD mode disabled - numpad labels restored")
-}
 
 
 

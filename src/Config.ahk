@@ -176,7 +176,7 @@ global hotkeyLayerNext := "NumpadSub"
 
 ; WASD settings
 global hotkeyProfileActive := false
-global wasdLabelsEnabled := false
+global wasdLabelsEnabled := true
 
 ; Visualization settings
 global corpVisualizationMethod := 1

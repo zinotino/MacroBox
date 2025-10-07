@@ -66,9 +66,8 @@ global chromeMemoryCleanupInterval := 50  ; Clean memory every 50 executions
 ; ===== VISUAL INDICATOR SYSTEM =====
 global yellowOutlineButtons := Map()  ; Track buttons with yellow outlines
 
-; ===== WASD LABEL TOGGLE SYSTEM =====
-global wasdLabelsEnabled := false  ; Track if WASD labels should be shown
-global wasdToggleBtn := 0  ; Reference to the WASD toggle button
+; ===== WASD LABEL SYSTEM =====
+global wasdLabelsEnabled := true  ; WASD labels are always enabled
 
 ; ===== FILE SYSTEM PATHS =====
 ; Store config in Documents\MacroMaster\data to match user requirement

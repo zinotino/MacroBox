@@ -149,11 +149,8 @@ UpdateButtonAppearance(buttonName) {
             button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
             button.SetFont("s8", "cGray")
 
-            if (wasdLabelsEnabled) {
-                button.Text := ""
-            } else {
-                button.Text := "L" . currentLayer
-            }
+            ; WASD labels always enabled - no layer text on buttons
+            button.Text := ""
         }
     }
 
@@ -224,17 +221,11 @@ FlashButton(buttonName, enable) {
 
 ; ===== GRID OUTLINE COLOR UPDATE =====
 UpdateGridOutlineColor() {
-    global gridOutline, wasdLabelsEnabled, currentLayer, layerBorderColors
+    global gridOutline, currentLayer, layerBorderColors
 
     if (gridOutline) {
-        ; Update grid outline color based on WASD mode and current layer
-        if (wasdLabelsEnabled) {
-            ; WASD mode - use a different color scheme
-            gridOutline.Opt("+Background0xFF6B35")  ; Orange-red for WASD mode
-        } else {
-            ; Normal mode - use layer color
-            gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
-        }
+        ; Always use WASD mode color scheme
+        gridOutline.Opt("+Background0xFF6B35")  ; Orange-red for WASD mode
         gridOutline.Redraw()
     }
 }

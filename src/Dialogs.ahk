@@ -160,9 +160,6 @@ ShowSettings() {
     settingsGui.Add("Text", "x30 y95 w480 h20", "🎮 Hotkey & Utility Configuration:")
     settingsGui.Add("Text", "x30 y115 w480 h15 c0x666666", "Configure keyboard shortcuts and utility functions")
 
-    ; WASD Info - show current status
-    wasdStatus := wasdLabelsEnabled ? "Enabled" : "Disabled"
-    settingsGui.Add("Text", "x30 y140 w480 h15", "🏷️ WASD Labels: " . wasdStatus)
 
     ; Main Utility Hotkeys Section (clean layout without WASD clutter)
     settingsGui.Add("Text", "x30 y170 w480 h20", "🎮 Main Utility Hotkeys:")
@@ -224,7 +221,7 @@ ShowSettings() {
     instructY := hotkeyY + 40
     settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x0066CC", "📋 Quick Instructions:")
     instructY += 20
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h50", "• 🏷️ WASD labels show key mappings for buttons`n• ⚙️ Configure utility hotkeys above for your workflow`n• 💾 Apply to test changes, save to make permanent`n• ⌨️ All hotkeys work alongside standard numpad keys")
+    settingsGui.Add("Text", "x30 y" . instructY . " w480 h50", "• ⚙️ Configure utility hotkeys above for your workflow`n• 💾 Apply to test changes, save to make permanent`n• ⌨️ All hotkeys work alongside standard numpad keys")
     instructY += 60
     settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Focus on utility functions - WASD mapping handled automatically.")
 
@@ -443,36 +440,6 @@ ApplyAutomationSettings(chkAutoExecutionMode, editAutoInterval, editAutoMaxCount
     UpdateStatus(status . " (interval: " . interval . "s, max: " . (maxCount = 0 ? "infinite" : maxCount) . ")")
 }
 
-ApplyWASDSettings(chkWASDProfile, chkWASDLabels, settingsGui) {
-    global hotkeyProfileActive, wasdLabelsEnabled
-
-    newProfileActive := chkWASDProfile.Value
-    newLabelsEnabled := chkWASDLabels.Value
-
-    ; Check if settings changed
-    if (newProfileActive != hotkeyProfileActive || newLabelsEnabled != wasdLabelsEnabled) {
-        hotkeyProfileActive := newProfileActive
-        wasdLabelsEnabled := newLabelsEnabled
-
-        ; Apply WASD profile changes
-        if (hotkeyProfileActive) {
-            SetupWASDHotkeys()
-            UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED")
-        } else {
-            DisableWASDHotkeys()
-            UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED")
-        }
-
-        ; Update button labels
-        UpdateButtonLabelsWithWASD()
-        RefreshAllButtonAppearances()
-
-        ; Save configuration
-        SaveConfig()
-    }
-
-    UpdateStatus("🎹 WASD settings applied")
-}
 
 SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMenuClickDelay, editMouseDragDelay, editMouseReleaseDelay, editBetweenBoxDelay, editKeyPressDelay, editFocusDelay, editMouseHoverDelay) {
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
