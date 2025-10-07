@@ -156,9 +156,6 @@ ShowSettings() {
     tabs.UseTab(3)
     global hotkeyProfileActive, wasdHotkeyMap, wasdLabelsEnabled
 
-    ; Header focused on utility functions
-    settingsGui.Add("Text", "x30 y95 w480 h20", "🎮 Hotkey & Utility Configuration:")
-    settingsGui.Add("Text", "x30 y115 w480 h15 c0x666666", "Configure keyboard shortcuts and utility functions")
 
 
     ; Main Utility Hotkeys Section (clean layout without WASD clutter)
