@@ -154,6 +154,9 @@ SetupHotkeys() {
         ; Debug (not configurable - keep as F11)
         Hotkey("F11", (*) => ShowRecordingDebug())
 
+        ; Cancel assignment with Escape
+        Hotkey("Escape", (*) => HandleEscapeKey())
+
         ; Test stats recording (removed - use external test files)
         ; Hotkey("^t", (*) => TestStatsRecording())
 

@@ -187,7 +187,15 @@ CancelAssignmentProcess() {
     if (macroEvents.Has(currentMacro)) {
         macroEvents.Delete(currentMacro)
     }
+    RefreshAllButtonAppearances()
     UpdateStatus("⚠️ Assignment cancelled")
+}
+
+HandleEscapeKey(*) {
+    global awaitingAssignment
+    if (awaitingAssignment) {
+        CancelAssignmentProcess()
+    }
 }
 
 AssignToButton(buttonName) {
@@ -221,6 +229,9 @@ AssignToButton(buttonName) {
     events := macroEvents[layerMacroName]
     UpdateButtonAppearance(buttonName)
     SaveMacroState()
+
+    ; Refresh all button appearances to exit assignment mode
+    RefreshAllButtonAppearances()
 
     UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
 }
@@ -516,8 +527,8 @@ ForceStopRecording() {
     }
 
     awaitingAssignment := true
-    UpdateStatus("🎯 Recording complete (" . eventCount . " events) → Press numpad key to assign")
-    SetTimer(CheckForAssignment, 25)
+    UpdateStatus("🎯 Recording complete (" . eventCount . " events) → Click button to assign or press numpad")
+    RefreshAllButtonAppearances()
 }
 
 ResetRecordingUI() {

@@ -58,7 +58,7 @@ ShowStatsMenu() {
 
     titleText.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
 
-    y += 35
+    y += 20
 
     ; === COLUMN HEADERS ===
 
@@ -66,13 +66,13 @@ ShowStatsMenu() {
 
     AddStatsHeader(statsGui, y, "TODAY", rightCol, 210)
 
-    y += 25
+    y += 15
 
     ; === GENERAL STATS ===
 
     AddSectionDivider(statsGui, y, "GENERAL STATISTICS", 660)
 
-    y += 25
+    y += 15
 
     AddHorizontalStatRowLive(statsGui, y, "Executions:", "all_exec", "today_exec")
 
@@ -92,17 +92,17 @@ ShowStatsMenu() {
 
     AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
 
-    y += 18
+    y += 12
 
     AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
 
-    y += 25
+    y += 15
 
     ; === MACRO DEGRADATION BREAKDOWN ===
 
     AddSectionDivider(statsGui, y, "MACRO DEGRADATION BREAKDOWN", 660)
 
-    y += 25
+    y += 15
 
     degradationTypes := [
 
@@ -130,47 +130,47 @@ ShowStatsMenu() {
 
         AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_macro_" . degInfo[2], "today_macro_" . degInfo[2])
 
-        y += 18
+        y += 12
 
     }
 
-    y += 15
+    y += 10
 
     ; === JSON DEGRADATION BREAKDOWN ===
 
     AddSectionDivider(statsGui, y, "JSON DEGRADATION SELECTION COUNT", 660)
 
-    y += 25
+    y += 15
 
     for degInfo in degradationTypes {
 
         AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_json_" . degInfo[2], "today_json_" . degInfo[2])
 
-        y += 18
+        y += 12
 
     }
 
-    y += 15
+    y += 10
 
     ; === EXECUTION TYPE BREAKDOWN ===
 
     AddSectionDivider(statsGui, y, "EXECUTION TYPE BREAKDOWN", 660)
 
-    y += 25
+    y += 15
 
     AddHorizontalStatRowLive(statsGui, y, "Macro Executions:", "all_macro_exec", "today_macro_exec")
 
-    y += 18
+    y += 12
 
     AddHorizontalStatRowLive(statsGui, y, "JSON Executions:", "all_json_exec", "today_json_exec")
 
-    y += 25
+    y += 15
 
     ; === JSON SEVERITY TRACKING ===
 
     AddSectionDivider(statsGui, y, "JSON SEVERITY BREAKDOWN", 660)
 
-    y += 25
+    y += 15
 
     severityTypes := [
 
@@ -186,31 +186,31 @@ ShowStatsMenu() {
 
         AddHorizontalStatRowLive(statsGui, y, sevInfo[1] . ":", "all_" . sevInfo[2], "today_" . sevInfo[2])
 
-        y += 18
+        y += 12
 
     }
 
-    y += 25
+    y += 15
 
     ; === MACRO DETAILS ===
 
     AddSectionDivider(statsGui, y, "MACRO DETAILS", 660)
 
-    y += 25
+    y += 15
 
     AddHorizontalStatRowLive(statsGui, y, "Most Used Button:", "most_used_btn", "")
 
-    y += 18
+    y += 12
 
     AddHorizontalStatRowLive(statsGui, y, "Most Active Layer:", "most_active_layer", "")
 
-    y += 25
+    y += 15
 
     ; === FILE LOCATIONS ===
 
     AddSectionDivider(statsGui, y, "DATA FILES", 660)
 
-    y += 25
+    y += 15
 
     infoText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Display Stats: " . masterStatsCSV)
 
@@ -226,7 +226,7 @@ ShowStatsMenu() {
 
     infoText2.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
 
-    y += 30
+    y += 20
 
     ; === BUTTONS ===
 
@@ -250,7 +250,7 @@ ShowStatsMenu() {
 
     ; Show GUI and start live refresh
 
-    statsGui.Show("w700 h" . (y + 50))
+    statsGui.Show("w700 h" . (y + 40))
 
     statsGuiOpen := true
 

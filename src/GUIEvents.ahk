@@ -7,7 +7,17 @@ Handles button clicks, context menus, layer switching, and mode toggles
 
 ; ===== BUTTON EVENT HANDLERS =====
 HandleButtonClick(buttonName, *) {
-    ExecuteMacro(buttonName)
+    global awaitingAssignment, recording
+
+    if (recording) {
+        ; Stop recording and assign to this button
+        ForceStopRecording()
+        AssignToButton(buttonName)
+    } else if (awaitingAssignment) {
+        AssignToButton(buttonName)
+    } else {
+        ExecuteMacro(buttonName)
+    }
 }
 
 HandleContextMenu(buttonName, *) {
