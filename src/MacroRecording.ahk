@@ -543,44 +543,6 @@ ResetRecordingUI() {
     }
 }
 
-; ===== VISUAL INDICATOR SYSTEM FOR AUTOMATION =====
-AddYellowOutline(buttonName) {
-    global buttonGrid, yellowOutlineButtons
-
-    if (!buttonGrid.Has(buttonName)) {
-        return
-    }
-
-    button := buttonGrid[buttonName]
-
-    ; Store original border and apply yellow outline
-    if (!yellowOutlineButtons.Has(buttonName)) {
-        ; Create yellow outline effect by changing border
-        button.Opt("+Border")
-        button.Opt("+Background0xFFFF00")  ; Bright yellow background
-        yellowOutlineButtons[buttonName] := true
-
-        ; Update button appearance to show automation status
-        UpdateButtonAppearance(buttonName)
-    }
-}
-
-RemoveYellowOutline(buttonName) {
-    global buttonGrid, yellowOutlineButtons
-
-    if (!buttonGrid.Has(buttonName) || !yellowOutlineButtons.Has(buttonName)) {
-        return
-    }
-
-    button := buttonGrid[buttonName]
-
-    ; Restore original appearance
-    button.Opt("-Background0xFFFF00")
-    yellowOutlineButtons.Delete(buttonName)
-
-    ; Update button appearance to normal
-    UpdateButtonAppearance(buttonName)
-}
 
 
 ; ===== RECORDING DEBUG FUNCTION =====

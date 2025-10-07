@@ -420,63 +420,6 @@ LoadWASDMappingsFromFile() {
     ; Placeholder - implement as needed
 }
 
-; ===== VALIDATE LOADED CANVAS VALUES =====
-ValidateLoadedCanvasValues() {
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global hbitmapCache
-
-    ; Track if any canvas values were reset
-    canvasReset := false
-
-    ; Validate wide canvas
-    if (!IsNumber(wideCanvasLeft) || !IsNumber(wideCanvasTop) || !IsNumber(wideCanvasRight) || !IsNumber(wideCanvasBottom) ||
-        wideCanvasRight <= wideCanvasLeft || wideCanvasBottom <= wideCanvasTop) {
-        wideCanvasLeft := 0
-        wideCanvasTop := 0
-        wideCanvasRight := 1920
-        wideCanvasBottom := 1080
-        isWideCanvasCalibrated := false
-        canvasReset := true
-    }
-
-    ; Validate narrow canvas
-    if (!IsNumber(narrowCanvasLeft) || !IsNumber(narrowCanvasTop) || !IsNumber(narrowCanvasRight) || !IsNumber(narrowCanvasBottom) ||
-        narrowCanvasRight <= narrowCanvasLeft || narrowCanvasBottom <= narrowCanvasTop) {
-        narrowCanvasLeft := 240
-        narrowCanvasTop := 0
-        narrowCanvasRight := 1680
-        narrowCanvasBottom := 1080
-        isNarrowCanvasCalibrated := false
-        canvasReset := true
-    }
-
-    ; Validate user canvas
-    if (!IsNumber(userCanvasLeft) || !IsNumber(userCanvasTop) || !IsNumber(userCanvasRight) || !IsNumber(userCanvasBottom) ||
-        userCanvasRight <= userCanvasLeft || userCanvasBottom <= userCanvasTop) {
-        userCanvasLeft := 0
-        userCanvasTop := 0
-        userCanvasRight := 1920
-        userCanvasBottom := 1080
-        isCanvasCalibrated := false
-        canvasReset := true
-    }
-
-    ; If any canvas values were reset, clear the HBITMAP cache since cached visualizations may be invalid
-    if (canvasReset && IsObject(hbitmapCache)) {
-        for cacheKey, hbitmap in hbitmapCache {
-            if (hbitmap && hbitmap != 0) {
-                try {
-                    DllCall("DeleteObject", "Ptr", hbitmap)
-                } catch {
-                    ; Ignore cleanup errors
-                }
-            }
-        }
-        hbitmapCache := Map()
-    }
-}
 
 ; ===== CANVAS VALIDATION =====
 ValidateAndFixCanvasValues() {

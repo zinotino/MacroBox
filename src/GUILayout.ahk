@@ -129,7 +129,7 @@ CreateGridOutline() {
 }
 
 CreateButtonGrid() {
-    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, windowWidth, windowHeight, gridOutline, scaleFactor
+    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonOutlines, buttonNames, darkMode, windowWidth, windowHeight, gridOutline, scaleFactor
 
     ; Match original MacroLauncherX44.ahk button grid layout exactly
     margin := 8
@@ -161,6 +161,9 @@ CreateButtonGrid() {
             x := margin + col * (buttonWidth + padding)
             y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
 
+            ; Create outline picture control (behind button)
+            outlinePic := mainGui.Add("Picture", "x" . (Floor(x)-2) . " y" . (Floor(y)-2) . " w" . (Floor(buttonWidth)+4) . " h" . (Floor(thumbHeight)+4) . " Hidden")
+
             ; Create button without stroke/border to match original clean design
             button := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x201", "")
             if (darkMode) {
@@ -184,6 +187,7 @@ CreateButtonGrid() {
             buttonGrid[buttonName] := button
             buttonLabels[buttonName] := label
             buttonPictures[buttonName] := picture
+            buttonOutlines[buttonName] := outlinePic
 
             ; Setup event handlers
             button.OnEvent("Click", HandleButtonClick.Bind(buttonName))
@@ -208,7 +212,7 @@ CreateStatusBar() {
 
 ; ===== GUI RESIZE HANDLER =====
 GuiResize(GuiObj, MinMax, Width, Height) {
-    global mainGui, statusBar, windowWidth, windowHeight, gridOutline, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, scaleFactor
+    global mainGui, statusBar, windowWidth, windowHeight, gridOutline, buttonGrid, buttonLabels, buttonPictures, buttonOutlines, buttonNames, darkMode, scaleFactor
 
     windowWidth := Width
     windowHeight := Height
@@ -278,6 +282,7 @@ GuiResize(GuiObj, MinMax, Width, Height) {
 
             buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+            buttonOutlines[buttonName].Move(Floor(x)-2, Floor(y)-2, Floor(buttonWidth)+4, Floor(thumbHeight)+4)
             buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
             buttonLabels[buttonName].SetFont("s" . Round(8 * scaleFactor) . " bold")
         }
@@ -295,7 +300,7 @@ GuiResize(GuiObj, MinMax, Width, Height) {
 
 ; ===== FAST BUTTON GRID MOVEMENT =====
 MoveButtonGridFast() {
-    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, windowWidth, windowHeight, gridOutline, darkMode, scaleFactor
+    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonOutlines, buttonNames, windowWidth, windowHeight, gridOutline, darkMode, scaleFactor
 
     margin := 8
     padding := 4
@@ -328,6 +333,7 @@ MoveButtonGridFast() {
 
             buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
             buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+            buttonOutlines[buttonName].Move(Floor(x)-2, Floor(y)-2, Floor(buttonWidth)+4, Floor(thumbHeight)+4)
             buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
             buttonLabels[buttonName].SetFont("s" . Round(8 * scaleFactor) . " bold")
         }

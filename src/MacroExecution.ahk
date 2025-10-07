@@ -208,8 +208,7 @@ StartAutoExecution(buttonName) {
     autoExecutionButton := buttonName
     autoExecutionCount := 0
 
-    ; Add visual indicator
-    AddYellowOutline(buttonName)
+    ; Add visual indicator (outline is now always on for enabled buttons)
 
     ; Start the timer
     SetTimer(AutoExecuteLoop, autoExecutionInterval)
@@ -238,10 +237,7 @@ StopAutoExecution() {
     ; Stop the timer
     SetTimer(AutoExecuteLoop, 0)
 
-    ; Remove visual indicator
-    if (autoExecutionButton != "") {
-        RemoveYellowOutline(autoExecutionButton)
-    }
+    ; Remove visual indicator (outline remains for enabled buttons)
 
     autoExecutionMode := false
     prevButton := autoExecutionButton

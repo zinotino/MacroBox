@@ -14,7 +14,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache, buttonOutlines
 
     ; Early return for invalid button names
     if (!buttonGrid.Has(buttonName)) {
@@ -154,21 +154,16 @@ UpdateButtonAppearance(buttonName) {
         }
     }
 
+    ; Apply yellow outline for auto mode buttons
+    ApplyYellowOutline(buttonName, hasAutoMode)
+
     ; Label control - always visible with button name/custom label
     buttonLabels[buttonName].Visible := true
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
     buttonLabels[buttonName].Redraw()
 
-    ; Apply yellow outline for auto mode buttons
-    ApplyYellowOutline(buttonName, hasAutoMode)
 }
 
-UpdateAllButtonAppearances() {
-    global buttonNames
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-}
 
 ; ===== THUMBNAIL OPERATIONS =====
 AddThumbnail(buttonName) {
@@ -267,21 +262,28 @@ GetButtonThumbnailSize() {
 
 ; ===== YELLOW OUTLINE FOR AUTO MODE =====
 ApplyYellowOutline(buttonName, hasAutoMode) {
-    global buttonGrid, yellowOutlineButtons
+    global buttonGrid, buttonOutlines, yellowOutlineButtons
 
     if (!buttonGrid.Has(buttonName)) {
         return
     }
 
     button := buttonGrid[buttonName]
+    outlinePic := buttonOutlines[buttonName]
 
     if (hasAutoMode && !yellowOutlineButtons.Has(buttonName)) {
-        ; Apply yellow outline
-        button.Opt("+Border")
+        ; Get button dimensions
+        button.GetPos(, , &w, &h)
+        ; Create yellow border bitmap
+        hbitmap := CreateYellowBorderBitmap(w + 4, h + 4)
+        if (hbitmap) {
+            outlinePic.Value := "HBITMAP:" . hbitmap
+            outlinePic.Visible := true
+        }
         yellowOutlineButtons[buttonName] := true
     } else if (!hasAutoMode && yellowOutlineButtons.Has(buttonName)) {
-        ; Remove yellow outline
-        button.Opt("-Border")
+        ; Hide yellow outline
+        outlinePic.Visible := false
         yellowOutlineButtons.Delete(buttonName)
     }
 }

@@ -65,6 +65,7 @@ global chromeMemoryCleanupInterval := 50  ; Clean memory every 50 executions
 
 ; ===== VISUAL INDICATOR SYSTEM =====
 global yellowOutlineButtons := Map()  ; Track buttons with yellow outlines
+global buttonOutlines := Map()  ; Track outline picture controls
 
 ; ===== WASD LABEL SYSTEM =====
 global wasdLabelsEnabled := true  ; WASD labels are always enabled
