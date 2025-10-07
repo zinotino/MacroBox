@@ -227,11 +227,14 @@ AssignToButton(buttonName) {
     macroEvents.Delete(currentMacro)
 
     events := macroEvents[layerMacroName]
-    UpdateButtonAppearance(buttonName)
-    SaveMacroState()
 
-    ; Refresh all button appearances to exit assignment mode
-    RefreshAllButtonAppearances()
+    awaitingAssignment := false
+
+    ; Update only the assigned button (no expensive full refresh needed)
+    UpdateButtonAppearance(buttonName)
+
+    ; Save config
+    SaveMacroState()
 
     UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
 }
@@ -527,7 +530,8 @@ ForceStopRecording() {
     }
 
     awaitingAssignment := true
-    UpdateStatus("🎯 Recording complete (" . eventCount . " events) → Click button to assign or press numpad")
+    ; Removed timer polling to avoid interference with button clicks
+    UpdateStatus("🎯 Recording complete (" . eventCount . " events) → Click button to assign")
     RefreshAllButtonAppearances()
 }
 
@@ -577,6 +581,7 @@ RemoveYellowOutline(buttonName) {
     ; Update button appearance to normal
     UpdateButtonAppearance(buttonName)
 }
+
 
 ; ===== RECORDING DEBUG FUNCTION =====
 ShowRecordingDebug() {

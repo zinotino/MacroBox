@@ -89,53 +89,30 @@ global canvasHeight := 1080
 global canvasType := "wide"  ; "wide", "narrow", or "custom"
 global canvasAspectRatio := 1.78
 
-; Initialize canvas variables with default values
-wideCanvasLeft := 0
-wideCanvasTop := 0
-wideCanvasRight := 1920
-wideCanvasBottom := 1080
+; Canvas variables are now managed by CanvasState object in Canvas.ahk
+; Legacy globals below maintained for backward compatibility
 
-narrowCanvasLeft := 240
-narrowCanvasTop := 0
-narrowCanvasRight := 1680
-narrowCanvasBottom := 1080
-
-userCanvasLeft := 0
-userCanvasTop := 0
-userCanvasRight := 1920
-userCanvasBottom := 1080
-
-isCanvasCalibrated := false
-isWideCanvasCalibrated := false
-isNarrowCanvasCalibrated := false
-lastCanvasDetection := ""
-
-; ===== DUAL CANVAS SYSTEM FOR ASPECT RATIOS =====
-; Wide mode: 16:9 aspect ratio (1920x1080 reference)
+; ===== LEGACY CANVAS GLOBALS =====
+; These globals are maintained for backward compatibility
+; New code should use CanvasState object from Canvas.ahk
 global wideCanvasLeft := 0
 global wideCanvasTop := 0
 global wideCanvasRight := 1920
 global wideCanvasBottom := 1080
 
-; Narrow mode: 4:3 aspect ratio (1440x1080 centered in 1920x1080)
 global narrowCanvasLeft := 240
 global narrowCanvasTop := 0
 global narrowCanvasRight := 1680
 global narrowCanvasBottom := 1080
 
-; Legacy canvas (for backwards compatibility)
 global userCanvasLeft := 0
 global userCanvasTop := 0
 global userCanvasRight := 1920
 global userCanvasBottom := 1080
 
-global isCanvasCalibrated := false  ; Start as false until calibrated
+global isCanvasCalibrated := false
 global isWideCanvasCalibrated := false
 global isNarrowCanvasCalibrated := false
-global lastCanvasDetection := ""
-
-; Narrow mode: 4:3 aspect ratio (1440x1080 centered in 1920x1080)
-; Legacy canvas (for backwards compatibility)
 global lastCanvasDetection := ""
 
 ; ===== STREAMLINED STATS SYSTEM =====
@@ -350,21 +327,12 @@ Main() {
         ; Apply loaded settings to GUI now that it's fully initialized
         ApplyLoadedSettingsToGUI()
 
-        ; Switch active canvas based on loaded annotation mode
-        global annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom
-        global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
-        global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
-
+        ; Switch active canvas based on loaded annotation mode using CanvasState
+        global annotationMode
         if (annotationMode = "Narrow") {
-            userCanvasLeft := narrowCanvasLeft
-            userCanvasTop := narrowCanvasTop
-            userCanvasRight := narrowCanvasRight
-            userCanvasBottom := narrowCanvasBottom
+            Canvas_SetActiveCanvas("narrow")
         } else {
-            userCanvasLeft := wideCanvasLeft
-            userCanvasTop := wideCanvasTop
-            userCanvasRight := wideCanvasRight
-            userCanvasBottom := wideCanvasBottom
+            Canvas_SetActiveCanvas("wide")
         }
 
         ; Ensure totalLayers is always a valid integer after loading config

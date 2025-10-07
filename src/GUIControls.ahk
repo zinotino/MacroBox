@@ -224,8 +224,8 @@ UpdateGridOutlineColor() {
     global gridOutline, currentLayer, layerBorderColors
 
     if (gridOutline) {
-        ; Always use WASD mode color scheme
-        gridOutline.Opt("+Background0xFF6B35")  ; Orange-red for WASD mode
+        ; Use current layer's border color instead of fixed WASD orange
+        gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
         gridOutline.Redraw()
     }
 }
