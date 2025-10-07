@@ -58,33 +58,6 @@ UpdateButtonLabelsWithWASD() {
 
 
 
-; ===== HOTKEY PROFILE FUNCTIONS =====
-ToggleHotkeyProfile() {
-    global hotkeyProfileActive, buttonNames
-
-    local buttonName
-
-    hotkeyProfileActive := !hotkeyProfileActive
-
-    if (hotkeyProfileActive) {
-        SetupWASDHotkeys()
-        UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED")
-    } else {
-        DisableWASDHotkeys()
-        UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED")
-    }
-
-    ; Update labels immediately when profile state changes
-    UpdateButtonLabelsWithWASD()
-
-    ; Force visual update of all buttons to show new labels
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-
-    ; Save the state for persistence
-    SaveConfig()
-}
 
 SetupWASDHotkeys() {
     global wasdHotkeyMap
@@ -105,92 +78,34 @@ SetupWASDHotkeys() {
             }
         }
 
-        ; Setup standalone WASD keys for macro execution
-        for wasdKey, numpadKey in wasdHotkeyMap {
-            try {
-                Hotkey(wasdKey, ExecuteWASDMacro.Bind(numpadKey), "On")
-            } catch {
-                ; Skip individual key conflicts but continue with others
-            }
-        }
 
     } catch {
         ; Silent fail
     }
 }
 
-DisableWASDHotkeys() {
-    global wasdHotkeyMap, capsLockPressed
-
-    local wasdKey, hotkeyCombo, keyError
-
-    try {
-        ; Disable CapsLock modifier
-        Hotkey("CapsLock", "Off")
-        Hotkey("CapsLock Up", "Off")
-
-        ; Clear the pressed state
-        capsLockPressed := false
-
-        ; Disable all mapped key combinations
-        for wasdKey, buttonName in wasdHotkeyMap {
-            try {
-                hotkeyCombo := "CapsLock & " . wasdKey
-                Hotkey(hotkeyCombo, "Off")
-            } catch Error as keyError {
-                ; Skip individual key errors but continue with others
-            }
-        }
-
-        ; Disable standalone WASD keys
-        for wasdKey, buttonName in wasdHotkeyMap {
-            try {
-                Hotkey(wasdKey, "Off")
-            } catch Error as keyError {
-                ; Skip individual key errors but continue with others
-            }
-        }
-
-        ; Restore normal CapsLock functionality when profile is disabled
-        SetCapsLockState("Off")
-
-    } catch {
-        ; Silent fail
-    }
-}
 
 CapsLockDown() {
-    global capsLockPressed, hotkeyProfileActive
+    global capsLockPressed
 
-    ; Only register CapsLock press if hotkey profile is active
-    if (hotkeyProfileActive) {
-        capsLockPressed := true
-        ; Prevent CapsLock state change in system
-        SetCapsLockState("Off")
-    }
+    ; Always register CapsLock press for WASD macros
+    capsLockPressed := true
+    ; Prevent CapsLock state change in system
+    SetCapsLockState("Off")
 }
 
 CapsLockUp() {
-    global capsLockPressed, hotkeyProfileActive
+    global capsLockPressed
 
     ; Always clear the pressed state
     capsLockPressed := false
 
     ; Ensure CapsLock state remains off when using as modifier
-    if (hotkeyProfileActive) {
-        SetCapsLockState("Off")
-    }
+    SetCapsLockState("Off")
 }
 
 ExecuteWASDMacro(buttonName, *) {
-    global hotkeyProfileActive
-
-    ; Enhanced validation with better user feedback
-    if (!hotkeyProfileActive) {
-        return
-    }
-
-    ; Note: CapsLock modifier is already enforced by "CapsLock & key" syntax
+    ; CapsLock modifier is enforced by "CapsLock & key" syntax
     ; No need to check capsLockPressed state since hotkey won't trigger without CapsLock
 
     SafeExecuteMacroByKey(buttonName)
@@ -227,8 +142,6 @@ SetupHotkeys() {
             Hotkey(hotkeyBreakMode, (*) => ToggleBreakMode())
         }
 
-        ; Hotkey profile toggle (not configurable - keep as Ctrl+H)
-        Hotkey("^h", (*) => ToggleHotkeyProfile())
 
         ; Configuration menu access - use configured key (default Ctrl+K)
         if (hotkeySettings != "") {
@@ -286,8 +199,8 @@ SetupHotkeys() {
         Hotkey("CapsLock & 3", (*) => SwitchToLayer(3))
         Hotkey("CapsLock & 4", (*) => SwitchToLayer(4))
 
-        ; WASD hotkeys for macro execution (only if profile will be active)
-        ; NOTE: SetupWASDHotkeys() will be called later in LoadConfig if needed
+        ; WASD hotkeys for macro execution (always active)
+        SetupWASDHotkeys()
 
         ; Utility - use configured keys
         if (hotkeySubmit != "") {
