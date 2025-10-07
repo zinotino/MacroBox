@@ -158,9 +158,9 @@ ShowSettings() {
 
 
 
-    ; Main Utility Hotkeys Section (clean layout without WASD clutter)
-    settingsGui.Add("Text", "x30 y170 w480 h20", "🎮 Main Utility Hotkeys:")
-    hotkeyY := 195
+    ; Main Utility Hotkeys Section (shifted to top)
+    settingsGui.Add("Text", "x30 y95 w480 h20", "🎮 Main Utility Hotkeys:")
+    hotkeyY := 120
     hotkeyDefaults := GetHotkeyDefaults()
 
     recordValue := hotkeyRecordToggle != "" ? hotkeyRecordToggle : hotkeyDefaults["recordToggle"]
