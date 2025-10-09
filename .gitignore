@@ -3,20 +3,23 @@ debug_visualization.log
 tests/test_log.txt
 *.log
 
-# Dashboard generated output
-dashboard/output/
-dashboard/metrics/
-
 # Temporary files
 nul
 *.tmp
 *.temp
+*.bak
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# User data
+# User data (runtime generated)
 data/
 config.ini
 *.csv
+
+# Thumbnails (runtime generated)
+thumbnails/
+
+# Archive (legacy code, not for distribution)
+archive/legacy-python/

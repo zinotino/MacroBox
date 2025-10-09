@@ -4,8 +4,6 @@
 
 [![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/your-repo/MacroMasterZ8W)
 [![AutoHotkey](https://img.shields.io/badge/AutoHotkey-v2.0-orange.svg)](https://www.autohotkey.com/)
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-3-green.svg)](https://www.sqlite.org/)
 [![License](https://img.shields.io/badge/license-MIT-red.svg)](LICENSE)
 
 ---
@@ -17,12 +15,12 @@ MacroMaster Z8W is a comprehensive macro recording and playback system designed 
 ### ✨ Key Features
 
 - **🎥 Advanced Macro Recording**: Record mouse movements, clicks, and keyboard inputs with degradation assignment
-- **🎨 Intelligent Visualization**: Three-tier visualization system (HBITMAP, PNG, Plotly dashboard)
+- **🎨 Intelligent Visualization**: Three-tier visualization system (HBITMAP, PNG fallbacks)
 - **📊 Real-time Analytics**: CSV-powered statistics with today/all-time horizontal display
 - **🔧 Dual Canvas Support**: Automatic wide/narrow aspect ratio detection and scaling
 - **🏢 Corporate Ready**: Multiple fallback mechanisms for restricted environments
 - **⚡ High Performance**: <1ms cached rendering, optimized for 8+ hour sessions
-- **🔄 Modular Architecture**: 20+ separate components for maintainability
+- **🔄 Modular Architecture**: 26 separate components for maintainability
 - **📊 Simple Stats Display**: Today and All-Time statistics in horizontal layout
 - **📈 CSV-Based Analytics**: Lightweight statistics with degradation breakdowns
 - **💾 Permanent Data Storage**: Never-lost historical data with reset protection
@@ -32,17 +30,12 @@ MacroMaster Z8W is a comprehensive macro recording and playback system designed 
 #### Requirements
 - Windows 10/11
 - [AutoHotkey v2.0](https://www.autohotkey.com/v2/)
-- Python 3.8+ (for dashboard)
 - 200 MB free disk space
 
 #### Installation
 
 1. **Clone or download** the repository
-2. **Install Python dependencies:**
-   ```bash
-   pip install plotly
-   ```
-3. **Run the application:**
+2. **Run the application:**
    ```bash
    "C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" src/Main.ahk
    ```
@@ -52,7 +45,7 @@ MacroMaster Z8W is a comprehensive macro recording and playback system designed 
 1. **Calibrate Canvas**: Click "Calibrate Canvas" and draw around your labeling area
 2. **Record Macro**: Press `F9`, draw boxes, press `1-9` for degradations, press `F9` again
 3. **Assign & Execute**: Press numpad key to assign, then execute
-4. **View Statistics**: Click "Stats" button for interactive dashboard
+4. **View Statistics**: Click "Stats" button for today/all-time statistics display
 
 ---
 
@@ -60,23 +53,32 @@ MacroMaster Z8W is a comprehensive macro recording and playback system designed 
 
 ### 📚 Complete Documentation Suite
 
+#### 👥 User Documentation
 | Document | Description | Link |
 |----------|-------------|------|
-| **🏗️ Architecture Overview** | System design, data flow, dependencies | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| **🎨 Visualization System** | Graphics pipeline, canvas handling, HBITMAP/PNG systems | [`docs/VISUALIZATION_SYSTEM.md`](docs/VISUALIZATION_SYSTEM.md) |
-| **⚙️ Core System** | State management, initialization, configuration | [`docs/CORE_SYSTEM.md`](docs/CORE_SYSTEM.md) |
-| **📖 Usage Guide** | Complete user manual, troubleshooting | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) |
-| **📊 Simple Stats System** | CSV statistics with today/all-time display | [`docs/SIMPLE_STATS_SYSTEM.md`](docs/SIMPLE_STATS_SYSTEM.md) |
-| **🤖 AI Development Guide** | Claude/Grok integration guidelines | [`docs/CLAUDE.md`](docs/CLAUDE.md) |
-| **🔍 System Analysis** | Legacy code analysis, refactoring recommendations | [`docs/SYSTEM_ANALYSIS_2025-10-08.md`](docs/SYSTEM_ANALYSIS_2025-10-08.md) |
+| **📖 Usage Guide** | Complete user manual, troubleshooting | [`docs/user-guide/USAGE_GUIDE.md`](docs/user-guide/USAGE_GUIDE.md) |
+| **📊 Simple Stats System** | CSV statistics with today/all-time display | [`docs/user-guide/SIMPLE_STATS_SYSTEM.md`](docs/user-guide/SIMPLE_STATS_SYSTEM.md) |
+
+#### 🔧 Developer Documentation
+| Document | Description | Link |
+|----------|-------------|------|
+| **🏗️ Architecture Overview** | System design, data flow, dependencies | [`docs/developer-guide/ARCHITECTURE.md`](docs/developer-guide/ARCHITECTURE.md) |
+| **🎨 Visualization System** | Graphics pipeline, canvas handling, HBITMAP/PNG systems | [`docs/developer-guide/VISUALIZATION_SYSTEM.md`](docs/developer-guide/VISUALIZATION_SYSTEM.md) |
+| **⚙️ Core System** | State management, initialization, configuration | [`docs/developer-guide/CORE_SYSTEM.md`](docs/developer-guide/CORE_SYSTEM.md) |
+| **🤖 AI Development Guide** | Claude Code integration guidelines | [`docs/developer-guide/CLAUDE.md`](docs/developer-guide/CLAUDE.md) |
+
+#### 📁 Project Organization
+| Document | Description | Link |
+|----------|-------------|------|
+| **🗂️ Project Structure** | Directory organization, file locations | [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) |
+| **✅ Distribution Checklist** | Release verification checklist | [`DISTRIBUTION_CHECKLIST.md`](DISTRIBUTION_CHECKLIST.md) |
 
 ### 🎯 Quick Links
 
-- [**Getting Started**](docs/USAGE_GUIDE.md#quick-start) - Installation and first run
-- [**Basic Workflow**](docs/USAGE_GUIDE.md#basic-workflow) - Complete labeling session
-- [**Troubleshooting**](docs/USAGE_GUIDE.md#troubleshooting) - Common issues and solutions
-- [**Configuration**](docs/USAGE_GUIDE.md#configuration) - Settings and customization
-- [**Performance**](docs/USAGE_GUIDE.md#performance-optimization) - Optimization tips
+- [**Getting Started**](docs/user-guide/USAGE_GUIDE.md#quick-start) - Installation and first run
+- [**Basic Workflow**](docs/user-guide/USAGE_GUIDE.md#basic-workflow) - Complete labeling session
+- [**Troubleshooting**](docs/user-guide/USAGE_GUIDE.md#troubleshooting) - Common issues and solutions
+- [**Project Structure**](PROJECT_STRUCTURE.md) - Navigate the codebase
 
 ---
 
@@ -92,7 +94,7 @@ graph LR
     D --> E[Press F9 to Stop]
     E --> F[Assign to Numpad Key]
     F --> G[Execute Macro]
-    G --> H[View Dashboard]
+    G --> H[View Stats]
 ```
 
 ### Hotkeys
@@ -135,14 +137,13 @@ src/
 ├── MacroExecution.ahk    # Playback engine & timing control
 ├── VisualizationCore.ahk # GDI+ operations & bitmap creation
 ├── VisualizationCanvas.ahk # Canvas detection & scaling
+├── Stats.ahk             # CSV statistics tracking
 ├── GUI*.ahk              # User interface components
 └── *-related modules     # Specialized functionality
 
-stats/
-├── generate_dashboard.py # Interactive analytics dashboard
-├── init_database.py      # SQLite database setup
-├── migrate_csv_to_db.py  # Data migration utilities
-└── test_database.py      # Database testing suite
+data/
+├── master_stats.csv      # Permanent historical statistics
+└── session_stats.csv     # Current session statistics
 
 docs/
 ├── ARCHITECTURE.md       # System design documentation
@@ -162,18 +163,15 @@ graph TD
     E --> F[GUI Display]
 
     C --> G[Stats.ahk]
-    G --> H[CSV + SQLite Storage]
-    H --> I[generate_dashboard.py]
-    I --> J[Interactive HTML Dashboard]
+    G --> H[CSV Storage]
+    H --> I[Stats Display GUI]
 ```
 
 ### Key Technologies
 
 - **AutoHotkey v2.0**: Core automation engine
 - **GDI+**: Graphics rendering and bitmap operations
-- **SQLite**: High-performance database backend
-- **Plotly**: Interactive data visualization
-- **Python**: Analytics and dashboard generation
+- **CSV**: Lightweight, portable data storage
 
 ---
 
@@ -188,32 +186,16 @@ graph TD
 - **💾 CSV Storage**: Lightweight, portable statistics in CSV format
 - **🔄 Reset Protection**: Permanent master stats file preserves all historical data
 
-### Database Schema
+### CSV Data Format
 
-```sql
--- Executions table
-CREATE TABLE executions (
-    id INTEGER PRIMARY KEY,
-    timestamp DATETIME,
-    session_id TEXT,
-    button_key TEXT,
-    layer INTEGER,
-    execution_time_ms INTEGER,
-    total_boxes INTEGER,
-    degradation_assignments TEXT
-);
-
--- Degradations table (normalized)
-CREATE TABLE degradations (
-    execution_id INTEGER,
-    degradation_type TEXT,
-    count INTEGER
-);
+```csv
+timestamp,session_id,button_key,layer,execution_time_ms,total_boxes,smudge,glare,splashes,partial_blockage,full_blockage,light_flare,rain,haze,snow
+2025-10-09 10:30:45,session_123,NumpadDot,1,125,5,2,1,0,1,0,0,1,0,0
 ```
 
-### Sample Dashboard
-
-![Dashboard Preview](https://via.placeholder.com/800x400/4CAF50/FFFFFF?text=Interactive+Dashboard+Preview)
+The system maintains two CSV files:
+- **session_stats.csv**: Current session data (resets on startup)
+- **master_stats.csv**: Permanent historical data (never deleted)
 
 ---
 
@@ -222,7 +204,6 @@ CREATE TABLE degradations (
 ### Prerequisites
 
 - AutoHotkey v2.0 development environment
-- Python 3.8+ with Plotly
 - Git for version control
 - VS Code with AHK extension (recommended)
 
@@ -233,12 +214,6 @@ CREATE TABLE degradations (
 git clone https://github.com/your-repo/MacroMasterZ8W.git
 cd MacroMasterZ8W
 
-# Install Python dependencies
-pip install -r stats/requirements.txt
-
-# Run tests
-python stats/test_database.py
-
 # Start development
 "C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" src/Main.ahk
 ```
@@ -246,14 +221,12 @@ python stats/test_database.py
 ### Testing
 
 ```bash
-# Run database tests
-python stats/test_database.py
-
-# Generate test dashboard
-python stats/generate_dashboard.py --filter today
-
 # Run AHK syntax check
 "C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" /ErrorStdOut src/Main.ahk
+
+# Verify stats recording
+type data\session_stats.csv
+type data\master_stats.csv
 ```
 
 ### Contributing
@@ -294,7 +267,7 @@ python stats/generate_dashboard.py --filter today
 | **HBITMAP Rendering** | <1ms cached, 5-10ms new | Per thumbnail |
 | **Macro Execution** | 50-500ms | Depends on complexity |
 | **Stats Display** | <100ms | CSV parsing and GUI rendering |
-| **Database Query** | <100ms | With indexes |
+| **CSV Write** | <10ms | Per execution record |
 | **Application Startup** | 2-5s | Cold start |
 
 ### System Requirements
@@ -314,9 +287,8 @@ python stats/generate_dashboard.py --filter today
 # Check AutoHotkey installation
 "C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" --version
 
-# Verify Python
-python --version
-pip list | findstr plotly
+# Check syntax errors
+"C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" /ErrorStdOut src/Main.ahk
 ```
 
 **Black thumbnails:**
@@ -364,8 +336,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - **AutoHotkey Community**: For the powerful automation framework
-- **SQLite Team**: For the reliable embedded database
-- **Plotly Team**: For the excellent visualization library
+- **GDI+ Team**: For the graphics rendering library
 - **Open Source Community**: For the tools and libraries that make this possible
 
 ---
@@ -373,11 +344,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 ### Documentation
-- 📖 [Complete Usage Guide](docs/USAGE_GUIDE.md)
-- 🏗️ [Architecture Documentation](docs/ARCHITECTURE.md)
-- 🎨 [Visualization System](docs/VISUALIZATION_SYSTEM.md)
-- ⚙️ [Core System Details](docs/CORE_SYSTEM.md)
-- 📊 [Simple Stats System](docs/SIMPLE_STATS_SYSTEM.md)
+- 📖 [Complete Usage Guide](docs/user-guide/USAGE_GUIDE.md)
+- 🏗️ [Architecture Documentation](docs/developer-guide/ARCHITECTURE.md)
+- 🎨 [Visualization System](docs/developer-guide/VISUALIZATION_SYSTEM.md)
+- ⚙️ [Core System Details](docs/developer-guide/CORE_SYSTEM.md)
+- 📊 [Simple Stats System](docs/user-guide/SIMPLE_STATS_SYSTEM.md)
+- 🗂️ [Project Structure](PROJECT_STRUCTURE.md)
 
 ### Issue Reporting
 - 🐛 [GitHub Issues](https://github.com/your-repo/MacroMasterZ8W/issues)
@@ -416,4 +388,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-*Built with ❤️ using AutoHotkey v2.0, Python, and SQLite*
+*Built with ❤️ using AutoHotkey v2.0 and GDI+*

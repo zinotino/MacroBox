@@ -51,12 +51,12 @@
 ✓ Consistent naming conventions
 ```
 
-### Stats System (stats/)
+### Statistics System
 ```
-✓ Python scripts for SQLite backend
-✓ Database initialization and migration
-✓ Dashboard generation system
-✓ Complete documentation
+✓ CSV-based statistics tracking
+✓ session_stats.csv - Current session data
+✓ master_stats.csv - Permanent history
+✓ Simple, portable data format
 ```
 
 ### Documentation (docs/)
@@ -69,8 +69,8 @@
 
 ### Data Directories
 ```
-✓ data/ - Created at runtime for CSV/database
-✓ thumbnails/ - Created at runtime for PNGs
+✓ data/ - Created at runtime for CSV files and config
+✓ thumbnails/ - Created at runtime for PNG/HBITMAP cache
 ✓ Both in .gitignore
 ```
 
@@ -106,7 +106,7 @@
 - [x] **Layer switching** - 8 layers functional
 - [x] **Degradation tracking** - 9 types with color coding
 - [x] **Break mode** - Time tracking pause working
-- [x] **Stats dashboard** - SQLite backend + Plotly visualization
+- [x] **Stats display** - CSV-based Today/All-Time statistics in GUI
 
 ### UI/UX
 - [x] **Button thumbnails** - HBITMAP primary, PNG fallback
@@ -118,7 +118,7 @@
 ### Data Persistence
 - [x] **Config saving** - config.ini working
 - [x] **Macro storage** - Events persist correctly
-- [x] **Stats tracking** - CSV + SQLite dual-write
+- [x] **Stats tracking** - CSV file storage (session + master)
 - [x] **Session continuity** - State restored on restart
 
 ---
@@ -127,7 +127,7 @@
 
 ### Final Verification
 - [ ] **Test clean installation** - Delete config.ini, data/, thumbnails/ and verify fresh start
-- [ ] **Test stats generation** - Record 10+ macros, generate dashboard, verify data accuracy
+- [ ] **Test stats collection** - Record 10+ macros, view stats display, verify CSV data accuracy
 - [ ] **Test all 8 layers** - Record macro on each layer, verify isolation
 - [ ] **Test break mode** - Verify time tracking pauses correctly
 - [ ] **GitHub presentation** - Verify README displays correctly on repository page
@@ -154,7 +154,6 @@
 ### Package Contents
 Should include:
 - [x] src/ (all 26 modules)
-- [x] stats/ (Python backend)
 - [x] docs/ (all documentation)
 - [x] README.md
 - [x] .gitignore
@@ -189,8 +188,8 @@ Should NOT include:
 - **Documentation**: 18KB analysis + 12KB polish notes + comprehensive guides
 - **Git History**: Clean with phase tags
 - **Test Coverage**: Manual testing complete
-- **Performance**: <1ms HBITMAP caching, <10ms database queries
-- **Architecture**: Three-tier visualization, dual-write stats backend
+- **Performance**: <1ms HBITMAP caching, instant CSV writes
+- **Architecture**: Dual-tier visualization (HBITMAP/PNG), CSV-based statistics
 
 ---
 
