@@ -245,14 +245,14 @@ ApplyLayerSettings(ddlCurrentLayer, ddlTotalLayers, settingsGui) {
     ; Save config
     SaveConfig()
 
-    UpdateStatus("📚 Layer settings updated")
+    UpdateStatus("📚 Layer updated")
 }
 
 SaveSettings(settingsGui) {
     ; Apply current settings and save
     SaveConfig()
     settingsGui.Destroy()
-    UpdateStatus("💾 Settings saved")
+    ; Settings saved silently (auto-save)
 }
 
 ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui) {
@@ -400,10 +400,10 @@ ApplyWASDSettings(chkWASDProfile, chkWASDLabels, settingsGui) {
         ; Apply WASD profile changes
         if (hotkeyProfileActive) {
             SetupWASDHotkeys()
-            UpdateStatus("🎹 WASD Hotkey Profile ACTIVATED")
+            UpdateStatus("🎹 WASD ON")
         } else {
             DisableWASDHotkeys()
-            UpdateStatus("🎹 WASD Hotkey Profile DEACTIVATED")
+            UpdateStatus("🎹 WASD OFF")
         }
 
         ; Update button labels
@@ -414,7 +414,7 @@ ApplyWASDSettings(chkWASDProfile, chkWASDLabels, settingsGui) {
         SaveConfig()
     }
 
-    UpdateStatus("🎹 WASD settings applied")
+    UpdateStatus("🎹 WASD applied")
 }
 
 SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMenuClickDelay, editMouseDragDelay, editMouseReleaseDelay, editBetweenBoxDelay, editKeyPressDelay, editFocusDelay, editMouseHoverDelay) {
@@ -437,7 +437,7 @@ SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMenuClic
     ; Close dialog
     settingsGui.Destroy()
 
-    UpdateStatus("💾 All settings saved successfully")
+    ; All settings saved silently
 }
 
 ; ===== CLEAR DIALOG =====
@@ -461,7 +461,7 @@ ShowClearDialog() {
         RefreshAllButtonAppearances()
         SaveMacroState()
 
-        UpdateStatus("🗑️ Cleared " . clearedCount . " macros from Layer " . currentLayer)
+        UpdateStatus("🗑️ Layer " . currentLayer . " cleared")
     }
 }
 
@@ -678,7 +678,7 @@ ClearAllMacros(settingsGui, *) {
         SaveMacroState()
 
         settingsGui.Destroy()
-        UpdateStatus("🗑️ Cleared " . clearedCount . " macros from all layers")
+        UpdateStatus("🗑️ All layers cleared")
     }
 }
 

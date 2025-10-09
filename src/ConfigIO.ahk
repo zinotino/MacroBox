@@ -244,7 +244,7 @@ SaveConfig() {
                 throw Error("Config file was not created after move: " . configFile)
             }
 
-            UpdateStatus("💾 Configuration saved - " . macrosSaved . " macros")
+            UpdateStatus("💾 Saved")
 
             ; Log successful save
             try {
@@ -256,12 +256,12 @@ SaveConfig() {
             }
 
         } catch Error as writeError {
-            UpdateStatus("❌ File write failed: " . writeError.Message)
+            UpdateStatus("❌ Save error: " . writeError.Message)
             throw writeError  ; Re-throw to catch in outer handler
         }
 
     } catch Error as e {
-        UpdateStatus("❌ Configuration save failed: " . e.Message)
+        UpdateStatus("❌ Save failed: " . e.Message)
         ; Log critical save failure
         try {
             logFile := workDir . "\save_log.txt"
@@ -453,13 +453,13 @@ LoadConfig() {
             throw canvasError
         }
 
-        UpdateStatus("📚 Configuration loaded - " . macrosLoaded . " macros")
+        UpdateStatus("📚 Loaded")
 
         ; DEFER GUI settings application until GUI is confirmed ready
         ; ApplyLoadedSettingsToGUI() will be called separately after GUI initialization
 
     } catch Error as e {
-        UpdateStatus("❌ Configuration load failed: " . e.Message)
+        UpdateStatus("❌ Load failed: " . e.Message)
         throw e  ; Re-throw to catch in Main()
     }
 }
@@ -478,9 +478,9 @@ ApplyLoadedSettingsToGUI() {
         ; Refresh all button appearances
         RefreshAllButtonAppearances()
 
-        UpdateStatus("✅ GUI settings applied")
+        ; Settings applied silently
     } catch Error as e {
-        UpdateStatus("⚠️ Failed to apply GUI settings: " . e.Message)
+        UpdateStatus("⚠️ GUI settings error: " . e.Message)
     }
 }
 
@@ -504,7 +504,7 @@ SaveToSlot(slotNumber) {
         FileAppend(slotInfo, slotDir . "\slot_info.txt")
 
     } catch Error as e {
-        UpdateStatus("⚠️ Slot save failed: " . e.Message)
+        UpdateStatus("⚠️ Slot save error: " . e.Message)
     }
 }
 
@@ -529,11 +529,11 @@ LoadFromSlot(slotNumber) {
         }
         SwitchLayer("")
 
-        UpdateStatus("📂 Loaded from slot " . slotNumber)
+        UpdateStatus("📂 Slot " . slotNumber . " loaded")
         return true
 
     } catch Error as e {
-        UpdateStatus("⚠️ Slot load failed: " . e.Message)
+        UpdateStatus("⚠️ Slot load error: " . e.Message)
         return false
     }
 }

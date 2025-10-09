@@ -98,7 +98,7 @@ Canvas_CalibrateWide() {
         return false
     }
 
-    UpdateStatus("🔦 Wide Canvas (16:9): Click TOP-LEFT corner...")
+    UpdateStatus("🔦 Wide: Click TOP-LEFT...")
 
     KeyWait("LButton", "U")
     KeyWait("LButton", "D")
@@ -106,7 +106,7 @@ Canvas_CalibrateWide() {
     KeyWait("LButton", "U")
     Sleep(200)
 
-    UpdateStatus("🔦 Wide Canvas (16:9): Click BOTTOM-RIGHT corner...")
+    UpdateStatus("🔦 Wide: Click BOTTOM-RIGHT...")
 
     KeyWait("LButton", "D")
     MouseGetPos(&x2, &y2)
@@ -142,7 +142,7 @@ Canvas_CalibrateWide() {
     result := MsgBox(confirmMsg, "Confirm Wide Canvas Calibration", "YesNo Icon?")
 
     if (result = "No") {
-        UpdateStatus("🔄 Wide canvas calibration cancelled by user")
+        UpdateStatus("🔄 Cancelled")
         return false
     }
 
@@ -156,7 +156,7 @@ Canvas_CalibrateWide() {
     Canvas_SyncToLegacyGlobals()
     SaveConfig()
 
-    UpdateStatus("✅ Wide canvas (16:9) calibrated and saved: " . left . "," . top . " to " . right . "," . bottom)
+    UpdateStatus("✅ Wide canvas calibrated")
     RefreshAllButtonAppearances()
 
     return true
@@ -172,7 +172,7 @@ Canvas_CalibrateNarrow() {
         return false
     }
 
-    UpdateStatus("📱 Narrow Canvas (4:3): Click TOP-LEFT corner...")
+    UpdateStatus("📱 Narrow: Click TOP-LEFT...")
 
     KeyWait("LButton", "U")
     KeyWait("LButton", "D")
@@ -180,7 +180,7 @@ Canvas_CalibrateNarrow() {
     KeyWait("LButton", "U")
     Sleep(200)
 
-    UpdateStatus("📱 Narrow Canvas (4:3): Click BOTTOM-RIGHT corner...")
+    UpdateStatus("📱 Narrow: Click BOTTOM-RIGHT...")
 
     KeyWait("LButton", "D")
     MouseGetPos(&x2, &y2)
@@ -216,7 +216,7 @@ Canvas_CalibrateNarrow() {
     result := MsgBox(confirmMsg, "Confirm Narrow Canvas Calibration", "YesNo Icon?")
 
     if (result = "No") {
-        UpdateStatus("🔄 Narrow canvas calibration cancelled by user")
+        UpdateStatus("🔄 Cancelled")
         return false
     }
 
@@ -230,7 +230,7 @@ Canvas_CalibrateNarrow() {
     Canvas_SyncToLegacyGlobals()
     SaveConfig()
 
-    UpdateStatus("✅ Narrow canvas (4:3) calibrated and saved: " . left . "," . top . " to " . right . "," . bottom)
+    UpdateStatus("✅ Narrow canvas calibrated")
     RefreshAllButtonAppearances()
 
     return true
@@ -246,7 +246,7 @@ Canvas_CalibrateUser() {
         return false
     }
 
-    UpdateStatus("📐 Canvas Calibration: Click TOP-LEFT corner...")
+    UpdateStatus("📐 Click TOP-LEFT...")
 
     KeyWait("LButton", "U")
     KeyWait("LButton", "D")
@@ -254,7 +254,7 @@ Canvas_CalibrateUser() {
     KeyWait("LButton", "U")
     Sleep(200)
 
-    UpdateStatus("📐 Canvas Calibration: Click BOTTOM-RIGHT corner...")
+    UpdateStatus("📐 Click BOTTOM-RIGHT...")
 
     KeyWait("LButton", "D")
     MouseGetPos(&x2, &y2)
@@ -282,7 +282,7 @@ Canvas_CalibrateUser() {
     result := MsgBox(confirmMsg, "Confirm Canvas Calibration", "YesNo Icon?")
 
     if (result = "No") {
-        UpdateStatus("🔄 Canvas calibration cancelled by user")
+        UpdateStatus("🔄 Cancelled")
         return false
     }
 
@@ -296,7 +296,7 @@ Canvas_CalibrateUser() {
     Canvas_SyncToLegacyGlobals()
     SaveConfig()
 
-    UpdateStatus("✅ Canvas calibrated and saved: " . canvasW . "x" . canvasH . " (ratio: " . canvasAspect . ":1)")
+    UpdateStatus("✅ Canvas calibrated: " . canvasW . "x" . canvasH)
     RefreshAllButtonAppearances()
 
     return true
@@ -311,7 +311,7 @@ Canvas_Reset(mode) {
         if (result = "Yes") {
             CanvasState.wide.calibrated := false
             Canvas_SyncToLegacyGlobals()
-            UpdateStatus("🔄 Wide canvas calibration reset - using automatic detection")
+            UpdateStatus("🔄 Wide canvas reset")
             RefreshAllButtonAppearances()
             SaveConfig()
             return true
@@ -321,7 +321,7 @@ Canvas_Reset(mode) {
         if (result = "Yes") {
             CanvasState.narrow.calibrated := false
             Canvas_SyncToLegacyGlobals()
-            UpdateStatus("🔄 Narrow canvas calibration reset - using automatic detection")
+            UpdateStatus("🔄 Narrow canvas reset")
             RefreshAllButtonAppearances()
             SaveConfig()
             return true
@@ -331,7 +331,7 @@ Canvas_Reset(mode) {
         if (result = "Yes") {
             CanvasState.user.calibrated := false
             Canvas_SyncToLegacyGlobals()
-            UpdateStatus("🔄 Canvas calibration reset - using automatic detection")
+            UpdateStatus("🔄 Canvas reset")
             RefreshAllButtonAppearances()
             SaveConfig()
             return true
