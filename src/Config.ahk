@@ -63,8 +63,18 @@ ProcessMacroLine(key, value) {
                     event.top := EnsureInteger(parts[3], 0)
                     event.right := EnsureInteger(parts[4], 0)
                     event.bottom := EnsureInteger(parts[5], 0)
+                    ; Load degradationType for stats tracking (added after isTagged field)
                     if (parts.Length >= 6) {
-                        event.isTagged := (parts[6] = "1")
+                        ; Check if part 6 is degradationType (number 1-9) or isTagged (0/1)
+                        part6Value := EnsureInteger(parts[6], 1)
+                        if (part6Value >= 1 && part6Value <= 9) {
+                            event.degradationType := part6Value
+                        } else {
+                            event.isTagged := (parts[6] = "1")
+                            event.degradationType := 1  ; Default to smudge
+                        }
+                    } else {
+                        event.degradationType := 1  ; Default to smudge if not saved
                     }
                     validEvent := true
                 }

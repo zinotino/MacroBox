@@ -139,6 +139,12 @@ SaveConfig() {
                         }
                         if (event.type = "boundingBox") {
                             eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
+                            ; Include degradationType for stats tracking
+                            if (event.HasOwnProp("degradationType")) {
+                                eventString .= "," . event.degradationType
+                            } else {
+                                eventString .= ",1"  ; Default to smudge (1) if not set
+                            }
                         } else if (event.type = "jsonAnnotation") {
                             eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
                         } else if (event.type = "keyDown") {

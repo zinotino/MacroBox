@@ -55,7 +55,7 @@ SafeExecuteMacroByKey(buttonName) {
 }
 
 ExecuteMacro(buttonName) {
-    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, autoExecutionMode, autoExecutionCount, chromeMemoryCleanupCount, chromeMemoryCleanupInterval
+    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, autoExecutionMode, autoExecutionCount, chromeMemoryCleanupCount, chromeMemoryCleanupInterval, degradationTypes
 
     ; PERFORMANCE MONITORING - Start timing execution
     executionStartTime := A_TickCount
@@ -102,7 +102,9 @@ ExecuteMacro(buttonName) {
         ; Create basic analysis record for stats tracking
         analysisRecord := {
             boundingBoxCount: 0,
-            degradationAssignments: ""
+            degradationAssignments: "",
+            jsonDegradationName: "",
+            severity: "medium"
         }
 
         ; Count bounding boxes and extract degradation data for macro executions
@@ -127,6 +129,15 @@ ExecuteMacro(buttonName) {
                     degradationString .= (i > 1 ? "," : "") . deg
                 }
                 analysisRecord.degradationAssignments := degradationString
+            }
+        } else if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+            ; Extract JSON degradation info for stats tracking
+            jsonEvent := events[1]
+            if (jsonEvent.HasOwnProp("categoryId") && degradationTypes.Has(jsonEvent.categoryId)) {
+                analysisRecord.jsonDegradationName := degradationTypes[jsonEvent.categoryId]
+            }
+            if (jsonEvent.HasOwnProp("severity")) {
+                analysisRecord.severity := jsonEvent.severity
             }
         }
 
