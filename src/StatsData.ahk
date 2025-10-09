@@ -6,6 +6,113 @@
 
 
 
+; ===== MISSING FUNCTIONS FROM BACKUP - ADDED FOR COMPATIBILITY =====
+
+InitializeOfflineDataFiles() {
+    global persistentDataFile, dailyStatsFile, offlineLogFile, workDir, thumbnailDir
+
+    try {
+        ; Create data directory in Documents for portable execution
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+        if (!DirExist(thumbnailDir)) {
+            DirCreate(thumbnailDir)
+        }
+
+        ; Initialize persistent data file if it doesn't exist
+        if (!FileExist(persistentDataFile)) {
+            initialData := "{`n"
+            initialData .= "  `"version`": `"1.0.0`",`n"
+            initialData .= "  `"created`": `"" . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`",`n"
+            initialData .= "  `"users`": {},`n"
+            initialData .= "  `"totalStats`": {`n"
+            initialData .= "    `"totalBoxCount`": 0,`n"
+            initialData .= "    `"totalExecutionTimeMs`": 0,`n"
+            initialData .= "    `"totalActiveTimeSeconds`": 0,`n"
+            initialData .= "    `"totalExecutionCount`": 0,`n"
+            initialData .= "    `"totalSessions`": 0,`n"
+            initialData .= "    `"firstSessionDate`": null,`n"
+            initialData .= "    `"lastSessionDate`": null`n"
+            initialData .= "  }`n"
+            initialData .= "}"
+            FileAppend(initialData, persistentDataFile)
+        }
+
+        ; Initialize daily stats file
+        if (!FileExist(dailyStatsFile)) {
+            FileAppend("{}", dailyStatsFile)
+        }
+
+        ; Initialize offline log
+        if (!FileExist(offlineLogFile)) {
+            FileAppend("Offline Log Initialized: " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`n", offlineLogFile)
+        }
+    } catch Error as e {
+        ; Silent failure - offline files are optional
+    }
+}
+
+InitializeRealtimeSession() {
+    global currentSessionId, currentUsername, annotationMode, realtimeEnabled
+    ; Start a new session with the real-time service
+    sessionData := Map()
+    sessionData["session_id"] := currentSessionId
+    sessionData["username"] := currentUsername
+    sessionData["canvas_mode"] := annotationMode
+
+    ; Check if realtime service function exists
+    if (IsSet(SendDataToIngestionService)) {
+        try {
+            if (!SendDataToIngestionService("/session/start", sessionData)) {
+                realtimeEnabled := false
+            }
+        } catch {
+            realtimeEnabled := false
+        }
+    } else {
+        realtimeEnabled := false
+    }
+}
+
+AggregateMetrics() {
+    global applicationStartTime, totalActiveTime, lastActiveTime, masterStatsCSV, currentSessionId
+
+    ; Use CSV data for metrics aggregation
+    if (!FileExist(masterStatsCSV)) {
+        return {}
+    }
+
+    ; Get CSV stats for aggregation
+    csvStats := ReadStatsFromCSV(false)
+    totalBoxCount := csvStats.Has("total_boxes") ? csvStats["total_boxes"] : 0
+    totalExecutionTimeMs := csvStats.Has("average_execution_time") && csvStats.Has("total_executions") ? (csvStats["average_execution_time"] * csvStats["total_executions"]) : 0
+    executionCount := csvStats.Has("total_executions") ? csvStats["total_executions"] : 0
+
+    ; Use CSV degradation data
+    degradationSummaryStr := "CSV-based degradation summary"
+
+    ; Calculate active time in seconds
+    currentActiveTime := totalActiveTime
+    if (lastActiveTime > 0) {
+        currentActiveTime += (A_TickCount - lastActiveTime)
+    }
+    activeTimeSeconds := Round(currentActiveTime / 1000, 2)
+
+    ; Generate safe taskId
+    safeTaskId := "session_" . (IsSet(currentSessionId) ? StrReplace(currentSessionId, "sess_", "") : FormatTime(A_Now, "yyyyMMdd_HHmmss"))
+
+    return {
+        timestamp: FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss"),
+        taskId: safeTaskId,
+        totalBoxCount: totalBoxCount,
+        totalExecutionTimeMs: totalExecutionTimeMs,
+        activeTimeSeconds: activeTimeSeconds,
+        executionCount: executionCount,
+        degradationSummary: degradationSummaryStr
+    }
+}
+
 Stats_GetCsvHeader() {
 
     return "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
@@ -2691,7 +2798,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-                executionData["clear_count"] := 1
+                ProcessDegradationCounts(executionData, "clear")
 
 
 
@@ -2735,7 +2842,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-            executionData["clear_count"] := 1
+            ProcessDegradationCounts(executionData, "clear")
 
 
 
