@@ -98,6 +98,31 @@ Now that this stable version is solidified, you can proceed with:
 3. **Extensions** - Add new canvas types, degradation types, etc.
 4. **Integration** - Connect with stats system, Python backend, etc.
 
+## Advanced Stats Features (Available on GitHub)
+
+The remote branches on GitHub contain **production-ready stats enhancements** not yet in Z8WSTABLE1:
+
+**Repository:** https://github.com/zinotino/Backroad.git
+**Key Branch:** `origin/statsviz` (commit `641b45b`)
+
+**Major Features:**
+- ✅ **Live Stats Refresh** - 500ms auto-update timer
+- ✅ **Horizontal Layout** - Side-by-side All-Time vs Today comparison
+- ✅ **Macro/JSON Split** - Separate degradation tracking per workflow
+- ✅ **Live Active Time** - Real-time session tracking
+- ✅ **Module Organization** - Split into Stats.ahk, StatsData.ahk, StatsGui.ahk
+- ✅ **Severity Tracking** - Low/Medium/High JSON severity levels
+- ✅ **Per-User Stats** - Username-based analytics
+
+**Documentation:** See `docs/GITHUB_STATS_FEATURES.md` for complete analysis and integration guide.
+
+**Integration Priority:**
+1. Live refresh (high value, low risk)
+2. Horizontal layout (modern UX)
+3. Macro/JSON split (advanced analytics)
+
+These features are **backward compatible** and can be selectively cherry-picked.
+
 ## Safety Notes
 
 ### DO NOT MODIFY (Without Testing)

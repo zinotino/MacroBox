@@ -391,6 +391,28 @@ Or restore from this snapshot by reverting to commit `9a93a12` on branch `expand
 
 **Last Modified:** 2025-10-08
 
+## Related Documentation
+
+- **GitHub Stats Features:** `docs/GITHUB_STATS_FEATURES.md` - Advanced stats from remote branches
+- **Architecture Overview:** `docs/ARCHITECTURE.md` - Complete system architecture
+- **Usage Guide:** `docs/USAGE_GUIDE.md` - User-facing documentation
+- **Quick Reference:** `STABLE_VERSION_INFO.md` - Rollback and version info
+
+## Remote Branch References
+
+**GitHub Repository:** https://github.com/zinotino/Backroad.git
+
+**Remote Branches:**
+- `origin/statsviz` - Latest stats enhancements (commit `641b45b`)
+- `origin/expanded` - Feature development branch (commit `a62786b`)
+
+**Local Baseline:**
+- Branch: `expanded`
+- Tag: `v2.0-stable-visualization`
+- Commit: `ae51da1`
+
+This visualization system is **stable and verified** on corporate devices. Remote branches contain additional stats features that can be integrated separately without affecting visualization stability.
+
 ---
 
 **END OF STABLE VISUALIZATION SNAPSHOT**
