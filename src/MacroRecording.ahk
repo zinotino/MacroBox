@@ -337,20 +337,17 @@ F9_RecordingOnly(*) {
 
     ; CRITICAL: Block ALL F9 operations during break mode
     if (breakMode) {
-        UpdateStatus("🔴 BREAK MODE ACTIVE - F9 recording completely blocked")
+        UpdateStatus("🔴 BREAK MODE - Recording blocked")
         return
     }
 
-    ; Comprehensive state checking with detailed logging
-    UpdateStatus("🔧 F9 PRESSED (" . annotationMode . " mode) - Checking states...")
-
     if (playback) {
-        UpdateStatus("⏸️ F9 BLOCKED: Macro playback active")
+        UpdateStatus("⏸️ Playback active")
         return
     }
 
     if (awaitingAssignment) {
-        UpdateStatus("🎯 F9 BLOCKED: Assignment pending - ESC to cancel")
+        UpdateStatus("🎯 Assignment pending - ESC to cancel")
         return
     }
 
@@ -363,14 +360,12 @@ F9_RecordingOnly(*) {
     ; Execute recording toggle with full error handling
     try {
         if (recording) {
-            UpdateStatus("🛑 F9: STOPPING recording...")
             ForceStopRecording()
         } else {
-            UpdateStatus("🎥 F9: STARTING recording...")
             ForceStartRecording()
         }
     } catch Error as e {
-        UpdateStatus("❌ F9 FAILED: " . e.Message)
+        UpdateStatus("❌ Recording error: " . e.Message)
         ; Emergency state reset
         recording := false
         SafeUninstallMouseHook()

@@ -26,9 +26,8 @@ SafeExecuteMacroByKey(buttonName) {
         return
     }
 
-    ; CRITICAL: Absolutely prevent F9 from reaching macro execution
+    ; CRITICAL: Absolutely prevent F9 from reaching macro execution (silent block)
     if (buttonName = "F9" || InStr(buttonName, "F9")) {
-        UpdateStatus("🚫 F9 BLOCKED from macro execution - Use for recording only")
         return
     }
 
@@ -41,7 +40,7 @@ SafeExecuteMacroByKey(buttonName) {
             autoExecutionInterval := buttonAutoSettings[buttonKey].interval
             autoExecutionMaxCount := buttonAutoSettings[buttonKey].maxCount
             StartAutoExecution(buttonName)
-            UpdateStatus("🤖 Auto mode activated for " . buttonName)
+            UpdateStatus("🤖 Auto: " . buttonName)
         } else {
             ; Stop current auto mode
             StopAutoExecution()
@@ -60,9 +59,8 @@ ExecuteMacro(buttonName) {
     ; PERFORMANCE MONITORING - Start timing execution
     executionStartTime := A_TickCount
 
-    ; Double-check F9 protection
+    ; Double-check F9 protection (silent block)
     if (buttonName = "F9" || InStr(buttonName, "F9")) {
-        UpdateStatus("🚫 F9 EXECUTION BLOCKED")
         return
     }
 

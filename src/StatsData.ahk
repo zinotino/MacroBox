@@ -18,18 +18,8 @@ InitializeOfflineDataFiles() {
         FileAppend('{"date":"' FormatTime(A_Now, "yyyy-MM-dd") '","executions":0}', dailyStatsFile)
 }
 
-InitializeRealtimeSession() {
-    global currentSessionId, currentUsername, annotationMode, realtimeEnabled
-    ; Optional real-time service initialization
-    ; Currently not implemented - stats work offline via CSV
-}
-
-AggregateMetrics() {
-    global applicationStartTime, totalActiveTime, lastActiveTime, masterStatsCSV, currentSessionId
-    ; Return aggregated metrics from CSV
-    stats := ReadStatsFromCSV(false)
-    return stats
-}
+; InitializeRealtimeSession() removed - was unused placeholder function
+; AggregateMetrics() removed - replaced with direct ReadStatsFromCSV(false) calls
 
 Stats_GetCsvHeader() {
 

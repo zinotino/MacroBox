@@ -98,27 +98,6 @@ global canvasHeight := 1080
 global canvasType := "wide"  ; "wide", "narrow", or "custom"
 global canvasAspectRatio := 1.78
 
-; Initialize canvas variables with default values
-wideCanvasLeft := 0
-wideCanvasTop := 0
-wideCanvasRight := 1920
-wideCanvasBottom := 1080
-
-narrowCanvasLeft := 240
-narrowCanvasTop := 0
-narrowCanvasRight := 1680
-narrowCanvasBottom := 1080
-
-userCanvasLeft := 0
-userCanvasTop := 0
-userCanvasRight := 1920
-userCanvasBottom := 1080
-
-isCanvasCalibrated := false
-isWideCanvasCalibrated := false
-isNarrowCanvasCalibrated := false
-lastCanvasDetection := ""
-
 ; ===== DUAL CANVAS SYSTEM FOR ASPECT RATIOS =====
 ; Wide mode: 16:9 aspect ratio (1920x1080 reference)
 global wideCanvasLeft := 0
@@ -138,13 +117,10 @@ global userCanvasTop := 0
 global userCanvasRight := 1920
 global userCanvasBottom := 1080
 
+; Canvas calibration flags
 global isCanvasCalibrated := false  ; Start as false until calibrated
 global isWideCanvasCalibrated := false
 global isNarrowCanvasCalibrated := false
-global lastCanvasDetection := ""
-
-; Narrow mode: 4:3 aspect ratio (1440x1080 centered in 1920x1080)
-; Legacy canvas (for backwards compatibility)
 global lastCanvasDetection := ""
 
 ; ===== STREAMLINED STATS SYSTEM =====
@@ -353,58 +329,19 @@ Main() {
         }
 
         try {
-            InitializeCanvasVariables()  ; Initialize canvas variables BEFORE loading config
-        } catch Error as e {
-            UpdateStatus("❌ Canvas variable initialization failed: " . e.Message)
-            throw e
-        }
-
-        try {
-            InitializeCSVFile()
-        } catch Error as e {
-            UpdateStatus("❌ CSV file initialization failed: " . e.Message)
-            throw e
-        }
-
-        try {
-            InitializeStatsSystem()
-        } catch Error as e {
-            UpdateStatus("❌ Stats system initialization failed: " . e.Message)
-            throw e
-        }
-
-        try {
-            InitializeOfflineDataFiles()  ; Initialize offline data storage
-        } catch Error as e {
-            UpdateStatus("❌ Offline data files initialization failed: " . e.Message)
-            throw e
-        }
-
-        ; Legacy execution data loading removed - CSV system handles all stats
-
-        try {
+            InitializeCanvasVariables()
+            InitializeStatsSystem()  ; Handles CSV initialization internally
+            InitializeOfflineDataFiles()
             InitializeJsonAnnotations()
+            InitializeVisualizationSystem()
+            InitializeWASDHotkeys()
         } catch Error as e {
-            UpdateStatus("❌ JSON annotations initialization failed: " . e.Message)
-            throw e
-        }
-
-        try {
-            InitializeVisualizationSystem()  ; Initialize GDI+ BEFORE GUI creation
-        } catch Error as e {
-            UpdateStatus("❌ Visualization system initialization failed: " . e.Message)
-            throw e
-        }
-
-        try {
-            InitializeWASDHotkeys()  ; Initialize WASD hotkey mappings
-        } catch Error as e {
-            UpdateStatus("❌ WASD hotkeys initialization failed: " . e.Message)
+            UpdateStatus("❌ Initialization error: " . e.Message)
             throw e
         }
 
         ; Initialize real-time session
-        InitializeRealtimeSession()
+        ; InitializeRealtimeSession() removed - was unused placeholder
 
         ; Setup UI and interactions
         InitializeGui()
@@ -473,7 +410,7 @@ Main() {
         OnExit((exitReason, exitCode) => CleanupAndExit())
 
         ; Show welcome message
-        UpdateStatus("🚀 Ready - WASD hotkeys active (CapsLock+123qweasdzxc) - Real-time dashboard enabled - Currently in " . (annotationMode = "Wide" ? "🔦 WIDE MODE" : "📱 NARROW MODE") . " - F9 to record, F12 for dashboard")
+        UpdateStatus("🚀 Ready - " . (annotationMode = "Wide" ? "WIDE" : "NARROW") . " mode - F9 to record")
         SetTimer(ShowWelcomeMessage, -2000)
 
     } catch Error as e {
@@ -717,7 +654,7 @@ CleanupAndExit() {
 
         ; Final stats update
         UpdateActiveTime()
-        AggregateMetrics()
+        ReadStatsFromCSV(false)  ; Direct call instead of AggregateMetrics() wrapper
 
     } catch Error as e {
         ; Silently continue on cleanup errors
@@ -973,66 +910,4 @@ DirectClearExecution() {
 }
 
 ; ===== PERSISTENCE SYSTEM TEST FUNCTION =====
-TestPersistenceSystem() {
-    global configFile, macroEvents, buttonNames, currentLayer, totalLayers
-
-    UpdateStatus("🧪 Testing persistence system...")
-
-    try {
-        ; Create test macro data
-        testMacroKey := "L1_Num7"
-        testEvents := [
-            {type: "boundingBox", left: 100, top: 100, right: 200, bottom: 200},
-            {type: "keyDown", key: "a"},
-            {type: "keyUp", key: "a"}
-        ]
-
-        ; Save original state
-        originalEvents := []
-        if (macroEvents.Has(testMacroKey)) {
-            originalEvents := macroEvents[testMacroKey]
-        }
-
-        ; Set test data
-        macroEvents[testMacroKey] := testEvents
-
-        ; Test save
-        SaveConfig()
-        UpdateStatus("💾 Test save completed")
-
-        ; Clear test data
-        macroEvents.Delete(testMacroKey)
-
-        ; Verify data was cleared
-        if (!macroEvents.Has(testMacroKey)) {
-            UpdateStatus("✅ Test data cleared successfully")
-        } else {
-            UpdateStatus("⚠️ Test data not cleared properly")
-        }
-
-        ; Test load
-        LoadConfig()
-        UpdateStatus("📚 Test load completed")
-
-        ; Check if test data was restored
-        if (macroEvents.Has(testMacroKey) && macroEvents[testMacroKey].Length >= 3) {
-            UpdateStatus("✅ Persistence test PASSED - data saved and restored correctly")
-        } else {
-            UpdateStatus("⚠️ Persistence test FAILED - data not restored properly")
-        }
-
-        ; Restore original state
-        if (originalEvents.Length > 0) {
-            macroEvents[testMacroKey] := originalEvents
-        } else {
-            macroEvents.Delete(testMacroKey)
-        }
-
-        ; Final save to restore original state
-        SaveConfig()
-        UpdateStatus("💾 Original state restored")
-
-    } catch Error as e {
-        UpdateStatus("❌ Persistence test FAILED: " . e.Message)
-    }
-}
+; TestPersistenceSystem() removed - was debug function, never used in production

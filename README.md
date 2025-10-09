@@ -68,6 +68,7 @@ MacroMaster Z8W is a comprehensive macro recording and playback system designed 
 | **📖 Usage Guide** | Complete user manual, troubleshooting | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) |
 | **📊 Simple Stats System** | CSV statistics with today/all-time display | [`docs/SIMPLE_STATS_SYSTEM.md`](docs/SIMPLE_STATS_SYSTEM.md) |
 | **🤖 AI Development Guide** | Claude/Grok integration guidelines | [`docs/CLAUDE.md`](docs/CLAUDE.md) |
+| **🔍 System Analysis** | Legacy code analysis, refactoring recommendations | [`docs/SYSTEM_ANALYSIS_2025-10-08.md`](docs/SYSTEM_ANALYSIS_2025-10-08.md) |
 
 ### 🎯 Quick Links
 
