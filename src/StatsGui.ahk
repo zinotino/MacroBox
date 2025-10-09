@@ -344,59 +344,35 @@ UpdateStatsDisplay() {
 
         todayStats := GetTodayStats()
 
-        ; DIAGNOSTIC: Log active time calculation
-        currentSessionStats := ReadStatsFromCSV(true)
-        recordedSessionActive := (currentSessionStats.Has("session_active_time") ? currentSessionStats["session_active_time"] : 0)
-        currentActiveTime := GetCurrentSessionActiveTime()
-        Stats_LogDiagnostic("UpdateStatsDisplay - recordedSessionActive: " . recordedSessionActive . "ms, currentActiveTime: " . currentActiveTime . "ms")
-
         ; CRITICAL: Recalculate hourly rates with LIVE active time for ALL-TIME
 
         currentSessionStats := ReadStatsFromCSV(true)
-
         recordedSessionActive := (currentSessionStats.Has("session_active_time") ? currentSessionStats["session_active_time"] : 0)
 
         currentActiveTime := GetCurrentSessionActiveTime()
 
         effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
-
         if (currentActiveTime > recordedSessionActive) {
-
             effectiveAllActiveTime += currentActiveTime - recordedSessionActive
-
         }
 
-        ; DIAGNOSTIC: Log active time calculation details
-        Stats_LogDiagnostic("Active time calc - allStats session_active_time: " . (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0) . "ms, effectiveAllActiveTime: " . effectiveAllActiveTime . "ms")
-
         if (effectiveAllActiveTime > 5000) {
-
             activeTimeHours := effectiveAllActiveTime / 3600000
-
             allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
-
             allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
-
         }
 
         allStats["session_active_time"] := effectiveAllActiveTime
 
         effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
-
         if (currentActiveTime > recordedSessionActive) {
-
             effectiveTodayActiveTime += currentActiveTime - recordedSessionActive
-
         }
 
         if (effectiveTodayActiveTime > 5000) {
-
             activeTimeHours := effectiveTodayActiveTime / 3600000
-
             todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
-
             todayStats["executions_per_hour"] := Round(todayStats["total_executions"] / activeTimeHours, 1)
-
         }
 
         todayStats["session_active_time"] := effectiveTodayActiveTime
@@ -634,3 +610,4 @@ ResetAllStats() {
     }
 
 }
+
