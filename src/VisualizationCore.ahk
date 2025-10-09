@@ -278,3 +278,133 @@ CleanupHBITMAPCache() {
     ; Clear the cache Map
     hbitmapCache := Map()
 }
+
+; ===== JSON PROFILE COLORED BOX VISUALIZATION =====
+CreateJsonVisualization(colorHex, buttonDims, mode, labelText := "") {
+    ; Create colored box visualization with letterboxing for Narrow mode
+    global gdiPlusInitialized
+
+    if (!gdiPlusInitialized) {
+        return ""
+    }
+
+    ; Handle both old (single size) and new (width/height object) format
+    if (IsObject(buttonDims)) {
+        buttonWidth := buttonDims.width
+        buttonHeight := buttonDims.height
+    } else {
+        buttonWidth := buttonDims
+        buttonHeight := buttonDims
+    }
+
+    ; Convert hex color string to integer
+    colorValue := Integer(colorHex)
+
+    try {
+        bitmap := 0
+        DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+
+        graphics := 0
+        DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+
+        ; Black background
+        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
+
+        ; Apply letterboxing for Narrow mode
+        if (mode = "Narrow") {
+            ; Narrow mode: 4:3 aspect ratio letterboxing
+            narrowAspect := 4.0 / 3.0
+            buttonAspect := buttonWidth / buttonHeight
+
+            if (buttonAspect > narrowAspect) {
+                ; Button is wider than 4:3 - add horizontal letterboxing
+                contentHeight := buttonHeight
+                contentWidth := contentHeight * narrowAspect
+            } else {
+                ; Button is taller than 4:3 - add vertical letterboxing
+                contentWidth := buttonWidth
+                contentHeight := contentWidth / narrowAspect
+            }
+
+            ; Center the 4:3 content area
+            offsetX := (buttonWidth - contentWidth) / 2
+            offsetY := (buttonHeight - contentHeight) / 2
+
+            ; Draw colored box in 4:3 content area
+            brush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000 | colorValue, "Ptr*", &brush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+        } else {
+            ; Wide mode: Stretch to fill entire button
+            brush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000 | colorValue, "Ptr*", &brush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+        }
+
+        ; Draw text label in center if provided
+        if (labelText != "") {
+            ; Create font family and font (match normal button labels)
+            fontFamily := 0
+            DllCall("gdiplus\GdipCreateFontFamilyFromName", "WStr", "Segoe UI", "Ptr", 0, "Ptr*", &fontFamily)
+
+            ; If Segoe UI fails, fallback to Arial
+            if (!fontFamily) {
+                DllCall("gdiplus\GdipCreateFontFamilyFromName", "WStr", "Arial", "Ptr", 0, "Ptr*", &fontFamily)
+            }
+
+            font := 0
+            fontSize := 12  ; Larger font for visibility
+            DllCall("gdiplus\GdipCreateFont", "Ptr", fontFamily, "Float", fontSize, "Int", 1, "Int", 2, "Ptr*", &font)  ; Bold
+
+            ; Create black brush for text
+            textBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &textBrush)
+
+            ; Set text rendering quality
+            DllCall("gdiplus\GdipSetTextRenderingHint", "Ptr", graphics, "Int", 4)  ; AntiAlias
+
+            ; Create StringFormat for center alignment with word wrapping
+            stringFormat := 0
+            DllCall("gdiplus\GdipCreateStringFormat", "Int", 0, "Int", 0, "Ptr*", &stringFormat)
+            DllCall("gdiplus\GdipSetStringFormatAlign", "Ptr", stringFormat, "Int", 1)  ; Center
+            DllCall("gdiplus\GdipSetStringFormatLineAlign", "Ptr", stringFormat, "Int", 1)  ; Center vertically
+
+            ; Define text area with padding to avoid letterboxing cutoff
+            padding := buttonWidth * 0.1  ; 10% padding on each side
+            textX := padding
+            textY := padding
+            textWidth := buttonWidth - (padding * 2)
+            textHeight := buttonHeight - (padding * 2)
+
+            ; Draw text in center with padding
+            rect := Buffer(16, 0)
+            NumPut("Float", textX, rect, 0)
+            NumPut("Float", textY, rect, 4)
+            NumPut("Float", textWidth, rect, 8)
+            NumPut("Float", textHeight, rect, 12)
+
+            DllCall("gdiplus\GdipDrawString", "Ptr", graphics, "WStr", labelText, "Int", -1, "Ptr", font, "Ptr", rect, "Ptr", stringFormat, "Ptr", textBrush)
+
+            ; Cleanup text resources
+            DllCall("gdiplus\GdipDeleteStringFormat", "Ptr", stringFormat)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", textBrush)
+            DllCall("gdiplus\GdipDeleteFont", "Ptr", font)
+            DllCall("gdiplus\GdipDeleteFontFamily", "Ptr", fontFamily)
+        }
+
+        ; Save to temporary file
+        tempFile := A_Temp . "\json_viz_" . A_TickCount . ".png"
+        SaveVisualizationPNG(bitmap, tempFile)
+
+        ; Cleanup
+        DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+
+        return FileExist(tempFile) ? tempFile : ""
+
+    } catch Error as e {
+        return ""
+    }
+}

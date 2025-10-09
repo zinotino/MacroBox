@@ -14,7 +14,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
 
     ; Early return for invalid button names
     if (!buttonGrid.Has(buttonName)) {
@@ -50,12 +50,15 @@ UpdateButtonAppearance(buttonName) {
     isJsonAnnotation := false
     jsonInfo := ""
     jsonColor := "0xFFD700"
+    jsonMode := ""
 
     if (hasMacro && macroEvents[layerMacroName].Length = 1 && macroEvents[layerMacroName][1].type = "jsonAnnotation") {
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
-        jsonInfo := annotationMode . "`n" . typeName . " " . StrUpper(jsonEvent.severity)
+        ; Use stored mode from event, fallback to current annotationMode
+        jsonMode := (jsonEvent.HasOwnProp("mode") && jsonEvent.mode != "") ? jsonEvent.mode : annotationMode
+        jsonInfo := typeName . "`n" . StrUpper(jsonEvent.severity)
 
         if (degradationColors.Has(jsonEvent.categoryId)) {
             jsonColor := Format("0x{:X}", degradationColors[jsonEvent.categoryId])
@@ -90,7 +93,27 @@ UpdateButtonAppearance(buttonName) {
             }
         }
         ; If no boxes found, button stays as text display
-    } else if (hasThumbnail && !isJsonAnnotation) {
+    } else if (isJsonAnnotation) {
+        ; JSON annotation with colored box visualization
+        buttonSize := GetButtonThumbnailSize()
+
+        ; Create JSON visualization with letterboxing based on CURRENT annotation mode
+        pngFile := CreateJsonVisualization(jsonColor, buttonSize, annotationMode, jsonInfo)
+
+        if (pngFile && FileExist(pngFile)) {
+            ; Visualization succeeded - use picture control
+            button.Visible := false
+            picture.Visible := true
+            picture.Value := pngFile
+        } else {
+            ; Visualization failed - fallback to text display
+            picture.Visible := false
+            button.Visible := true
+            button.Opt("+Background" . jsonColor)
+            button.SetFont("s7 bold", "cBlack")
+            button.Text := jsonInfo
+        }
+    } else if (hasThumbnail) {
         ; Static thumbnail
         button.Visible := false
         picture.Visible := true
@@ -113,11 +136,7 @@ UpdateButtonAppearance(buttonName) {
         button.Visible := true
         button.Opt("-Background")
 
-        if (isJsonAnnotation) {
-            button.Opt("+Background" . jsonColor)
-            button.SetFont("s7 bold", "cBlack")
-            button.Text := jsonInfo
-        } else if (hasMacro) {
+        if (hasMacro) {
             events := macroEvents[layerMacroName]
             if (hasAutoMode) {
                 ; Auto mode enabled - bright yellow background
