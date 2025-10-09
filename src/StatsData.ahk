@@ -1,116 +1,34 @@
 ; ===== STATS DATA MODULE =====
-
-
-
 ; Handles statistics persistence, aggregation, and CSV writing
 
-
-
-; ===== MISSING FUNCTIONS FROM BACKUP - ADDED FOR COMPATIBILITY =====
-
+; Compatibility functions for Core.ahk
 InitializeOfflineDataFiles() {
     global persistentDataFile, dailyStatsFile, offlineLogFile, workDir, thumbnailDir
 
-    try {
-        ; Create data directory in Documents for portable execution
-        if (!DirExist(workDir)) {
-            DirCreate(workDir)
-        }
-        if (!DirExist(thumbnailDir)) {
-            DirCreate(thumbnailDir)
-        }
+    if (!DirExist(workDir))
+        DirCreate(workDir)
 
-        ; Initialize persistent data file if it doesn't exist
-        if (!FileExist(persistentDataFile)) {
-            initialData := "{`n"
-            initialData .= "  `"version`": `"1.0.0`",`n"
-            initialData .= "  `"created`": `"" . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`",`n"
-            initialData .= "  `"users`": {},`n"
-            initialData .= "  `"totalStats`": {`n"
-            initialData .= "    `"totalBoxCount`": 0,`n"
-            initialData .= "    `"totalExecutionTimeMs`": 0,`n"
-            initialData .= "    `"totalActiveTimeSeconds`": 0,`n"
-            initialData .= "    `"totalExecutionCount`": 0,`n"
-            initialData .= "    `"totalSessions`": 0,`n"
-            initialData .= "    `"firstSessionDate`": null,`n"
-            initialData .= "    `"lastSessionDate`": null`n"
-            initialData .= "  }`n"
-            initialData .= "}"
-            FileAppend(initialData, persistentDataFile)
-        }
+    if (!DirExist(thumbnailDir))
+        DirCreate(thumbnailDir)
 
-        ; Initialize daily stats file
-        if (!FileExist(dailyStatsFile)) {
-            FileAppend("{}", dailyStatsFile)
-        }
+    if (!FileExist(persistentDataFile))
+        FileAppend('{"sessions":{},"users":{},"macros":{}}', persistentDataFile)
 
-        ; Initialize offline log
-        if (!FileExist(offlineLogFile)) {
-            FileAppend("Offline Log Initialized: " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . "`n", offlineLogFile)
-        }
-    } catch Error as e {
-        ; Silent failure - offline files are optional
-    }
+    if (!FileExist(dailyStatsFile))
+        FileAppend('{"date":"' FormatTime(A_Now, "yyyy-MM-dd") '","executions":0}', dailyStatsFile)
 }
 
 InitializeRealtimeSession() {
     global currentSessionId, currentUsername, annotationMode, realtimeEnabled
-    ; Start a new session with the real-time service
-    sessionData := Map()
-    sessionData["session_id"] := currentSessionId
-    sessionData["username"] := currentUsername
-    sessionData["canvas_mode"] := annotationMode
-
-    ; Check if realtime service function exists
-    if (IsSet(SendDataToIngestionService)) {
-        try {
-            if (!SendDataToIngestionService("/session/start", sessionData)) {
-                realtimeEnabled := false
-            }
-        } catch {
-            realtimeEnabled := false
-        }
-    } else {
-        realtimeEnabled := false
-    }
+    ; Optional real-time service initialization
+    ; Currently not implemented - stats work offline via CSV
 }
 
 AggregateMetrics() {
     global applicationStartTime, totalActiveTime, lastActiveTime, masterStatsCSV, currentSessionId
-
-    ; Use CSV data for metrics aggregation
-    if (!FileExist(masterStatsCSV)) {
-        return {}
-    }
-
-    ; Get CSV stats for aggregation
-    csvStats := ReadStatsFromCSV(false)
-    totalBoxCount := csvStats.Has("total_boxes") ? csvStats["total_boxes"] : 0
-    totalExecutionTimeMs := csvStats.Has("average_execution_time") && csvStats.Has("total_executions") ? (csvStats["average_execution_time"] * csvStats["total_executions"]) : 0
-    executionCount := csvStats.Has("total_executions") ? csvStats["total_executions"] : 0
-
-    ; Use CSV degradation data
-    degradationSummaryStr := "CSV-based degradation summary"
-
-    ; Calculate active time in seconds
-    currentActiveTime := totalActiveTime
-    if (lastActiveTime > 0) {
-        currentActiveTime += (A_TickCount - lastActiveTime)
-    }
-    activeTimeSeconds := Round(currentActiveTime / 1000, 2)
-
-    ; Generate safe taskId
-    safeTaskId := "session_" . (IsSet(currentSessionId) ? StrReplace(currentSessionId, "sess_", "") : FormatTime(A_Now, "yyyyMMdd_HHmmss"))
-
-    return {
-        timestamp: FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss"),
-        taskId: safeTaskId,
-        totalBoxCount: totalBoxCount,
-        totalExecutionTimeMs: totalExecutionTimeMs,
-        activeTimeSeconds: activeTimeSeconds,
-        executionCount: executionCount,
-        degradationSummary: degradationSummaryStr
-    }
+    ; Return aggregated metrics from CSV
+    stats := ReadStatsFromCSV(false)
+    return stats
 }
 
 Stats_GetCsvHeader() {
@@ -2798,7 +2716,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-                ProcessDegradationCounts(executionData, "clear")
+                executionData["clear_count"] := 1
 
 
 
@@ -2842,7 +2760,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-            ProcessDegradationCounts(executionData, "clear")
+            executionData["clear_count"] := 1
 
 
 
