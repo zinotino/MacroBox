@@ -21,7 +21,7 @@ SaveConfig() {
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
     global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     global smartBoxClickDelay, smartMenuClickDelay
-    global macroEvents, buttonNames, buttonCustomLabels, buttonAutoSettings
+    global macroEvents, buttonNames, buttonCustomLabels
     local macrosSaved := 0, settingsSaved := 0
 
     try {
@@ -164,20 +164,6 @@ SaveConfig() {
                 try {
                     if (IsSet(label) && label != "") {
                         content .= buttonName . "=" . label . "`n"
-                    }
-                } catch {
-                    continue
-                }
-            }
-        }
-
-        ; Auto settings section
-        content .= "`n[AutoSettings]`n"
-        if (IsSet(buttonAutoSettings) && Type(buttonAutoSettings) = "Map") {
-            for buttonKey, settings in buttonAutoSettings {
-                try {
-                    if (IsSet(settings) && IsObject(settings) && settings.HasOwnProp("enabled") && settings.enabled) {
-                        content .= buttonKey . "=" . (settings.enabled ? "1" : "0") . "," . settings.interval . "," . settings.maxCount . "`n"
                     }
                 } catch {
                     continue
@@ -397,9 +383,6 @@ LoadConfig() {
 
                     case "Labels":
                         ProcessCustomLabel(key, value)
-
-                    case "AutoSettings":
-                        ProcessButtonAutoSetting(key, value)
 
                     case "Thumbnails":
                         ; Restore thumbnails (only file paths, not HBITMAP handles)

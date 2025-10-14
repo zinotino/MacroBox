@@ -14,7 +14,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonAutoSettings, yellowOutlineButtons, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
 
     ; Early return for invalid button names
     if (!buttonGrid.Has(buttonName)) {
@@ -39,7 +39,6 @@ UpdateButtonAppearance(buttonName) {
         return
     }
 
-    hasAutoMode := buttonAutoSettings.Has(layerMacroName) && buttonAutoSettings[layerMacroName].enabled
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
 
     ; Check for thumbnail
@@ -144,17 +143,10 @@ UpdateButtonAppearance(buttonName) {
 
         if (hasMacro) {
             events := macroEvents[layerMacroName]
-            if (hasAutoMode) {
-                ; Auto mode enabled - bright yellow background
-                button.Opt("+Background0xFFFF00")
-                button.SetFont("s7 bold", "cBlack")
-                button.Text := "🤖 AUTO`n" . events.Length . " events"
-            } else {
-                ; Regular macro - layer color
-                button.Opt("+Background" . layerBorderColors[currentLayer])
-                button.SetFont("s7 bold", "cWhite")
-                button.Text := "MACRO`n" . events.Length . " events"
-            }
+            ; Regular macro - layer color
+            button.Opt("+Background" . layerBorderColors[currentLayer])
+            button.SetFont("s7 bold", "cWhite")
+            button.Text := "MACRO`n" . events.Length . " events"
         } else {
             button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
             button.SetFont("s8", "cGray")
@@ -170,9 +162,6 @@ UpdateButtonAppearance(buttonName) {
     ; Label control - always visible with button name/custom label
     buttonLabels[buttonName].Visible := true
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
-
-    ; Apply yellow outline for auto mode buttons
-    ApplyYellowOutline(buttonName, hasAutoMode)
 }
 
 UpdateAllButtonAppearances() {
@@ -314,23 +303,3 @@ GetButtonThumbnailSize() {
     }
 }
 
-; ===== YELLOW OUTLINE FOR AUTO MODE =====
-ApplyYellowOutline(buttonName, hasAutoMode) {
-    global buttonGrid, yellowOutlineButtons
-
-    if (!buttonGrid.Has(buttonName)) {
-        return
-    }
-
-    button := buttonGrid[buttonName]
-
-    if (hasAutoMode && !yellowOutlineButtons.Has(buttonName)) {
-        ; Apply yellow outline
-        button.Opt("+Border")
-        yellowOutlineButtons[buttonName] := true
-    } else if (!hasAutoMode && yellowOutlineButtons.Has(buttonName)) {
-        ; Remove yellow outline
-        button.Opt("-Border")
-        yellowOutlineButtons.Delete(buttonName)
-    }
-}
