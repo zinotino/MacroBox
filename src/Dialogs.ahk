@@ -42,30 +42,21 @@ ShowSettings() {
     btnConfigureNarrow := settingsGui.Add("Button", "x240 y118 w180 h28", "📐 Calibrate Narrow")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
 
-    ; Macro pack management section
-    settingsGui.Add("Text", "x30 y165 w480 h18", "📦 Macro Pack Sharing")
-
-    btnCreatePack := settingsGui.Add("Button", "x40 y188 w180 h28", "📦 Create Pack")
-    btnCreatePack.OnEvent("Click", (*) => CreateMacroPack())
-
-    btnImportPack := settingsGui.Add("Button", "x240 y188 w180 h28", "📥 Import Pack")
-    btnImportPack.OnEvent("Click", (*) => ImportMacroPack())
-
     ; System maintenance section
-    settingsGui.Add("Text", "x30 y235 w480 h18", "🔧 System Maintenance")
+    settingsGui.Add("Text", "x30 y165 w480 h18", "🔧 System Maintenance")
 
-    btnManualSave := settingsGui.Add("Button", "x40 y258 w120 h28", "💾 Save Now")
+    btnManualSave := settingsGui.Add("Button", "x40 y188 w120 h28", "💾 Save Now")
     btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
 
-    btnManualRestore := settingsGui.Add("Button", "x175 y258 w120 h28", "📤 Restore Backup")
+    btnManualRestore := settingsGui.Add("Button", "x175 y188 w120 h28", "📤 Restore Backup")
     btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
 
-    btnClearConfig := settingsGui.Add("Button", "x310 y258 w120 h28", "🗑️ Clear Macros")
+    btnClearConfig := settingsGui.Add("Button", "x310 y188 w120 h28", "🗑️ Clear Macros")
     btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
 
     ; Stats reset
-    settingsGui.Add("Text", "x30 y305 w480 h18", "📊 Statistics")
-    btnResetStats := settingsGui.Add("Button", "x40 y328 w180 h28", "📊 Reset All Stats")
+    settingsGui.Add("Text", "x30 y235 w480 h18", "📊 Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y258 w180 h28", "📊 Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings

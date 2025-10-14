@@ -17,7 +17,6 @@ SaveConfig() {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode
     global hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext, hotkeyProfileActive, wasdLabelsEnabled
     global corpVisualizationMethod, corporateEnvironmentDetected
-    global autoExecutionMode, autoExecutionButton, autoExecutionInterval, autoExecutionMaxCount
     global layerNames, layerBorderColors
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
     global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
@@ -94,13 +93,6 @@ SaveConfig() {
         content .= "corpVisualizationMethod=" . corpVisualizationMethod . "`n"
         content .= "corporateEnvironmentDetected=" . (corporateEnvironmentDetected ? "true" : "false") . "`n"
         settingsSaved += 2
-
-        ; Auto execution settings
-        content .= "autoExecutionMode=" . (autoExecutionMode ? "true" : "false") . "`n"
-        content .= "autoExecutionButton=" . autoExecutionButton . "`n"
-        content .= "autoExecutionInterval=" . autoExecutionInterval . "`n"
-        content .= "autoExecutionMaxCount=" . autoExecutionMaxCount . "`n"
-        settingsSaved += 4
 
         ; Layer settings
         Loop Integer(totalLayers) {
@@ -358,10 +350,6 @@ LoadConfig() {
                             case "wasdLabelsEnabled": wasdLabelsEnabled := (value = "true")
                             case "corpVisualizationMethod": corpVisualizationMethod := EnsureInteger(value, 1)
                             case "corporateEnvironmentDetected": corporateEnvironmentDetected := (value = "true")
-                            case "autoExecutionMode": autoExecutionMode := (value = "true")
-                            case "autoExecutionButton": autoExecutionButton := value
-                            case "autoExecutionInterval": autoExecutionInterval := EnsureInteger(value, 5000)
-                            case "autoExecutionMaxCount": autoExecutionMaxCount := EnsureInteger(value, 0)
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)
                             case "menuClickDelay": menuClickDelay := EnsureInteger(value, 150)
