@@ -7,7 +7,7 @@ Handles all macro execution, automation, and playback operations
 
 ; ===== SAFE MACRO EXECUTION - BLOCKS F9 =====
 SafeExecuteMacroByKey(buttonName) {
-    global buttonAutoSettings, currentLayer, autoExecutionMode, breakMode, playback, lastExecutionTime
+    global currentLayer, breakMode, playback, lastExecutionTime
 
     ; CRITICAL: Block ALL execution during break mode
     if (breakMode) {
@@ -31,30 +31,12 @@ SafeExecuteMacroByKey(buttonName) {
         return
     }
 
-    buttonKey := "L" . currentLayer . "_" . buttonName
-
-    ; Check if button has auto mode configured
-    if (buttonAutoSettings.Has(buttonKey) && buttonAutoSettings[buttonKey].enabled) {
-        if (!autoExecutionMode) {
-            ; Start auto mode for this button
-            autoExecutionInterval := buttonAutoSettings[buttonKey].interval
-            autoExecutionMaxCount := buttonAutoSettings[buttonKey].maxCount
-            StartAutoExecution(buttonName)
-            UpdateStatus("🤖 Auto: " . buttonName)
-        } else {
-            ; Stop current auto mode
-            StopAutoExecution()
-            UpdateStatus("⏹️ Auto mode stopped")
-        }
-        return
-    }
-
     ; Regular macro execution - silent
     ExecuteMacro(buttonName)
 }
 
 ExecuteMacro(buttonName) {
-    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, autoExecutionMode, autoExecutionCount, chromeMemoryCleanupCount, chromeMemoryCleanupInterval, degradationTypes
+    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, degradationTypes
 
     ; PERFORMANCE MONITORING - Start timing execution
     executionStartTime := A_TickCount
@@ -147,130 +129,21 @@ ExecuteMacro(buttonName) {
         }
 
     } catch Error as e {
-        ; CRITICAL: Force state reset on any execution error
+        ; CRITICAL: Force state reset on any execution error (priority message)
         UpdateStatus("⚠️ Execution error - State reset")
     } finally {
-        ; Simple execution time monitoring
-        executionTime := A_TickCount - executionStartTime
-
-        ; Add timing info to status for JSON profiles
-        if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0 && macroEvents[layerMacroName][1].type = "jsonAnnotation")) {
-            UpdateStatus("✅ JSON executed (" . executionTime . "ms)")
-        }
-
         ; CRITICAL: Always reset playback state and button flash
         FlashButton(buttonName, false)
         playback := false
         playbackStartTime := 0
-    }
 
-    ; Handle auto-execution memory cleanup for Chrome
-    if (autoExecutionMode) {
-        autoExecutionCount++
-        chromeMemoryCleanupCount++
-        if (chromeMemoryCleanupCount >= chromeMemoryCleanupInterval) {
-            PerformChromeMemoryCleanup()
-            chromeMemoryCleanupCount := 0
+        ; Silent execution - no status spam during rapid macro use
+        ; Only show timing for slow executions (>500ms) or errors
+        executionTime := A_TickCount - executionStartTime
+        if (executionTime > 500) {
+            UpdateStatus("Slow execution: " . executionTime . "ms")
         }
     }
-}
-
-; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
-StartAutoExecution(buttonName) {
-    global autoExecutionMode, autoExecutionButton, autoExecutionTimer, autoExecutionInterval, autoExecutionCount, autoExecutionMaxCount
-
-    if (!macroEvents.Has("L" . currentLayer . "_" . buttonName) || macroEvents["L" . currentLayer . "_" . buttonName].Length = 0) {
-        UpdateStatus("❌ No macro to automate on " . buttonName)
-        return false
-    }
-
-    if (autoExecutionMode) {
-        StopAutoExecution()
-    }
-
-    autoExecutionMode := true
-    autoExecutionButton := buttonName
-    autoExecutionCount := 0
-
-    ; Add visual indicator
-    AddYellowOutline(buttonName)
-
-    ; Start the timer
-    SetTimer(AutoExecuteLoop, autoExecutionInterval)
-
-    UpdateStatus("🔄 Auto-executing " . buttonName . " every " . (autoExecutionInterval / 1000) . "s")
-
-    ; Update GUI buttons if they exist
-    if (autoStartBtn) {
-        try {
-            autoStartBtn.Text := "Stop Auto"
-            autoStartBtn.Opt("+BackgroundRed")
-        } catch {
-        }
-    }
-
-    return true
-}
-
-StopAutoExecution() {
-    global autoExecutionMode, autoExecutionButton, autoExecutionTimer, autoExecutionCount
-
-    if (!autoExecutionMode) {
-        return
-    }
-
-    ; Stop the timer
-    SetTimer(AutoExecuteLoop, 0)
-
-    ; Remove visual indicator
-    if (autoExecutionButton != "") {
-        RemoveYellowOutline(autoExecutionButton)
-    }
-
-    autoExecutionMode := false
-    prevButton := autoExecutionButton
-    autoExecutionButton := ""
-
-    UpdateStatus("⏹️ Stopped auto-execution of " . prevButton . " (ran " . autoExecutionCount . " times)")
-
-    ; Update GUI buttons if they exist
-    if (autoStartBtn) {
-        try {
-            autoStartBtn.Text := "Start Auto"
-            autoStartBtn.Opt("+BackgroundGreen")
-        } catch {
-        }
-    }
-}
-
-AutoExecuteLoop() {
-    global autoExecutionMode, autoExecutionButton, autoExecutionCount, autoExecutionMaxCount, playback, breakMode
-
-    ; CRITICAL: Block auto-execution during break mode
-    if (breakMode) {
-        UpdateStatus("☕ BREAK MODE ACTIVE - Auto-execution paused")
-        return
-    }
-
-    if (!autoExecutionMode || autoExecutionButton = "") {
-        StopAutoExecution()
-        return
-    }
-
-    ; Check if we've reached max count (if set)
-    if (autoExecutionMaxCount > 0 && autoExecutionCount >= autoExecutionMaxCount) {
-        UpdateStatus("✅ Completed " . autoExecutionCount . " auto-executions of " . autoExecutionButton)
-        StopAutoExecution()
-        return
-    }
-
-    ; Don't execute if already playing back
-    if (playback) {
-        return
-    }
-
-    ; Execute the macro
-    ExecuteMacro(autoExecutionButton)
 }
 
 ; ===== SMART TIMING SYSTEM =====
@@ -380,6 +253,9 @@ IsMenuInteraction(eventIndex, recordedEvents) {
 PlayEventsOptimized(recordedEvents) {
     global playback, boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
 
+    ; CRITICAL: Snapshot playback state at start to prevent mid-execution corruption
+    localPlaybackState := playback
+
     try {
         SetMouseDelay(0)
         SetKeyDelay(5)
@@ -397,9 +273,12 @@ PlayEventsOptimized(recordedEvents) {
         }
 
         for eventIndex, event in recordedEvents {
-            ; CRITICAL: Check playback state to allow early termination
-            if (!playback)
-                break
+            ; IMPROVED: Use local state snapshot instead of global flag
+            ; This prevents external state changes from stopping macro mid-execution
+            ; Only check global playback every 10 events for emergency stop
+            if (Mod(eventIndex, 10) = 0 && !playback) {
+                break  ; Allow emergency stop but not random state corruption
+            }
 
             try {
                 ; ===== OPTIMIZE STARTUP: Skip ALL events before "1" keypress =====
@@ -601,19 +480,4 @@ FocusBrowser() {
 
     UpdateStatus("⚠️ No browser found or focus failed")
     return false
-}
-
-; ===== CHROME MEMORY CLEANUP =====
-PerformChromeMemoryCleanup() {
-    try {
-        ; Minimize and restore Chrome to trigger memory cleanup
-        if (WinExist("ahk_exe chrome.exe")) {
-            WinMinimize("ahk_exe chrome.exe")
-            Sleep(50)
-            WinRestore("ahk_exe chrome.exe")
-            UpdateStatus("🧹 Chrome memory cleanup performed")
-        }
-    } catch Error as e {
-        ; Ignore cleanup errors
-    }
 }

@@ -1,25 +1,6 @@
 ; ===== STATS DATA MODULE =====
 ; Handles statistics persistence, aggregation, and CSV writing
-
-; Compatibility functions for Core.ahk
-InitializeOfflineDataFiles() {
-    global persistentDataFile, dailyStatsFile, offlineLogFile, workDir, thumbnailDir
-
-    if (!DirExist(workDir))
-        DirCreate(workDir)
-
-    if (!DirExist(thumbnailDir))
-        DirCreate(thumbnailDir)
-
-    if (!FileExist(persistentDataFile))
-        FileAppend('{"sessions":{},"users":{},"macros":{}}', persistentDataFile)
-
-    if (!FileExist(dailyStatsFile))
-        FileAppend('{"date":"' FormatTime(A_Now, "yyyy-MM-dd") '","executions":0}', dailyStatsFile)
-}
-
-; InitializeRealtimeSession() removed - was unused placeholder function
-; AggregateMetrics() removed - replaced with direct ReadStatsFromCSV(false) calls
+; STREAMLINED: Async queue system only - no duplicate direct write functions
 
 Stats_GetCsvHeader() {
 
@@ -2794,139 +2775,96 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
+; ===== ASYNC STATS QUEUE SYSTEM =====
+global statsWriteQueue := []
+global statsWriteTimer := 0
+global statsQueueMaxSize := 10
+global statsFlushInProgress := false
+
 AppendToCSV(executionData) {
+    global permanentStatsFile, statsWriteQueue, statsWriteTimer, statsQueueMaxSize
 
+    ; Add to queue instead of immediate write (prevents freezing)
+    statsWriteQueue.Push(executionData)
 
+    ; Start flush timer if not already running (batch writes every 500ms)
+    if (!statsWriteTimer) {
+        SetTimer(FlushStatsQueue, 500)
+        statsWriteTimer := true
+    }
 
-    global permanentStatsFile
+    ; Force immediate flush if queue is getting large
+    if (statsWriteQueue.Length >= statsQueueMaxSize) {
+        FlushStatsQueue()
+    }
 
+    return true
+}
 
+FlushStatsQueue() {
+    global statsWriteQueue, statsWriteTimer, statsFlushInProgress
 
-    ; Write to CSV (backup)
+    ; Prevent concurrent flushes
+    if (statsFlushInProgress || statsWriteQueue.Length = 0) {
+        return
+    }
 
-
-
-    csvSuccess := AppendToCSVFile(executionData)
-
-
-
-    ; CRITICAL: Also write to permanent master stats file (NEVER gets reset)
-
-
+    statsFlushInProgress := true
 
     try {
+        ; Process all queued stats in one batch
+        queueCopy := statsWriteQueue.Clone()
+        statsWriteQueue := []  ; Clear queue immediately
 
+        ; Stop timer since queue is empty
+        SetTimer(FlushStatsQueue, 0)
+        statsWriteTimer := false
 
+        ; Batch write to both files
+        BatchWriteToCSV(queueCopy)
 
-        AppendToPermanentStatsFile(executionData)
-
-
-
-    } catch {
-
-
-
+    } catch Error as e {
         ; Silent fail - don't break execution
-
-
-
+    } finally {
+        statsFlushInProgress := false
     }
-
-
-
-    return csvSuccess
-
-
-
 }
 
+BatchWriteToCSV(queuedData) {
+    global masterStatsCSV, permanentStatsFile
 
-
-AppendToCSVFile(executionData) {
-
-
-
-    global masterStatsCSV
-
-
+    if (queuedData.Length = 0) {
+        return
+    }
 
     try {
-
-
-
+        ; Ensure files exist
         Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
-
-
-
-        row := Stats_BuildCsvRow(executionData)
-
-
-
-        FileAppend(row, masterStatsCSV)
-
-
-
-        return true
-
-
-
-    } catch {
-
-
-
-        return false
-
-
-
-    }
-
-
-
-}
-
-
-
-AppendToPermanentStatsFile(executionData) {
-
-
-
-    global permanentStatsFile
-
-
-
-    try {
-
-
-
         Stats_EnsureStatsFile(permanentStatsFile, "UTF-8")
 
+        ; Build batch rows
+        masterRows := ""
+        permanentRows := ""
 
+        for executionData in queuedData {
+            row := Stats_BuildCsvRow(executionData)
+            masterRows .= row
+            permanentRows .= row
+        }
 
-        row := Stats_BuildCsvRow(executionData)
-
-
-
-        FileAppend(row, permanentStatsFile, "UTF-8")
-
-
+        ; Single write operation per file (much faster than individual writes)
+        FileAppend(masterRows, masterStatsCSV)
+        FileAppend(permanentRows, permanentStatsFile, "UTF-8")
 
         return true
 
-
-
     } catch {
-
-
-
         return false
-
-
-
     }
-
-
-
 }
+
+
+
 
 
 
@@ -2995,142 +2933,6 @@ GetCurrentSessionActiveTime() {
 
 
     }
-
-
-
-}
-
-
-
-RecordClearDegradationExecution(buttonName, executionStartTime) {
-
-
-
-    global breakMode, currentLayer, canvasType, clearDegradationCount, annotationMode
-
-
-
-    ; Skip if breakMode is true (don't track during break)
-
-
-
-    if (breakMode) {
-
-
-
-        return
-
-
-
-    }
-
-
-
-    ; Calculate execution_time_ms
-
-
-
-    execution_time_ms := A_TickCount - executionStartTime
-
-
-
-    ; Get current timestamp
-
-
-
-    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-
-
-
-    ; Create execution data structure for clear degradation execution
-
-
-
-    executionData := Map()
-
-
-
-    executionData["timestamp"] := timestamp
-
-
-
-    executionData["execution_type"] := "macro"  ; This is a macro execution with clear degradation
-
-
-
-    executionData["button_key"] := buttonName
-
-
-
-    executionData["layer"] := currentLayer
-
-
-
-    executionData["execution_time_ms"] := execution_time_ms
-
-
-
-    executionData["total_boxes"] := 1  ; Count as 1 box with clear degradation
-
-
-
-    executionData["degradation_assignments"] := "clear"  ; Clear degradation type
-
-
-
-    executionData["degradation_summary"] := "No degradation present"
-
-
-
-    executionData["status"] := "submitted"
-
-
-
-    executionData["severity_level"] := "none"
-
-
-
-    executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
-
-
-
-    ; Clear degradation counts (all zeros except clear count)
-
-
-
-    executionData["smudge_count"] := 0
-
-
-
-    executionData["glare_count"] := 0
-
-
-
-    executionData["splashes_count"] := 0
-
-
-
-    ; Increment session clear degradation count
-
-
-
-    clearDegradationCount++
-
-
-
-    ; Update active time before recording to CSV to ensure accurate time tracking
-
-
-
-    UpdateActiveTime()
-
-
-
-    ; Call AppendToCSV with clear execution data
-
-
-
-    AppendToCSV(executionData)
 
 
 
