@@ -21,5 +21,9 @@ config.ini
 # Thumbnails (runtime generated)
 thumbnails/
 
+# Temporary visualization files (runtime generated)
+src/macro_viz_*.png
+src/json_viz_*.png
+
 # Archive (legacy code, not for distribution)
 archive/legacy-python/
