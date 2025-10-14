@@ -25,6 +25,7 @@ global liveStatsLastUpdate := 0
 
 ; ===== PERFORMANCE OPTIMIZATION =====
 global hbitmapCache := Map()  ; Cache for HBITMAP visualizations
+global pngFileCache := Map()  ; Track PNG files for cleanup
 
 ClearHBitmapCacheForMacro(macroName) {
     global hbitmapCache
@@ -44,6 +45,42 @@ ClearHBitmapCacheForMacro(macroName) {
     }
 }
 
+; ===== PNG FILE CLEANUP SYSTEM =====
+CleanupOldPNGFiles() {
+    global pngFileCache
+
+    ; Delete old PNG files that are no longer in use
+    filesToDelete := []
+    for buttonKey, pngPath in pngFileCache {
+        if (FileExist(pngPath)) {
+            try {
+                FileDelete(pngPath)
+            } catch {
+                ; File in use, skip
+            }
+        }
+    }
+
+    ; Clear cache
+    pngFileCache := Map()
+}
+
+RegisterPNGFile(buttonKey, pngPath) {
+    global pngFileCache
+
+    ; Delete old PNG for this button if exists
+    if (pngFileCache.Has(buttonKey) && FileExist(pngFileCache[buttonKey])) {
+        try {
+            FileDelete(pngFileCache[buttonKey])
+        } catch {
+            ; File in use, will be cleaned up later
+        }
+    }
+
+    ; Register new PNG
+    pngFileCache[buttonKey] := pngPath
+}
+
 ; ===== HOTKEY CONFIGURATION =====
 global hotkeyRecordToggle := "F9"
 global hotkeySubmit := "+Enter"
@@ -54,22 +91,6 @@ global hotkeyLayerPrev := "NumpadDiv"
 global hotkeyLayerNext := "NumpadSub"
 global hotkeySettings := ""
 global hotkeyStats := ""
-
-; ===== AUTOMATED MACRO EXECUTION SYSTEM =====
-global autoExecutionMode := false
-global autoExecutionButton := ""
-global autoExecutionTimer := 0
-global autoExecutionInterval := 5000  ; Default 5 seconds
-global autoExecutionCount := 0
-global autoExecutionMaxCount := 0  ; 0 = infinite
-global autoExecutionButtons := Map()  ; Track which buttons have automation enabled
-global buttonAutoSettings := Map()  ; Store auto settings per button (interval, count, etc.)
-global autoStartBtn := 0
-global autoStopBtn := 0
-global autoIntervalControl := 0
-global autoCountControl := 0
-global chromeMemoryCleanupCount := 0
-global chromeMemoryCleanupInterval := 50  ; Clean memory every 50 executions
 
 ; ===== VISUAL INDICATOR SYSTEM =====
 global yellowOutlineButtons := Map()  ; Track buttons with yellow outlines
@@ -189,12 +210,6 @@ global statsWorkerActive := false
 global statsErrorCount := 0
 global lastHealthCheck := 0
 global systemHealthStatus := "healthy"
-
-; ===== OFFLINE DATA STORAGE GLOBALS =====
-global persistentDataFile := workDir . "\persistent_data.json"
-global dailyStatsFile := workDir . "\daily_stats.json"
-global offlineLogFile := workDir . "\offline_log.txt"
-global dataQueue := []
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -331,7 +346,6 @@ Main() {
         try {
             InitializeCanvasVariables()
             InitializeStatsSystem()  ; Handles CSV initialization internally
-            InitializeOfflineDataFiles()
             InitializeJsonAnnotations()
             InitializeVisualizationSystem()
             InitializeWASDHotkeys()
@@ -379,6 +393,7 @@ Main() {
         ; Setup WASD hotkeys if profile is active (now enabled by default)
         if (hotkeyProfileActive) {
             SetupWASDHotkeys()
+            ; Reminder: WASD hotkeys use CapsLock modifier (CapsLock + key)
         }
 
         ; Check for canvas configuration and prompt new users
@@ -405,6 +420,7 @@ Main() {
         SetTimer(AutoSave, 30000)  ; Auto-save every 30 seconds for better persistence
         SetTimer(MonitorExecutionState, 15000)  ; Check for stuck states every 15 seconds
         SetTimer(ValidateConfigIntegrity, 120000)  ; Validate config integrity every 2 minutes
+        SetTimer(CleanupOldPNGFiles, 60000)  ; CRITICAL: Cleanup PNG files every 60 seconds to prevent accumulation
 
         ; Setup cleanup - use proper function reference for reliable exit handling
         OnExit((exitReason, exitCode) => CleanupAndExit())
@@ -612,7 +628,7 @@ AssignJsonProfilesToLayer6() {
 
 ; ===== CLEANUP AND EXIT FUNCTIONS =====
 CleanupAndExit() {
-    global mouseHook, keyboardHook, liveStatsTimer, autoExecutionTimer
+    global mouseHook, keyboardHook, liveStatsTimer
 
     try {
         ; Stop all timers
@@ -622,8 +638,19 @@ CleanupAndExit() {
         if (liveStatsTimer) {
             SetTimer(liveStatsTimer, 0)
         }
-        if (autoExecutionTimer) {
-            SetTimer(autoExecutionTimer, 0)
+
+        ; CRITICAL: Flush any pending stats before exit
+        try {
+            FlushStatsQueue()
+        } catch {
+            ; Continue even if flush fails
+        }
+
+        ; CRITICAL: Cleanup PNG files to prevent accumulation
+        try {
+            CleanupOldPNGFiles()
+        } catch {
+            ; Continue even if cleanup fails
         }
 
         ; Uninstall hooks
@@ -708,7 +735,7 @@ MonitorExecutionState() {
 
 ; ===== STATE RESET FUNCTION =====
 ForceStateReset() {
-    global recording, playback, awaitingAssignment, autoExecutionMode, lastExecutionTime, playbackStartTime
+    global recording, playback, awaitingAssignment, lastExecutionTime, playbackStartTime
 
     ; Force reset all execution states
     recording := false
@@ -716,14 +743,6 @@ ForceStateReset() {
     awaitingAssignment := false
     lastExecutionTime := 0
     playbackStartTime := 0
-
-    ; Stop any auto execution
-    if (autoExecutionMode) {
-        try {
-            StopAutoExecution()
-        } catch {
-        }
-    }
 
     ; Clean up all hooks and timers
     try {
@@ -783,7 +802,7 @@ ValidateConfigIntegrity() {
 
 ; ===== EMERGENCY STOP =====
 EmergencyStop() {
-    global recording, playback, awaitingAssignment, mainGui, autoExecutionMode
+    global recording, playback, awaitingAssignment, mainGui
 
     UpdateStatus("🚨 EMERGENCY STOP")
 
@@ -806,7 +825,7 @@ EmergencyStop() {
     try {
         Send("{LButton Up}{RButton Up}{MButton Up}")
         Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
-        Send("{Esc}")
+        ; REMOVED: Send("{Esc}") - was blocking normal Esc key usage during labeling
     } catch {
     }
 
@@ -841,7 +860,7 @@ SubmitCurrentImage() {
         UpdateStatus("📤 Submitted")
 
         ; Record clear execution in CSV stats
-        RecordClearDegradationExecution("NumpadEnter", startTime)
+        RecordExecutionStats("NumpadEnter", startTime, "clear", [], "")
     } else {
         UpdateStatus("⚠️ No browser")
     }
@@ -872,7 +891,7 @@ ShiftNumpadClearExecution(buttonName) {
         UpdateStatus("📤 Clear: Shift+" . buttonName)
 
         ; Record clear execution in CSV stats with button name
-        RecordClearDegradationExecution("Shift" . buttonName, startTime)
+        RecordExecutionStats("Shift" . buttonName, startTime, "clear", [], "")
     } else {
         UpdateStatus("⚠️ No browser for Shift+" . buttonName . " clear")
     }
@@ -903,7 +922,7 @@ DirectClearExecution() {
         UpdateStatus("📤 Direct Clear Submitted")
 
         ; Record clear execution in CSV stats
-        RecordClearDegradationExecution("ShiftEnter", startTime)
+        RecordExecutionStats("ShiftEnter", startTime, "clear", [], "")
     } else {
         UpdateStatus("⚠️ No browser for direct clear")
     }

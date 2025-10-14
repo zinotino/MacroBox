@@ -175,18 +175,12 @@ global hotkeyLayerPrev := "NumpadDiv"
 global hotkeyLayerNext := "NumpadSub"
 
 ; WASD settings
-global hotkeyProfileActive := false
+global hotkeyProfileActive := true  ; FIXED: Was false, should default to true
 global wasdLabelsEnabled := false
 
 ; Visualization settings
 global corpVisualizationMethod := 1
 global corporateEnvironmentDetected := false
-
-; Auto execution settings
-global autoExecutionMode := false
-global autoExecutionButton := ""
-global autoExecutionInterval := 5000
-global autoExecutionMaxCount := 0
 
 ; Layer settings
 global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]
@@ -211,7 +205,7 @@ global mouseHoverDelay := 35
 global macroEvents := Map()
 global buttonNames := ["Num7", "Num8", "Num9", "Num4", "Num5", "Num6", "Num1", "Num2", "Num3", "Num0", "NumDot", "NumMult"]
 global buttonCustomLabels := Map()
-global buttonAutoSettings := Map()
+global buttonThumbnails := Map()  ; Custom thumbnail file paths (kept per user request)
 
 
 ; ===== CONFIG DIAGNOSTICS =====
