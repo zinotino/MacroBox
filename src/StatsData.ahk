@@ -2794,50 +2794,92 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
+; ===== ASYNC STATS QUEUE SYSTEM =====
+global statsWriteQueue := []
+global statsWriteTimer := 0
+global statsQueueMaxSize := 10
+global statsFlushInProgress := false
+
 AppendToCSV(executionData) {
+    global permanentStatsFile, statsWriteQueue, statsWriteTimer, statsQueueMaxSize
 
+    ; Add to queue instead of immediate write (prevents freezing)
+    statsWriteQueue.Push(executionData)
 
-
-    global permanentStatsFile
-
-
-
-    ; Write to CSV (backup)
-
-
-
-    csvSuccess := AppendToCSVFile(executionData)
-
-
-
-    ; CRITICAL: Also write to permanent master stats file (NEVER gets reset)
-
-
-
-    try {
-
-
-
-        AppendToPermanentStatsFile(executionData)
-
-
-
-    } catch {
-
-
-
-        ; Silent fail - don't break execution
-
-
-
+    ; Start flush timer if not already running (batch writes every 500ms)
+    if (!statsWriteTimer) {
+        SetTimer(FlushStatsQueue, 500)
+        statsWriteTimer := true
     }
 
+    ; Force immediate flush if queue is getting large
+    if (statsWriteQueue.Length >= statsQueueMaxSize) {
+        FlushStatsQueue()
+    }
 
+    return true
+}
 
-    return csvSuccess
+FlushStatsQueue() {
+    global statsWriteQueue, statsWriteTimer, statsFlushInProgress
 
+    ; Prevent concurrent flushes
+    if (statsFlushInProgress || statsWriteQueue.Length = 0) {
+        return
+    }
 
+    statsFlushInProgress := true
 
+    try {
+        ; Process all queued stats in one batch
+        queueCopy := statsWriteQueue.Clone()
+        statsWriteQueue := []  ; Clear queue immediately
+
+        ; Stop timer since queue is empty
+        SetTimer(FlushStatsQueue, 0)
+        statsWriteTimer := false
+
+        ; Batch write to both files
+        BatchWriteToCSV(queueCopy)
+
+    } catch Error as e {
+        ; Silent fail - don't break execution
+    } finally {
+        statsFlushInProgress := false
+    }
+}
+
+BatchWriteToCSV(queuedData) {
+    global masterStatsCSV, permanentStatsFile
+
+    if (queuedData.Length = 0) {
+        return
+    }
+
+    try {
+        ; Ensure files exist
+        Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
+        Stats_EnsureStatsFile(permanentStatsFile, "UTF-8")
+
+        ; Build batch rows
+        masterRows := ""
+        permanentRows := ""
+
+        for executionData in queuedData {
+            row := Stats_BuildCsvRow(executionData)
+            masterRows .= row
+            permanentRows .= row
+        }
+
+        ; Single write operation per file (much faster than individual writes)
+        FileAppend(masterRows, masterStatsCSV)
+        FileAppend(permanentRows, permanentStatsFile, "UTF-8")
+
+        return true
+
+    } catch {
+        return false
+    }
 }
 
 

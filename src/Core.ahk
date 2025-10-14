@@ -25,6 +25,7 @@ global liveStatsLastUpdate := 0
 
 ; ===== PERFORMANCE OPTIMIZATION =====
 global hbitmapCache := Map()  ; Cache for HBITMAP visualizations
+global pngFileCache := Map()  ; Track PNG files for cleanup
 
 ClearHBitmapCacheForMacro(macroName) {
     global hbitmapCache
@@ -42,6 +43,42 @@ ClearHBitmapCacheForMacro(macroName) {
     for key in keysToDelete {
         hbitmapCache.Delete(key)
     }
+}
+
+; ===== PNG FILE CLEANUP SYSTEM =====
+CleanupOldPNGFiles() {
+    global pngFileCache
+
+    ; Delete old PNG files that are no longer in use
+    filesToDelete := []
+    for buttonKey, pngPath in pngFileCache {
+        if (FileExist(pngPath)) {
+            try {
+                FileDelete(pngPath)
+            } catch {
+                ; File in use, skip
+            }
+        }
+    }
+
+    ; Clear cache
+    pngFileCache := Map()
+}
+
+RegisterPNGFile(buttonKey, pngPath) {
+    global pngFileCache
+
+    ; Delete old PNG for this button if exists
+    if (pngFileCache.Has(buttonKey) && FileExist(pngFileCache[buttonKey])) {
+        try {
+            FileDelete(pngFileCache[buttonKey])
+        } catch {
+            ; File in use, will be cleaned up later
+        }
+    }
+
+    ; Register new PNG
+    pngFileCache[buttonKey] := pngPath
 }
 
 ; ===== HOTKEY CONFIGURATION =====
@@ -379,6 +416,7 @@ Main() {
         ; Setup WASD hotkeys if profile is active (now enabled by default)
         if (hotkeyProfileActive) {
             SetupWASDHotkeys()
+            ; Reminder: WASD hotkeys use CapsLock modifier (CapsLock + key)
         }
 
         ; Check for canvas configuration and prompt new users
@@ -405,6 +443,7 @@ Main() {
         SetTimer(AutoSave, 30000)  ; Auto-save every 30 seconds for better persistence
         SetTimer(MonitorExecutionState, 15000)  ; Check for stuck states every 15 seconds
         SetTimer(ValidateConfigIntegrity, 120000)  ; Validate config integrity every 2 minutes
+        SetTimer(CleanupOldPNGFiles, 60000)  ; CRITICAL: Cleanup PNG files every 60 seconds to prevent accumulation
 
         ; Setup cleanup - use proper function reference for reliable exit handling
         OnExit((exitReason, exitCode) => CleanupAndExit())
@@ -626,6 +665,20 @@ CleanupAndExit() {
             SetTimer(autoExecutionTimer, 0)
         }
 
+        ; CRITICAL: Flush any pending stats before exit
+        try {
+            FlushStatsQueue()
+        } catch {
+            ; Continue even if flush fails
+        }
+
+        ; CRITICAL: Cleanup PNG files to prevent accumulation
+        try {
+            CleanupOldPNGFiles()
+        } catch {
+            ; Continue even if cleanup fails
+        }
+
         ; Uninstall hooks
         SafeUninstallMouseHook()
         SafeUninstallKeyboardHook()
@@ -806,7 +859,7 @@ EmergencyStop() {
     try {
         Send("{LButton Up}{RButton Up}{MButton Up}")
         Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
-        Send("{Esc}")
+        ; REMOVED: Send("{Esc}") - was blocking normal Esc key usage during labeling
     } catch {
     }
 

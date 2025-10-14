@@ -467,9 +467,18 @@ LoadConfig() {
 ; ===== APPLY SETTINGS TO GUI =====
 ApplyLoadedSettingsToGUI() {
     ; Apply loaded settings to GUI controls after initialization
-    global wasdLabelsEnabled
+    global wasdLabelsEnabled, annotationMode, modeToggleBtn
 
     try {
+        ; CRITICAL: Update mode toggle button text to match loaded state
+        if (modeToggleBtn) {
+            if (annotationMode = "Wide") {
+                modeToggleBtn.Text := "🔦 Wide"
+            } else {
+                modeToggleBtn.Text := "📱 Narrow"
+            }
+        }
+
         ; Update button labels with WASD if enabled
         if (wasdLabelsEnabled) {
             UpdateButtonLabelsWithWASD()

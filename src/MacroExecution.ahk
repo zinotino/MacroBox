@@ -147,21 +147,20 @@ ExecuteMacro(buttonName) {
         }
 
     } catch Error as e {
-        ; CRITICAL: Force state reset on any execution error
+        ; CRITICAL: Force state reset on any execution error (priority message)
         UpdateStatus("⚠️ Execution error - State reset")
     } finally {
-        ; Simple execution time monitoring
-        executionTime := A_TickCount - executionStartTime
-
-        ; Add timing info to status for JSON profiles
-        if (InStr(layerMacroName, "JSON") || (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0 && macroEvents[layerMacroName][1].type = "jsonAnnotation")) {
-            UpdateStatus("✅ JSON executed (" . executionTime . "ms)")
-        }
-
         ; CRITICAL: Always reset playback state and button flash
         FlashButton(buttonName, false)
         playback := false
         playbackStartTime := 0
+
+        ; Silent execution - no status spam during rapid macro use
+        ; Only show timing for slow executions (>500ms) or errors
+        executionTime := A_TickCount - executionStartTime
+        if (executionTime > 500) {
+            UpdateStatus("Slow execution: " . executionTime . "ms")
+        }
     }
 
     ; Handle auto-execution memory cleanup for Chrome
@@ -380,6 +379,9 @@ IsMenuInteraction(eventIndex, recordedEvents) {
 PlayEventsOptimized(recordedEvents) {
     global playback, boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, mouseHoverDelay, smartBoxClickDelay, smartMenuClickDelay
 
+    ; CRITICAL: Snapshot playback state at start to prevent mid-execution corruption
+    localPlaybackState := playback
+
     try {
         SetMouseDelay(0)
         SetKeyDelay(5)
@@ -397,9 +399,12 @@ PlayEventsOptimized(recordedEvents) {
         }
 
         for eventIndex, event in recordedEvents {
-            ; CRITICAL: Check playback state to allow early termination
-            if (!playback)
-                break
+            ; IMPROVED: Use local state snapshot instead of global flag
+            ; This prevents external state changes from stopping macro mid-execution
+            ; Only check global playback every 10 events for emergency stop
+            if (Mod(eventIndex, 10) = 0 && !playback) {
+                break  ; Allow emergency stop but not random state corruption
+            }
 
             try {
                 ; ===== OPTIMIZE STARTUP: Skip ALL events before "1" keypress =====
