@@ -79,6 +79,9 @@ UpdateButtonAppearance(buttonName) {
             pngFile := CreateMacroVisualization(macroEvents[layerMacroName], buttonSize)
 
             if (pngFile && FileExist(pngFile)) {
+                ; CRITICAL: Register PNG for cleanup to prevent accumulation
+                RegisterPNGFile(layerMacroName, pngFile)
+
                 ; PNG succeeded - use picture control
                 button.Visible := false
                 picture.Visible := true
@@ -101,6 +104,9 @@ UpdateButtonAppearance(buttonName) {
         pngFile := CreateJsonVisualization(jsonColor, buttonSize, annotationMode, jsonInfo)
 
         if (pngFile && FileExist(pngFile)) {
+            ; CRITICAL: Register PNG for cleanup to prevent accumulation
+            RegisterPNGFile(layerMacroName . "_json", pngFile)
+
             ; Visualization succeeded - use picture control
             button.Visible := false
             picture.Visible := true
@@ -251,11 +257,42 @@ UpdateEmergencyButtonText() {
     }
 }
 
-; ===== STATUS MANAGEMENT =====
+; ===== STATUS MANAGEMENT WITH THROTTLING =====
+global lastStatusUpdate := 0
+global lastStatusText := ""
+global statusThrottleMs := 100  ; Only update status every 100ms
+global priorityStatusKeywords := ["ERROR", "CRITICAL", "⚠️", "❌", "✅", "🚨"]
+
 UpdateStatus(text) {
-    global statusBar
-    if (statusBar) {
-        statusBar.Text := text
+    global statusBar, lastStatusUpdate, lastStatusText, statusThrottleMs, priorityStatusKeywords
+
+    if (!statusBar) {
+        return
+    }
+
+    currentTime := A_TickCount
+
+    ; Check if this is a priority message (errors, warnings, critical events)
+    isPriority := false
+    for keyword in priorityStatusKeywords {
+        if (InStr(text, keyword)) {
+            isPriority := true
+            break
+        }
+    }
+
+    ; Throttle non-priority status updates to prevent GUI flooding
+    if (!isPriority && (currentTime - lastStatusUpdate) < statusThrottleMs && lastStatusText != "") {
+        return  ; Skip this update to reduce GUI overhead
+    }
+
+    ; Update status bar
+    statusBar.Text := text
+    lastStatusUpdate := currentTime
+    lastStatusText := text
+
+    ; Only force redraw for priority messages
+    if (isPriority) {
         statusBar.Redraw()
     }
 }

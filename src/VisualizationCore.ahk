@@ -44,69 +44,59 @@ CreateMacroVisualization(macroEvents, buttonDims) {
         ; Draw macro boxes optimized for button dimensions (pass entire macroEvents for mode detection)
         DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
 
-        ; Save to temporary file
-        tempFile := A_Temp . "\macro_viz_" . A_TickCount . ".png"
-        SaveVisualizationPNG(bitmap, tempFile)
+        ; IMPROVED: Try corporate-safe fallback paths first (not just A_Temp)
+        ; This ensures visualization works even if temp folder is restricted
+        tempFile := SaveVisualizationPNG(bitmap, A_TickCount)
 
         ; Cleanup
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
-        return FileExist(tempFile) ? tempFile : ""
+        return tempFile  ; Returns actual working path (not empty string)
 
     } catch Error as e {
         return ""
     }
 }
 
-; ===== PNG SAVING WITH FALLBACK PATHS =====
-SaveVisualizationPNG(bitmap, filePath) {
-    ; Save bitmap as PNG with Method 4 fallback paths for corporate environments
+; ===== PNG SAVING WITH CORPORATE-SAFE FALLBACK PATHS =====
+SaveVisualizationPNG(bitmap, uniqueId) {
+    ; IMPROVED: Try fallback paths FIRST (corporate-safe approach)
+    ; Returns actual working file path (not just boolean)
+
+    global documentsDir, workDir
+
     clsid := Buffer(16)
     NumPut("UInt", 0x557CF406, clsid, 0)
     NumPut("UInt", 0x11D31A04, clsid, 4)
     NumPut("UInt", 0x0000739A, clsid, 8)
     NumPut("UInt", 0x2EF31EF8, clsid, 12)
 
-    ; Try original path first
-    result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", filePath, "Ptr", clsid, "Ptr", 0)
-    if (result = 0 && FileExist(filePath)) {
-        return true
-    }
+    fileName := "macro_viz_" . uniqueId . ".png"
 
-    ; Method 4: Try alternative paths for corporate environments
-    fileName := "macro_viz_" . A_TickCount . ".png"
+    ; CORPORATE-SAFE: Try data directories first (NOT src folder)
     fallbackPaths := [
-        A_ScriptDir . "\" . fileName,
-        A_MyDocuments . "\" . fileName,
-        EnvGet("USERPROFILE") . "\" . fileName,
-        A_Desktop . "\" . fileName,
-        A_Temp . "\" . fileName  ; Keep original as last resort
+        workDir . "\" . fileName,               ; Best: Data directory (Documents/MacroMaster/data)
+        documentsDir . "\" . fileName,          ; Good: MacroMaster root (Documents/MacroMaster)
+        A_MyDocuments . "\" . fileName,         ; Fallback: Documents root
+        EnvGet("USERPROFILE") . "\" . fileName, ; Fallback: User profile root
+        A_Temp . "\" . fileName                 ; Last resort: Temp folder
     ]
 
     for testPath in fallbackPaths {
         try {
             result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", testPath, "Ptr", clsid, "Ptr", 0)
             if (result = 0 && FileExist(testPath)) {
-                ; Copy successful path back to the expected location for compatibility
-                if (testPath != filePath) {
-                    try {
-                        FileCopy(testPath, filePath, 1)
-                        ; Clean up temporary file - capture path in variable for lambda
-                        pathToDelete := testPath
-                        SetTimer(() => DeleteFile(pathToDelete), -2000)
-                    } catch {
-                        ; If copy fails, just use the working path - but cannot modify filePath here as it's a parameter
-                    }
-                }
-                return true
+                ; SUCCESS: Return the working path
+                return testPath
             }
         } catch {
             continue
         }
     }
 
-    return false
+    ; FAILURE: No paths worked
+    return ""
 }
 
 ; ===== VISUALIZATION SYSTEM INITIALIZATION =====
@@ -394,15 +384,14 @@ CreateJsonVisualization(colorHex, buttonDims, mode, labelText := "") {
             DllCall("gdiplus\GdipDeleteFontFamily", "Ptr", fontFamily)
         }
 
-        ; Save to temporary file
-        tempFile := A_Temp . "\json_viz_" . A_TickCount . ".png"
-        SaveVisualizationPNG(bitmap, tempFile)
+        ; IMPROVED: Use corporate-safe fallback paths (same as macro viz)
+        tempFile := SaveVisualizationPNG(bitmap, A_TickCount)
 
         ; Cleanup
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
-        return FileExist(tempFile) ? tempFile : ""
+        return tempFile  ; Returns actual working path
 
     } catch Error as e {
         return ""
