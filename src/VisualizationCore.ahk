@@ -59,12 +59,12 @@ CreateMacroVisualization(macroEvents, buttonDims) {
     }
 }
 
-; ===== PNG SAVING WITH CORPORATE-SAFE FALLBACK PATHS =====
+; ===== PNG SAVING WITH USER-SELECTED PATH =====
 SaveVisualizationPNG(bitmap, uniqueId) {
-    ; IMPROVED: Try fallback paths FIRST (corporate-safe approach)
+    ; USER-CONTROLLED: Respect user's visualization save path preference
     ; Returns actual working file path (not just boolean)
 
-    global documentsDir, workDir
+    global documentsDir, workDir, visualizationSavePath
 
     clsid := Buffer(16)
     NumPut("UInt", 0x557CF406, clsid, 0)
@@ -74,14 +74,35 @@ SaveVisualizationPNG(bitmap, uniqueId) {
 
     fileName := "macro_viz_" . uniqueId . ".png"
 
-    ; CORPORATE-SAFE: Try data directories first (NOT src folder)
-    fallbackPaths := [
-        workDir . "\" . fileName,               ; Best: Data directory (Documents/MacroMaster/data)
-        documentsDir . "\" . fileName,          ; Good: MacroMaster root (Documents/MacroMaster)
-        A_MyDocuments . "\" . fileName,         ; Fallback: Documents root
-        EnvGet("USERPROFILE") . "\" . fileName, ; Fallback: User profile root
-        A_Temp . "\" . fileName                 ; Last resort: Temp folder
-    ]
+    ; Build path list based on user preference
+    fallbackPaths := []
+
+    ; Add user's preferred path FIRST
+    switch visualizationSavePath {
+        case "data":
+            fallbackPaths.Push(workDir . "\" . fileName)
+        case "documents":
+            fallbackPaths.Push(documentsDir . "\" . fileName)
+        case "profile":
+            fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName)
+        case "temp":
+            fallbackPaths.Push(A_Temp . "\" . fileName)
+        default:  ; "auto" - try all paths in order
+            fallbackPaths.Push(workDir . "\" . fileName)               ; Best: Data directory
+            fallbackPaths.Push(documentsDir . "\" . fileName)          ; Good: MacroMaster root
+            fallbackPaths.Push(A_MyDocuments . "\" . fileName)         ; Fallback: Documents root
+            fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName) ; Fallback: User profile root
+            fallbackPaths.Push(A_Temp . "\" . fileName)                ; Last resort: Temp folder
+    }
+
+    ; If user selected a specific path, add auto fallbacks as backup
+    if (visualizationSavePath != "auto") {
+        fallbackPaths.Push(workDir . "\" . fileName)
+        fallbackPaths.Push(documentsDir . "\" . fileName)
+        fallbackPaths.Push(A_MyDocuments . "\" . fileName)
+        fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName)
+        fallbackPaths.Push(A_Temp . "\" . fileName)
+    }
 
     for testPath in fallbackPaths {
         try {

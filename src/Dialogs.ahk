@@ -42,21 +42,45 @@ ShowSettings() {
     btnConfigureNarrow := settingsGui.Add("Button", "x240 y118 w180 h28", "📐 Calibrate Narrow")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
 
-    ; System maintenance section
-    settingsGui.Add("Text", "x30 y165 w480 h18", "🔧 System Maintenance")
+    ; Visualization save path section
+    settingsGui.Add("Text", "x30 y165 w480 h18", "💾 Visualization Save Location (for corporate environments)")
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x40 y185 w480 h15 c0x666666", "Choose where preview images are saved (if auto fails at work)")
+    settingsGui.SetFont("s9")
 
-    btnManualSave := settingsGui.Add("Button", "x40 y188 w120 h28", "💾 Save Now")
+    global visualizationSavePath
+    pathOptions := ["Auto (try all)", "Data folder", "Documents folder", "User Profile", "Temp folder"]
+    pathValues := ["auto", "data", "documents", "profile", "temp"]
+
+    ; Find current selection index
+    currentIndex := 1
+    for i, val in pathValues {
+        if (val = visualizationSavePath) {
+            currentIndex := i
+            break
+        }
+    }
+
+    ddlVizPath := settingsGui.Add("DropDownList", "x40 y203 w380", pathOptions)
+    ddlVizPath.Choose(currentIndex)
+    ddlVizPath.OnEvent("Change", (*) => ApplyVisualizationPath(ddlVizPath, pathValues))
+    settingsGui.ddlVizPath := ddlVizPath
+
+    ; System maintenance section
+    settingsGui.Add("Text", "x30 y245 w480 h18", "🔧 System Maintenance")
+
+    btnManualSave := settingsGui.Add("Button", "x40 y268 w120 h28", "💾 Save Now")
     btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
 
-    btnManualRestore := settingsGui.Add("Button", "x175 y188 w120 h28", "📤 Restore Backup")
+    btnManualRestore := settingsGui.Add("Button", "x175 y268 w120 h28", "📤 Restore Backup")
     btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
 
-    btnClearConfig := settingsGui.Add("Button", "x310 y188 w120 h28", "🗑️ Clear Macros")
+    btnClearConfig := settingsGui.Add("Button", "x310 y268 w120 h28", "🗑️ Clear Macros")
     btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
 
     ; Stats reset
-    settingsGui.Add("Text", "x30 y235 w480 h18", "📊 Statistics")
-    btnResetStats := settingsGui.Add("Button", "x40 y258 w180 h28", "📊 Reset All Stats")
+    settingsGui.Add("Text", "x30 y315 w480 h18", "📊 Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y338 w180 h28", "📊 Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings
@@ -629,6 +653,28 @@ BrowseMacroPacks(*) {
     } catch Error as e {
         MsgBox("Failed to browse macro packs: " . e.Message, "Browse Error", "Icon!")
     }
+}
+
+; ===== VISUALIZATION PATH SELECTION =====
+ApplyVisualizationPath(ddlVizPath, pathValues) {
+    global visualizationSavePath
+
+    selectedIndex := ddlVizPath.Value
+    visualizationSavePath := pathValues[selectedIndex]
+
+    ; Save immediately
+    SaveConfig()
+
+    ; Show user-friendly status
+    pathNames := Map(
+        "auto", "Auto (trying all paths)",
+        "data", "Data folder",
+        "documents", "Documents folder",
+        "profile", "User Profile",
+        "temp", "Temp folder"
+    )
+
+    UpdateStatus("💾 Visualization path: " . pathNames[visualizationSavePath])
 }
 
 ; ===== CANVAS CONFIGURATION =====

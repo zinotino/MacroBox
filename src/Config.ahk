@@ -181,6 +181,7 @@ global wasdLabelsEnabled := false
 ; Visualization settings
 global corpVisualizationMethod := 1
 global corporateEnvironmentDetected := false
+global visualizationSavePath := "auto"  ; Options: "auto", "data", "documents", "profile", "temp"
 
 ; Layer settings
 global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]

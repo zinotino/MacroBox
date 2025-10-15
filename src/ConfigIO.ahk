@@ -92,7 +92,8 @@ SaveConfig() {
         ; Visualization settings
         content .= "corpVisualizationMethod=" . corpVisualizationMethod . "`n"
         content .= "corporateEnvironmentDetected=" . (corporateEnvironmentDetected ? "true" : "false") . "`n"
-        settingsSaved += 2
+        content .= "visualizationSavePath=" . visualizationSavePath . "`n"
+        settingsSaved += 3
 
         ; Layer settings
         Loop Integer(totalLayers) {
@@ -336,6 +337,7 @@ LoadConfig() {
                             case "wasdLabelsEnabled": wasdLabelsEnabled := (value = "true")
                             case "corpVisualizationMethod": corpVisualizationMethod := EnsureInteger(value, 1)
                             case "corporateEnvironmentDetected": corporateEnvironmentDetected := (value = "true")
+                            case "visualizationSavePath": visualizationSavePath := value
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)
                             case "menuClickDelay": menuClickDelay := EnsureInteger(value, 150)
