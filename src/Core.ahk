@@ -221,7 +221,7 @@ global minWindowHeight := 600
 ; ===== LAYER SYSTEM =====
 global currentLayer := 1
 global totalLayers := 5  ; Always ensure this is an integer
-global layerNames := ["Base", "Advanced", "Tools", "Custom", "AUTO", "JSON", "Thumbnails", "Settings", "Layer9", "Layer10"]
+global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]
 global layerBorderColors := ["0x404040", "0x505050", "0x606060", "0x707070", "0x808080"]
 
 ; ===== TIMING CONFIGURATION =====

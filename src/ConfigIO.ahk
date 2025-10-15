@@ -354,11 +354,6 @@ LoadConfig() {
                             case "layerName3": layerNames[3] := value
                             case "layerName4": layerNames[4] := value
                             case "layerName5": layerNames[5] := value
-                            case "layerName6": layerNames[6] := value
-                            case "layerName7": layerNames[7] := value
-                            case "layerName8": layerNames[8] := value
-                            case "layerName9": layerNames[9] := value
-                            case "layerName10": layerNames[10] := value
                             case "layerBorderColor1": layerBorderColors[1] := value
                             case "layerBorderColor2": layerBorderColors[2] := value
                             case "layerBorderColor3": layerBorderColors[3] := value
