@@ -53,11 +53,15 @@ ProcessMacroLine(key, value) {
                         event.degradationType := 1  ; Default to smudge if not saved
                     }
                     ; PHASE 2B: Load degradationName (part 7)
-                    if (parts.Length >= 7) {
+                    if (parts.Length >= 7 && parts[7] != "") {
                         event.degradationName := parts[7]
                     } else {
-                        ; Default based on degradationType
-                        event.degradationName := degradationTypes.Has(event.degradationType) ? degradationTypes[event.degradationType] : "smudge"
+                        ; Default based on degradationType (with safety check)
+                        if (IsSet(degradationTypes) && degradationTypes.Has(event.degradationType)) {
+                            event.degradationName := degradationTypes[event.degradationType]
+                        } else {
+                            event.degradationName := "smudge"
+                        }
                     }
                     ; PHASE 2B: Load assignedBy (part 8)
                     if (parts.Length >= 8) {
