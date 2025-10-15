@@ -8,7 +8,7 @@ ProcessCustomLabel(key, value) {
 }
 
 ProcessMacroLine(key, value) {
-    global macroEvents
+    global macroEvents, degradationTypes
 
     if (value = "") {
         return false
