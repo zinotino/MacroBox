@@ -2780,11 +2780,12 @@ global statsWriteQueue := []
 global statsWriteTimer := 0
 global statsQueueMaxSize := 50  ; PHASE 2A: Increased from 10 to 50 to handle rapid executions
 global statsFlushInProgress := false
+global lastFlushTime := 0  ; FREEZE FIX: Track last flush time to prevent rapid re-entry
 
 AppendToCSV(executionData) {
     global permanentStatsFile, statsWriteQueue, statsWriteTimer, statsQueueMaxSize
 
-    ; PHASE 2A: Drop oldest if queue full (overflow protection)
+    ; PHASE 2A+: Drop oldest if queue full (overflow protection)
     if (statsWriteQueue.Length >= statsQueueMaxSize) {
         statsWriteQueue.RemoveAt(1)  ; Drop oldest to prevent memory issues
     }
@@ -2792,22 +2793,26 @@ AppendToCSV(executionData) {
     ; Add to queue instead of immediate write (prevents freezing)
     statsWriteQueue.Push(executionData)
 
-    ; Start flush timer if not already running (batch writes every 500ms)
+    ; Start flush timer if not already running (batch writes every 1000ms for less frequent I/O)
     if (!statsWriteTimer) {
-        SetTimer(FlushStatsQueue, 500)
+        SetTimer(FlushStatsQueue, 1000)  ; Increased from 500ms to 1000ms
         statsWriteTimer := true
     }
 
-    ; Force immediate flush if queue is getting large
-    if (statsWriteQueue.Length >= statsQueueMaxSize) {
-        FlushStatsQueue()
-    }
+    ; REMOVED: Force immediate flush - this causes blocking
+    ; Let the timer handle all flushes asynchronously
 
     return true
 }
 
 FlushStatsQueue() {
-    global statsWriteQueue, statsWriteTimer, statsFlushInProgress
+    global statsWriteQueue, statsWriteTimer, statsFlushInProgress, lastFlushTime
+
+    ; FREEZE FIX: Prevent re-entry if called too soon (min 500ms between flushes)
+    currentTime := A_TickCount
+    if (currentTime - lastFlushTime < 500) {
+        return
+    }
 
     ; Prevent concurrent flushes
     if (statsFlushInProgress || statsWriteQueue.Length = 0) {
@@ -2815,6 +2820,7 @@ FlushStatsQueue() {
     }
 
     statsFlushInProgress := true
+    lastFlushTime := currentTime
     flushStartTime := A_TickCount  ; PHASE 2A: Track flush time
 
     try {
