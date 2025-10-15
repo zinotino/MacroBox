@@ -84,11 +84,11 @@ SaveMacroState() {
 
 ; ===== CLEAR MACRO FUNCTION =====
 ClearMacro(buttonName) {
-    global currentLayer, macroEvents, buttonThumbnails, buttonCustomLabels, buttonAutoSettings
+    global currentLayer, macroEvents, buttonThumbnails, buttonCustomLabels
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
 
-    if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Auto settings`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
+    if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
         ; Clear macro events
         if (macroEvents.Has(layerMacroName)) {
             macroEvents.Delete(layerMacroName)
@@ -102,11 +102,6 @@ ClearMacro(buttonName) {
         ; Clear custom labels (restore to default)
         if (buttonCustomLabels.Has(buttonName)) {
             buttonCustomLabels.Delete(buttonName)
-        }
-
-        ; Clear auto settings
-        if (buttonAutoSettings.Has(layerMacroName)) {
-            buttonAutoSettings.Delete(layerMacroName)
         }
 
         ; Clear HBITMAP cache

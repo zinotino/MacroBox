@@ -16,7 +16,7 @@ HandleContextMenu(buttonName, *) {
 
 ; ===== CONTEXT MENU =====
 ShowContextMenuCleaned(buttonName) {
-    global currentLayer, macroEvents, buttonThumbnails, degradationTypes, severityLevels, buttonAutoSettings
+    global currentLayer, macroEvents, buttonThumbnails, degradationTypes, severityLevels
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
 
@@ -47,18 +47,6 @@ ShowContextMenuCleaned(buttonName) {
         contextMenu.Add("🖼️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
     } else {
         contextMenu.Add("🖼️ Add Thumbnail", (*) => AddThumbnail(buttonName))
-    }
-
-    ; Auto execution section
-    buttonKey := "L" . currentLayer . "_" . buttonName
-    hasAutoSettings := buttonAutoSettings.Has(buttonKey)
-    autoEnabled := hasAutoSettings && buttonAutoSettings[buttonKey].enabled
-
-    if (autoEnabled) {
-        contextMenu.Add("❌ Disable Auto Mode", (*) => ToggleAutoEnable(buttonName))
-        contextMenu.Add("🔧 Auto Settings", (*) => ConfigureAutoMode(buttonName))
-    } else {
-        contextMenu.Add("⚙️ Enable Auto Mode", (*) => ToggleAutoEnable(buttonName))
     }
 
     ; Show menu
@@ -103,104 +91,6 @@ AssignJsonAnnotation(buttonName, presetName, *) {
     } else {
         UpdateStatus("❌ Annotation not found")
     }
-}
-
-; ===== AUTO MODE FUNCTIONS =====
-ToggleAutoEnable(buttonName, *) {
-    global buttonAutoSettings, currentLayer, macroEvents, autoExecutionInterval
-
-    buttonKey := "L" . currentLayer . "_" . buttonName
-
-    ; Check if button has a macro
-    if (!macroEvents.Has(buttonKey) || macroEvents[buttonKey].Length = 0) {
-        MsgBox("No macro recorded for " . buttonName . " on Layer " . currentLayer . ". Record a macro first!", "Auto Mode", "Icon!")
-        return
-    }
-
-    ; Toggle enable state
-    if (buttonAutoSettings.Has(buttonKey)) {
-        ; Settings exist - toggle enable state
-        buttonAutoSettings[buttonKey].enabled := !buttonAutoSettings[buttonKey].enabled
-        status := buttonAutoSettings[buttonKey].enabled ? "✅ Auto enabled: " : "❌ Auto disabled: "
-        UpdateStatus(status . buttonName)
-    } else {
-        ; No settings exist - create with global defaults and enable
-        buttonAutoSettings[buttonKey] := {
-            enabled: true,
-            interval: autoExecutionInterval,  ; Use global default
-            maxCount: 0                        ; infinite default
-        }
-        UpdateStatus("✅ Auto enabled: " . buttonName)
-    }
-
-    ; Update button appearance and save
-    UpdateButtonAppearance(buttonName)
-    SaveConfig()
-}
-
-ConfigureAutoMode(buttonName, *) {
-    global buttonAutoSettings, currentLayer, macroEvents, mainGui, autoExecutionInterval
-
-    buttonKey := "L" . currentLayer . "_" . buttonName
-
-    ; Check if button has a macro
-    if (!macroEvents.Has(buttonKey) || macroEvents[buttonKey].Length = 0) {
-        MsgBox("No macro recorded for " . buttonName . " on Layer " . currentLayer . ". Record a macro first!", "Auto Mode Setup", "Icon!")
-        return
-    }
-
-    ; Get existing settings or use global defaults
-    currentSettings := buttonAutoSettings.Has(buttonKey) ? buttonAutoSettings[buttonKey] : {enabled: false, interval: autoExecutionInterval, maxCount: 0}
-
-    ; Create configuration dialog
-    configDialog := Gui("+Owner" . mainGui.Hwnd, "Auto Mode Setup - " . buttonName)
-
-    configDialog.Add("Text", "x10 y10", "Auto Mode Configuration for " . buttonName . " (Layer " . currentLayer . ")")
-
-    ; Enable checkbox
-    enableCheck := configDialog.Add("Checkbox", "x10 y35", "Enable Auto Mode")
-    enableCheck.Value := currentSettings.enabled
-
-    configDialog.Add("Text", "x10 y65", "Interval (seconds):")
-    intervalEdit := configDialog.Add("Edit", "x120 y63 w60", String(currentSettings.interval / 1000))
-
-    configDialog.Add("Text", "x10 y95", "Max executions (0 = infinite):")
-    countEdit := configDialog.Add("Edit", "x160 y93 w60", String(currentSettings.maxCount))
-
-    configDialog.Add("Text", "x10 y125 w320 h40", "Note: Use numpad hotkeys or right-click → Auto Mode to trigger execution")
-
-    btnSave := configDialog.Add("Button", "x10 y170 w100 h30", "Save Settings")
-    btnCancel := configDialog.Add("Button", "x120 y170 w100 h30", "Cancel")
-
-    btnSave.OnEvent("Click", SaveAutoSettings.Bind(configDialog, buttonKey, enableCheck, intervalEdit, countEdit, buttonName))
-    btnCancel.OnEvent("Click", (*) => configDialog.Destroy())
-
-    configDialog.Show("w340 h210")
-}
-
-SaveAutoSettings(configDialog, buttonKey, enableCheck, intervalEdit, countEdit, buttonName, *) {
-    global buttonAutoSettings
-
-    ; Read values before destroying dialog
-    isEnabled := enableCheck.Value
-    intervalValue := Integer(intervalEdit.Text) * 1000
-    maxCountValue := Integer(countEdit.Text)
-
-    ; Save settings
-    buttonAutoSettings[buttonKey] := {
-        enabled: isEnabled,
-        interval: intervalValue,
-        maxCount: maxCountValue
-    }
-
-    configDialog.Destroy()
-
-    ; Update button appearance and save
-    UpdateButtonAppearance(buttonName)
-    SaveConfig()
-
-    status := isEnabled ? "✅ Auto mode enabled for " : "❌ Auto mode disabled for "
-    UpdateStatus(status . buttonName)
 }
 
 ; ===== LAYER MANAGEMENT =====
