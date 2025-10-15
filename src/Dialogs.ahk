@@ -205,18 +205,11 @@ ShowSettings() {
     editBreakMode := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyBreakMode)
     settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Settings:")
     editSettings := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w90 h20", hotkeySettings)
-    hotkeyY += 25
-
-    ; Layer Navigation
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Layer Prev:")
-    editLayerPrev := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyLayerPrev)
-    settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Layer Next:")
-    editLayerNext := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w90 h20", hotkeyLayerNext)
     hotkeyY += 30
 
     ; Apply/Reset buttons for hotkeys
     btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w100 h25", "🎮 Apply Keys")
-    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui))
+    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, settingsGui))
 
     btnResetHotkeys := settingsGui.Add("Button", "x150 y" . hotkeyY . " w100 h25", "🔄 Reset Keys")
     btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
@@ -238,31 +231,6 @@ ShowConfigMenu() {
 }
 
 ; ===== SETTINGS APPLY FUNCTIONS =====
-ApplyLayerSettings(ddlCurrentLayer, ddlTotalLayers, settingsGui) {
-    global currentLayer, totalLayers
-
-    newCurrentLayer := Integer(ddlCurrentLayer.Text)
-    newTotalLayers := Integer(ddlTotalLayers.Text)
-
-    if (newCurrentLayer < 1 || newCurrentLayer > 5 || newTotalLayers < 1 || newTotalLayers > 5) {
-        MsgBox("Layer values must be between 1 and 5.", "Invalid Layers", "Icon!")
-        return
-    }
-
-    global currentLayer, totalLayers
-    currentLayer := newCurrentLayer
-    totalLayers := newTotalLayers
-
-    ; Update UI
-    SwitchLayer("")
-    RefreshAllButtonAppearances()
-
-    ; Save config
-    SaveConfig()
-
-    UpdateStatus("📚 Layer updated")
-}
-
 SaveSettings(settingsGui) {
     ; Apply current settings and save
     SaveConfig()
@@ -270,8 +238,8 @@ SaveSettings(settingsGui) {
     ; Settings saved silently (auto-save)
 }
 
-ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, editLayerPrev, editLayerNext, settingsGui) {
-    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
+ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, settingsGui) {
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings
 
     try {
         ; Get new values from edit controls
@@ -281,11 +249,9 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
         newStats := Trim(editStats.Text)
         newBreakMode := Trim(editBreakMode.Text)
         newSettings := Trim(editSettings.Text)
-        newLayerPrev := Trim(editLayerPrev.Text)
-        newLayerNext := Trim(editLayerNext.Text)
 
         ; Basic validation - ensure no empty values
-        if (newRecordToggle = "" || newSubmit = "" || newDirectClear = "" || newStats = "" || newBreakMode = "" || newSettings = "" || newLayerPrev = "" || newLayerNext = "") {
+        if (newRecordToggle = "" || newSubmit = "" || newDirectClear = "" || newStats = "" || newBreakMode = "" || newSettings = "") {
             MsgBox("All hotkey fields must be filled out.", "Invalid Hotkeys", "Icon!")
             return
         }
@@ -298,8 +264,6 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
             Hotkey(hotkeyStats, "Off")
             Hotkey(hotkeyBreakMode, "Off")
             Hotkey(hotkeySettings, "Off")
-            Hotkey(hotkeyLayerPrev, "Off")
-            Hotkey(hotkeyLayerNext, "Off")
         } catch {
         }
 
@@ -310,8 +274,6 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
         hotkeyStats := newStats
         hotkeyBreakMode := newBreakMode
         hotkeySettings := newSettings
-        hotkeyLayerPrev := newLayerPrev
-        hotkeyLayerNext := newLayerNext
 
         ; Re-setup hotkeys
         SetupHotkeys()
@@ -322,7 +284,7 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
         ; Save to config
         SaveConfig()
 
-        MsgBox("Hotkeys applied successfully!`n`nNew configuration:`nRecord: " . hotkeyRecordToggle . "`nSubmit: " . hotkeySubmit . "`nDirect Clear: " . hotkeyDirectClear . "`nStats: " . hotkeyStats . "`nBreak: " . hotkeyBreakMode . "`nSettings: " . hotkeySettings . "`nLayer Prev: " . hotkeyLayerPrev . "`nLayer Next: " . hotkeyLayerNext, "Hotkeys Updated", "Icon!")
+        MsgBox("Hotkeys applied successfully!`n`nNew configuration:`nRecord: " . hotkeyRecordToggle . "`nSubmit: " . hotkeySubmit . "`nDirect Clear: " . hotkeyDirectClear . "`nStats: " . hotkeyStats . "`nBreak: " . hotkeyBreakMode . "`nSettings: " . hotkeySettings, "Hotkeys Updated", "Icon!")
 
     } catch Error as e {
         MsgBox("Failed to apply hotkeys: " . e.Message, "Error", "Icon!")
@@ -330,9 +292,9 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, ed
 }
 
 ResetHotkeySettings(settingsGui) {
-    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode, hotkeySettings
 
-    result := MsgBox("Reset all hotkeys to defaults?`n`nRecord: F9`nSubmit: NumpadEnter`nDirect Clear: +Enter`nStats: F12`nBreak: ^b`nSettings: ^k`nLayer Prev: NumpadDiv`nLayer Next: NumpadSub", "Reset Hotkeys", "YesNo Icon?")
+    result := MsgBox("Reset all hotkeys to defaults?`n`nRecord: F9`nSubmit: NumpadEnter`nDirect Clear: +Enter`nStats: F12`nBreak: ^b`nSettings: ^k", "Reset Hotkeys", "YesNo Icon?")
 
     if (result = "Yes") {
         ; Clear existing hotkeys
@@ -343,8 +305,6 @@ ResetHotkeySettings(settingsGui) {
             Hotkey(hotkeyStats, "Off")
             Hotkey(hotkeyBreakMode, "Off")
             Hotkey(hotkeySettings, "Off")
-            Hotkey(hotkeyLayerPrev, "Off")
-            Hotkey(hotkeyLayerNext, "Off")
         } catch {
         }
 
@@ -355,8 +315,6 @@ ResetHotkeySettings(settingsGui) {
         hotkeyStats := "F12"
         hotkeyBreakMode := "^b"
         hotkeySettings := "^k"
-        hotkeyLayerPrev := "NumpadDiv"
-        hotkeyLayerNext := "NumpadSub"
 
         ; Re-setup hotkeys
         SetupHotkeys()
@@ -428,17 +386,16 @@ SaveAllSettings(settingsGui, editBoxDrawDelay, editMouseClickDelay, editMenuClic
 
 ; ===== CLEAR DIALOG =====
 ShowClearDialog() {
-    global currentLayer, macroEvents, buttonNames
+    global macroEvents, buttonNames
 
-    result := MsgBox("Clear all macros on Layer " . currentLayer . "?", "Clear Layer", "YesNo Icon!")
+    result := MsgBox("Clear all macros?", "Clear Macros", "YesNo Icon!")
 
     if (result = "Yes") {
-        ; Clear all macros on current layer
+        ; Clear all macros
         clearedCount := 0
         for buttonName in buttonNames {
-            layerMacroName := "L" . currentLayer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName)) {
-                macroEvents.Delete(layerMacroName)
+            if (macroEvents.Has(buttonName)) {
+                macroEvents.Delete(buttonName)
                 clearedCount++
             }
         }
@@ -447,7 +404,7 @@ ShowClearDialog() {
         RefreshAllButtonAppearances()
         SaveMacroState()
 
-        UpdateStatus("🗑️ Layer " . currentLayer . " cleared")
+        UpdateStatus("🗑️ Macros cleared (" . clearedCount . ")")
     }
 }
 
@@ -665,19 +622,16 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
 
 ; ===== SYSTEM MAINTENANCE =====
 ClearAllMacros(settingsGui, *) {
-    global macroEvents, buttonNames, currentLayer
+    global macroEvents, buttonNames
 
-    result := MsgBox("⚠️ Clear ALL macros from ALL layers?`n`nThis action cannot be undone!", "Clear All Macros", "YesNo Icon!")
+    result := MsgBox("⚠️ Clear ALL macros?`n`nThis action cannot be undone!", "Clear All Macros", "YesNo Icon!")
 
     if (result = "Yes") {
         clearedCount := 0
-        for layer in 1..5 {
-            for buttonName in buttonNames {
-                layerMacroName := "L" . layer . "_" . buttonName
-                if (macroEvents.Has(layerMacroName)) {
-                    macroEvents.Delete(layerMacroName)
-                    clearedCount++
-                }
+        for buttonName in buttonNames {
+            if (macroEvents.Has(buttonName)) {
+                macroEvents.Delete(buttonName)
+                clearedCount++
             }
         }
 
@@ -686,7 +640,7 @@ ClearAllMacros(settingsGui, *) {
         SaveMacroState()
 
         settingsGui.Destroy()
-        UpdateStatus("🗑️ All layers cleared")
+        UpdateStatus("🗑️ All macros cleared (" . clearedCount . ")")
     }
 }
 

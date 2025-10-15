@@ -31,7 +31,7 @@ ShowGui() {
 }
 
 CreateToolbar() {
-    global mainGui, layerIndicator, darkMode, currentLayer, layerNames, modeToggleBtn, windowWidth, layerBorderColors
+    global mainGui, darkMode, modeToggleBtn, windowWidth
 
     toolbarHeight := 35  ; Match original fixed height
     btnHeight := 30      ; Match original fixed height
@@ -79,27 +79,8 @@ CreateToolbar() {
     mainGui.modeToggleBtn := modeToggleBtn
     x += Round(95 * scaleFactor)
 
-    ; Center section - Layer navigation (match original positioning)
-    centerStart := Round(windowWidth * 0.35)
-    layerWidth := Round(windowWidth * 0.3)
-
-    btnPrevLayer := mainGui.Add("Button", "x" . centerStart . " y" . btnY . " w30 h" . btnHeight, "◀")
-    btnPrevLayer.OnEvent("Click", (*) => SwitchLayer("prev"))
-    btnPrevLayer.SetFont("s9 bold")
-    mainGui.btnPrevLayer := btnPrevLayer
-
-    layerIndicator := mainGui.Add("Text", "x" . (centerStart + 35) . " y" . (btnY + 2) . " w" . (layerWidth - 70) . " h" . (btnHeight - 4) . " Center +Border", "Layer " . currentLayer)
-    layerIndicator.Opt("c" . (darkMode ? "White" : "Black"))
-    layerIndicator.SetFont("s9 bold")
-    layerIndicator.Opt("+Background" . layerBorderColors[currentLayer])
-
-    btnNextLayer := mainGui.Add("Button", "x" . (centerStart + layerWidth - 30) . " y" . btnY . " w30 h" . btnHeight, "▶")
-    btnNextLayer.OnEvent("Click", (*) => SwitchLayer("next"))
-    btnNextLayer.SetFont("s9 bold")
-    mainGui.btnNextLayer := btnNextLayer
-
-    ; Right section - match original positioning
-    rightSection := Round(windowWidth * 0.7)
+    ; Right section - repositioned for single-layer layout
+    rightSection := Round(windowWidth * 0.5)
     rightWidth := windowWidth - rightSection - spacing
     btnWidth := Round((rightWidth - 20) / 3)
 
@@ -121,10 +102,10 @@ CreateToolbar() {
 }
 
 CreateGridOutline() {
-    global mainGui, gridOutline, currentLayer, layerBorderColors, scaleFactor, windowWidth, windowHeight
+    global mainGui, gridOutline, scaleFactor, windowWidth, windowHeight
 
-    ; Create grid outline without border stroke - clean design
-    gridOutline := mainGui.Add("Text", "x" . Round(8) . " y" . Round(43 * scaleFactor) . " w" . Round(384 * scaleFactor) . " h" . Round(288 * scaleFactor) . " +Background" . layerBorderColors[currentLayer])
+    ; Create grid outline with fixed color - single layer system
+    gridOutline := mainGui.Add("Text", "x" . Round(8) . " y" . Round(43 * scaleFactor) . " w" . Round(384 * scaleFactor) . " h" . Round(288 * scaleFactor) . " +Background0x404040")
     mainGui.gridOutline := gridOutline
 }
 
@@ -218,20 +199,7 @@ GuiResize(GuiObj, MinMax, Width, Height) {
         mainGui.tbBg.Move(, , Width)
     }
 
-    ; Reposition toolbar elements
-    if (mainGui.HasProp("btnPrevLayer") && mainGui.HasProp("layerIndicator") && mainGui.HasProp("btnNextLayer")) {
-        centerStart := Round(Width * 0.35)
-        layerWidth := Round(Width * 0.3)
-        toolbarHeight := 35
-        btnHeight := 30
-        btnY := (toolbarHeight - btnHeight) / 2
-
-        mainGui.btnPrevLayer.Move(centerStart, btnY)
-        layerIndicator.Move(centerStart + 35, btnY + 2, layerWidth - 70)
-        mainGui.btnNextLayer.Move(centerStart + layerWidth - 30, btnY)
-    }
-
-    ; Reposition right section
+    ; Reposition right section (no layer navigation in single-layer system)
     if (mainGui.HasProp("btnStats") && mainGui.HasProp("btnSettings") && mainGui.HasProp("btnEmergency")) {
         rightSection := Round(Width * 0.7)
         spacing := 8

@@ -16,9 +16,7 @@ HandleContextMenu(buttonName, *) {
 
 ; ===== CONTEXT MENU =====
 ShowContextMenuCleaned(buttonName) {
-    global currentLayer, macroEvents, buttonThumbnails, degradationTypes, severityLevels
-
-    layerMacroName := "L" . currentLayer . "_" . buttonName
+    global macroEvents, buttonThumbnails, degradationTypes, severityLevels
 
     ; Create context menu
     contextMenu := Menu()
@@ -37,13 +35,13 @@ ShowContextMenuCleaned(buttonName) {
     contextMenu.Add()  ; Separator
 
     ; Clear macro option (if macro exists)
-    if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
+    if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
         contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
         contextMenu.Add()  ; Separator
     }
 
     ; Visual customization section
-    if (buttonThumbnails.Has(layerMacroName)) {
+    if (buttonThumbnails.Has(buttonName)) {
         contextMenu.Add("🖼️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
     } else {
         contextMenu.Add("🖼️ Add Thumbnail", (*) => AddThumbnail(buttonName))
@@ -55,9 +53,7 @@ ShowContextMenuCleaned(buttonName) {
 
 ; ===== JSON ANNOTATION ASSIGNMENT =====
 AssignJsonAnnotation(buttonName, presetName, *) {
-    global currentLayer, macroEvents, jsonAnnotations, degradationTypes, annotationMode
-
-    layerMacroName := "L" . currentLayer . "_" . buttonName
+    global macroEvents, jsonAnnotations, degradationTypes, annotationMode
 
     ; Use current annotation mode
     currentMode := annotationMode
@@ -77,7 +73,7 @@ AssignJsonAnnotation(buttonName, presetName, *) {
         }
 
         if (categoryId > 0) {
-            macroEvents[layerMacroName] := [{
+            macroEvents[buttonName] := [{
                 type: "jsonAnnotation",
                 annotation: jsonAnnotations[fullPresetName],
                 mode: currentMode,
@@ -91,76 +87,6 @@ AssignJsonAnnotation(buttonName, presetName, *) {
     } else {
         UpdateStatus("❌ Annotation not found")
     }
-}
-
-; ===== LAYER MANAGEMENT =====
-SwitchLayer(direction) {
-    global currentLayer, totalLayers, layerIndicator, layerNames, buttonNames, gridOutline, layerBorderColors
-
-    if (direction = "next") {
-        currentLayer++
-        if (currentLayer > totalLayers)
-            currentLayer := 1
-    } else if (direction = "prev") {
-        currentLayer--
-        if (currentLayer < 1)
-            currentLayer := totalLayers
-    }
-
-    layerIndicator.Text := "Layer " . currentLayer
-    layerIndicator.Opt("+Background" . layerBorderColors[currentLayer])
-    UpdateGridOutlineColor()  ; Use the new function that considers WASD mode
-
-    gridOutline.Redraw()
-    layerIndicator.Redraw()
-
-    for name in buttonNames {
-        UpdateButtonAppearance(name)
-    }
-
-    UpdateStatus("Layer " . currentLayer)
-}
-
-SwitchToLayer(layerNum) {
-    global currentLayer, totalLayers, layerIndicator, layerBorderColors
-
-    ; Match original MacroLauncherX44.ahk layer switching logic
-    if (layerNum < 1 || layerNum > totalLayers) {
-        UpdateStatus("❌ Invalid layer: " . layerNum)
-        return
-    }
-
-    currentLayer := layerNum
-
-    ; Update layer indicator display
-    if (layerIndicator) {
-        layerIndicator.Text := "Layer " . currentLayer
-        layerIndicator.Opt("+Background" . layerBorderColors[currentLayer])
-        layerIndicator.Redraw()
-    }
-
-    ; Update grid outline
-    if (gridOutline) {
-        gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
-        gridOutline.Redraw()
-    }
-
-    RefreshAllButtonAppearances()
-    UpdateStatus("📚 Switched to Layer " . layerNum)
-}
-
-SwitchLayerMenu(buttonName) {
-    global currentLayer, totalLayers
-
-    ; Create layer menu
-    layerMenu := Menu()
-
-    Loop totalLayers {
-        layerNum := A_Index
-        layerMenu.Add("Layer " . layerNum, (*) => SwitchToLayer(layerNum))
-    }
-
-    layerMenu.Show()
 }
 
 ; ===== ANNOTATION MODE TOGGLE =====

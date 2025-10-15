@@ -211,7 +211,7 @@ ExecuteWASDMacro(buttonName, *) {
 ; ===== HOTKEY SETUP - FIXED F9 SYSTEM =====
 SetupHotkeys() {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyEmergency, hotkeyBreakMode
-    global hotkeyLayerPrev, hotkeyLayerNext, hotkeySettings, hotkeyStats
+    global hotkeySettings, hotkeyStats
 
     local hotkeyCombo
 
@@ -256,14 +256,6 @@ SetupHotkeys() {
         ; Test stats recording (removed - use external test files)
         ; Hotkey("^t", (*) => TestStatsRecording())
 
-        ; Layer navigation - use configured keys
-        if (hotkeyLayerPrev != "") {
-            Hotkey(hotkeyLayerPrev, (*) => SwitchLayer("prev"))
-        }
-        if (hotkeyLayerNext != "") {
-            Hotkey(hotkeyLayerNext, (*) => SwitchLayer("next"))
-        }
-
         ; Macro execution - EXPLICITLY EXCLUDE F9
         Hotkey("Numpad7", (*) => SafeExecuteMacroByKey("Num7"))
         Hotkey("Numpad8", (*) => SafeExecuteMacroByKey("Num8"))
@@ -291,12 +283,6 @@ SetupHotkeys() {
         Hotkey("+Numpad0", (*) => ShiftNumpadClearExecution("Num0"))
         Hotkey("+NumpadDot", (*) => ShiftNumpadClearExecution("NumDot"))
         Hotkey("+NumpadMult", (*) => ShiftNumpadClearExecution("NumMult"))
-
-        ; CapsLock combination hotkeys for layer switching
-        Hotkey("CapsLock & 1", (*) => SwitchToLayer(1))
-        Hotkey("CapsLock & 2", (*) => SwitchToLayer(2))
-        Hotkey("CapsLock & 3", (*) => SwitchToLayer(3))
-        Hotkey("CapsLock & 4", (*) => SwitchToLayer(4))
 
         ; WASD hotkeys for macro execution (only if profile will be active)
         ; NOTE: SetupWASDHotkeys() will be called later in LoadConfig if needed

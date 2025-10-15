@@ -14,7 +14,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, currentLayer, layerBorderColors, degradationTypes, degradationColors, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, degradationTypes, degradationColors, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
 
     ; Early return for invalid button names
     if (!buttonGrid.Has(buttonName)) {
@@ -23,10 +23,9 @@ UpdateButtonAppearance(buttonName) {
 
     button := buttonGrid[buttonName]
     picture := buttonPictures[buttonName]
-    layerMacroName := "L" . currentLayer . "_" . buttonName
 
-    ; Check macro existence
-    hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
+    ; Check macro existence (simple button name, no layer prefix)
+    hasMacro := macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0
 
     ; Early return for empty buttons
     if (!hasMacro) {
@@ -35,14 +34,14 @@ UpdateButtonAppearance(buttonName) {
         button.Visible := true
         button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
         button.SetFont("s8", "cGray")
-        button.Text := ""  ; Remove "L" + layer number display
+        button.Text := ""
         return
     }
 
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
 
     ; Check for thumbnail
-    thumbnailValue := buttonThumbnails.Has(layerMacroName) ? buttonThumbnails[layerMacroName] : ""
+    thumbnailValue := buttonThumbnails.Has(buttonName) ? buttonThumbnails[buttonName] : ""
     hasThumbnail := thumbnailValue != "" && (Type(thumbnailValue) = "Integer" || FileExist(thumbnailValue))
 
     ; Check for JSON annotation
@@ -51,9 +50,9 @@ UpdateButtonAppearance(buttonName) {
     jsonColor := "0xFFD700"
     jsonMode := ""
 
-    if (hasMacro && macroEvents[layerMacroName].Length = 1 && macroEvents[layerMacroName][1].type = "jsonAnnotation") {
+    if (hasMacro && macroEvents[buttonName].Length = 1 && macroEvents[buttonName][1].type = "jsonAnnotation") {
         isJsonAnnotation := true
-        jsonEvent := macroEvents[layerMacroName][1]
+        jsonEvent := macroEvents[buttonName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
         ; Use stored mode from event, fallback to current annotationMode
         jsonMode := (jsonEvent.HasOwnProp("mode") && jsonEvent.mode != "") ? jsonEvent.mode : annotationMode
@@ -65,21 +64,21 @@ UpdateButtonAppearance(buttonName) {
     }
 
     ; Check for visualizable macro
-    hasVisualizableMacro := hasMacro && !isJsonAnnotation && macroEvents[layerMacroName].Length > 1
+    hasVisualizableMacro := hasMacro && !isJsonAnnotation && macroEvents[buttonName].Length > 1
 
     if (hasVisualizableMacro) {
         ; Generate live macro visualization
         buttonSize := GetButtonThumbnailSize()
-        boxes := ExtractBoxEvents(macroEvents[layerMacroName])
+        boxes := ExtractBoxEvents(macroEvents[buttonName])
 
         if (boxes.Length > 0) {
 
             ; Use PNG visualization (matches working MacroLauncherX45.ahk)
-            pngFile := CreateMacroVisualization(macroEvents[layerMacroName], buttonSize)
+            pngFile := CreateMacroVisualization(macroEvents[buttonName], buttonSize)
 
             if (pngFile && FileExist(pngFile)) {
                 ; CRITICAL: Register PNG for cleanup to prevent accumulation
-                RegisterPNGFile(layerMacroName, pngFile)
+                RegisterPNGFile(buttonName, pngFile)
 
                 ; PNG succeeded - use picture control
                 button.Visible := false
@@ -89,7 +88,7 @@ UpdateButtonAppearance(buttonName) {
                 ; PNG failed - use text display
                 button.Visible := true
                 picture.Visible := false
-                button.Opt("+Background" . layerBorderColors[currentLayer])
+                button.Opt("+Background0x404040")  ; Fixed color for single-layer system
                 button.SetFont("s7 bold", "cWhite")
                 button.Text := "MACRO`n" . boxes.Length . " boxes"
             }
@@ -104,7 +103,7 @@ UpdateButtonAppearance(buttonName) {
 
         if (pngFile && FileExist(pngFile)) {
             ; CRITICAL: Register PNG for cleanup to prevent accumulation
-            RegisterPNGFile(layerMacroName . "_json", pngFile)
+            RegisterPNGFile(buttonName . "_json", pngFile)
 
             ; Visualization succeeded - use picture control
             button.Visible := false
@@ -124,7 +123,7 @@ UpdateButtonAppearance(buttonName) {
         picture.Visible := true
         picture.Text := ""
         try {
-            thumbnailValue := buttonThumbnails[layerMacroName]
+            thumbnailValue := buttonThumbnails[buttonName]
             if (Type(thumbnailValue) = "Integer" && thumbnailValue > 0 && thumbnailValue != 1594174808 && thumbnailValue != 520429950) {
                 ; HBITMAP handle - assign directly (validate it's not the invalid handle)
                 picture.Value := "HBITMAP:" . thumbnailValue
@@ -142,20 +141,15 @@ UpdateButtonAppearance(buttonName) {
         button.Opt("-Background")
 
         if (hasMacro) {
-            events := macroEvents[layerMacroName]
-            ; Regular macro - layer color
-            button.Opt("+Background" . layerBorderColors[currentLayer])
+            events := macroEvents[buttonName]
+            ; Regular macro - fixed color for single-layer system
+            button.Opt("+Background0x404040")
             button.SetFont("s7 bold", "cWhite")
             button.Text := "MACRO`n" . events.Length . " events"
         } else {
             button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
             button.SetFont("s8", "cGray")
-
-            if (wasdLabelsEnabled) {
-                button.Text := ""
-            } else {
-                button.Text := "L" . currentLayer
-            }
+            button.Text := ""  ; No layer indicator in single-layer system
         }
     }
 
@@ -173,14 +167,13 @@ UpdateAllButtonAppearances() {
 
 ; ===== THUMBNAIL OPERATIONS =====
 AddThumbnail(buttonName) {
-    global currentLayer, buttonThumbnails
+    global buttonThumbnails
 
     ; File selection dialog
     selectedFile := FileSelect("3", , "Select Thumbnail Image", "Images (*.png; *.jpg; *.jpeg; *.bmp; *.gif)")
 
     if (selectedFile != "") {
-        layerMacroName := "L" . currentLayer . "_" . buttonName
-        buttonThumbnails[layerMacroName] := selectedFile
+        buttonThumbnails[buttonName] := selectedFile
         UpdateButtonAppearance(buttonName)
         SaveMacroState()
         UpdateStatus("🖼️ Thumbnail added")
@@ -188,12 +181,10 @@ AddThumbnail(buttonName) {
 }
 
 RemoveThumbnail(buttonName) {
-    global currentLayer, buttonThumbnails
+    global buttonThumbnails
 
-    layerMacroName := "L" . currentLayer . "_" . buttonName
-
-    if (buttonThumbnails.Has(layerMacroName)) {
-        buttonThumbnails.Delete(layerMacroName)
+    if (buttonThumbnails.Has(buttonName)) {
+        buttonThumbnails.Delete(buttonName)
         UpdateButtonAppearance(buttonName)
         SaveMacroState()
         UpdateStatus("🗑️ Thumbnail removed")
@@ -222,16 +213,16 @@ FlashButton(buttonName, enable) {
 
 ; ===== GRID OUTLINE COLOR UPDATE =====
 UpdateGridOutlineColor() {
-    global gridOutline, wasdLabelsEnabled, currentLayer, layerBorderColors
+    global gridOutline, wasdLabelsEnabled
 
     if (gridOutline) {
-        ; Update grid outline color based on WASD mode and current layer
+        ; Update grid outline color based on WASD mode
         if (wasdLabelsEnabled) {
             ; WASD mode - use a different color scheme
             gridOutline.Opt("+Background0xFF6B35")  ; Orange-red for WASD mode
         } else {
-            ; Normal mode - use layer color
-            gridOutline.Opt("+Background" . layerBorderColors[currentLayer])
+            ; Normal mode - use fixed color for single-layer system
+            gridOutline.Opt("+Background0x404040")
         }
         gridOutline.Redraw()
     }

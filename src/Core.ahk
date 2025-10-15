@@ -1,7 +1,6 @@
 ; ===== CORE VARIABLES & CONFIGURATION =====
 global mainGui := 0
 global statusBar := 0
-global layerIndicator := 0
 global modeToggleBtn := 0
 global recording := false
 global playback := false
@@ -87,8 +86,6 @@ global hotkeySubmit := "+Enter"
 global hotkeyDirectClear := "NumpadEnter"
 global hotkeyEmergency := "RCtrl"
 global hotkeyBreakMode := "^b"
-global hotkeyLayerPrev := "NumpadDiv"
-global hotkeyLayerNext := "NumpadSub"
 global hotkeySettings := ""
 global hotkeyStats := ""
 
@@ -218,12 +215,6 @@ global scaleFactor := 1.0
 global minWindowWidth := 900
 global minWindowHeight := 600
 
-; ===== LAYER SYSTEM =====
-global currentLayer := 1
-global totalLayers := 5  ; Always ensure this is an integer
-global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]
-global layerBorderColors := ["0x404040", "0x505050", "0x606060", "0x707070", "0x808080"]
-
 ; ===== TIMING CONFIGURATION =====
 global boxDrawDelay := 75
 global mouseClickDelay := 85
@@ -269,16 +260,8 @@ global severityLevels := ["high", "medium", "low"]
 
 
 
-; ===== CORPORATE-SAFE VISUALIZATION SYSTEM =====
-global corpVisualizationMethods := [
-    {id: 2, name: "HBITMAP Direct", description: "Memory-only, no file I/O"},
-    {id: 5, name: "ASCII Text", description: "Always works, text-based"},
-    {id: 3, name: "Memory Stream", description: "IStream interface"},
-    {id: 4, name: "Alt Paths", description: "User directories"},
-    {id: 1, name: "Traditional File", description: "Temp file method"}
-]
-global corpVisualizationMethod := 1  ; Default to traditional method
-global corporateEnvironmentDetected := false
+; ===== VISUALIZATION SYSTEM =====
+; Using HBITMAP-only approach (memory-based, no file I/O)
 
 ; STANDARD MENU DIMENSIONS (both config and stats)
 global standardMenuWidth := 900
@@ -298,16 +281,12 @@ global wasdHotkeyMap := Map()
 
 ; ===== MACRO COUNTING =====
 CountLoadedMacros() {
-    global macroEvents, buttonNames, totalLayers
+    global macroEvents, buttonNames
 
     macroCount := 0
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                macroCount++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+            macroCount++
         }
     }
     return macroCount
@@ -382,12 +361,6 @@ Main() {
             userCanvasTop := wideCanvasTop
             userCanvasRight := wideCanvasRight
             userCanvasBottom := wideCanvasBottom
-        }
-
-        ; Ensure totalLayers is always a valid integer after loading config
-        global totalLayers := EnsureInteger(totalLayers, 5)
-        if (totalLayers < 1 || totalLayers > 10) {
-            global totalLayers := 5
         }
 
         ; Setup WASD hotkeys if profile is active (now enabled by default)
@@ -547,8 +520,7 @@ InitializeJsonAnnotations() {
         }
     }
 
-    ; Assign JSON profiles to layer 6 buttons for immediate access
-    AssignJsonProfilesToLayer6()
+    ; NOTE: JSON profile assignment removed with layer system - macros can be recorded manually
 }
 
 BuildJsonAnnotation(mode, categoryId, severity) {

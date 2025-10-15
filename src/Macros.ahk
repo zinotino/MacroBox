@@ -56,18 +56,15 @@ LoadMacroState() {
 }
 
 SaveMacroState() {
-    global macroEvents
+    global macroEvents, buttonNames
 
     savedMacros := 0
 
     try {
-        ; Count total macros
-        for layer in 1..5 {
-            for buttonName in buttonNames {
-                layerMacroName := "L" . layer . "_" . buttonName
-                if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                    savedMacros++
-                }
+        ; Count total macros (single-layer system)
+        for buttonName in buttonNames {
+            if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+                savedMacros++
             }
         }
 
@@ -84,19 +81,17 @@ SaveMacroState() {
 
 ; ===== CLEAR MACRO FUNCTION =====
 ClearMacro(buttonName) {
-    global currentLayer, macroEvents, buttonThumbnails, buttonCustomLabels
+    global macroEvents, buttonThumbnails, buttonCustomLabels
 
-    layerMacroName := "L" . currentLayer . "_" . buttonName
-
-    if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
+    if (MsgBox("Clear macro for " . buttonName . "?`n`nThis will remove:`n• Macro events`n• Visualizations`n• Thumbnails`n• Custom labels", "Confirm Clear", "YesNo Icon!") = "Yes") {
         ; Clear macro events
-        if (macroEvents.Has(layerMacroName)) {
-            macroEvents.Delete(layerMacroName)
+        if (macroEvents.Has(buttonName)) {
+            macroEvents.Delete(buttonName)
         }
 
         ; Clear thumbnails
-        if (buttonThumbnails.Has(layerMacroName)) {
-            buttonThumbnails.Delete(layerMacroName)
+        if (buttonThumbnails.Has(buttonName)) {
+            buttonThumbnails.Delete(buttonName)
         }
 
         ; Clear custom labels (restore to default)
@@ -105,7 +100,7 @@ ClearMacro(buttonName) {
         }
 
         ; Clear HBITMAP cache
-        ClearHBitmapCacheForMacro(layerMacroName)
+        ClearHBitmapCacheForMacro(buttonName)
 
         ; Update button appearance to show empty state
         UpdateButtonAppearance(buttonName)
