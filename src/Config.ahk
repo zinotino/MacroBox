@@ -10,19 +10,6 @@ ProcessLayerColor(key, value) {
     }
 }
 
-ProcessButtonAutoSetting(key, value) {
-    global buttonAutoSettings
-
-    parts := StrSplit(value, ",")
-    if (parts.Length >= 3) {
-        buttonAutoSettings[key] := {
-            enabled: (parts[1] = "1"),
-            interval: Integer(parts[2]),
-            maxCount: Integer(parts[3])
-        }
-    }
-}
-
 ProcessCustomLabel(key, value) {
     global buttonCustomLabels
 
