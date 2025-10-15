@@ -8,16 +8,15 @@ Handles all configuration persistence operations
 ; ===== CONFIGURATION SAVE FUNCTION =====
 SaveConfig() {
     global workDir, configFile
-    global currentLayer, totalLayers, annotationMode, darkMode
+    global annotationMode, darkMode, currentDegradation
     global windowWidth, windowHeight, scaleFactor, minWindowWidth, minWindowHeight
     global canvasWidth, canvasHeight, canvasType, canvasAspectRatio
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode
-    global hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext, hotkeyProfileActive, wasdLabelsEnabled
-    global corpVisualizationMethod, corporateEnvironmentDetected, visualizationSavePath
-    global layerNames, layerBorderColors
+    global hotkeySettings, hotkeyProfileActive, wasdLabelsEnabled
+    global visualizationSavePath
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
     global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     global smartBoxClickDelay, smartMenuClickDelay
@@ -36,16 +35,15 @@ SaveConfig() {
         settingsSaved := 0
 
         ; Core settings
-        content .= "currentLayer=" . currentLayer . "`n"
-        content .= "totalLayers=" . totalLayers . "`n"
         content .= "annotationMode=" . annotationMode . "`n"
         content .= "darkMode=" . (darkMode ? "true" : "false") . "`n"
+        content .= "currentDegradation=" . currentDegradation . "`n"
         content .= "windowWidth=" . windowWidth . "`n"
         content .= "windowHeight=" . windowHeight . "`n"
         content .= "scaleFactor=" . scaleFactor . "`n"
         content .= "minWindowWidth=" . minWindowWidth . "`n"
         content .= "minWindowHeight=" . minWindowHeight . "`n"
-        settingsSaved += 9
+        settingsSaved += 8
 
         ; Canvas settings (basic canvas properties only - detailed calibration in [Canvas] section)
         content .= "canvasWidth=" . canvasWidth . "`n"
@@ -80,9 +78,7 @@ SaveConfig() {
         content .= "hotkeyStats=" . hotkeyStats . "`n"
         content .= "hotkeyBreakMode=" . hotkeyBreakMode . "`n"
         content .= "hotkeySettings=" . hotkeySettings . "`n"
-        content .= "hotkeyLayerPrev=" . hotkeyLayerPrev . "`n"
-        content .= "hotkeyLayerNext=" . hotkeyLayerNext . "`n"
-        settingsSaved += 8
+        settingsSaved += 6
 
         ; WASD settings
         content .= "hotkeyProfileActive=" . (hotkeyProfileActive ? "true" : "false") . "`n"
@@ -90,18 +86,8 @@ SaveConfig() {
         settingsSaved += 2
 
         ; Visualization settings
-        content .= "corpVisualizationMethod=" . corpVisualizationMethod . "`n"
-        content .= "corporateEnvironmentDetected=" . (corporateEnvironmentDetected ? "true" : "false") . "`n"
         content .= "visualizationSavePath=" . visualizationSavePath . "`n"
-        settingsSaved += 3
-
-        ; Layer settings
-        Loop Integer(totalLayers) {
-            i := A_Index
-            content .= "layerName" . i . "=" . layerNames[i] . "`n"
-            content .= "layerBorderColor" . i . "=" . layerBorderColors[i] . "`n"
-        }
-        settingsSaved += totalLayers * 2
+        settingsSaved += 1
 
         ; Timing settings
         content .= "boxDrawDelay=" . boxDrawDelay . "`n"
@@ -119,42 +105,50 @@ SaveConfig() {
 
         ; Macros section
         content .= "`n[Macros]`n"
-        Loop Integer(totalLayers) {
-            layer := A_Index
-            for buttonName in buttonNames {
-                layerMacroName := "L" . layer . "_" . buttonName
-                if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                    events := macroEvents[layerMacroName]
-                    eventString := ""
-                    for i, event in events {
-                        if (i > 1) {
-                            eventString .= "|"
-                        }
-                        if (event.type = "boundingBox") {
-                            eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
-                            ; Include degradationType for stats tracking
-                            if (event.HasOwnProp("degradationType")) {
-                                eventString .= "," . event.degradationType
-                            } else {
-                                eventString .= ",1"  ; Default to smudge (1) if not set
-                            }
-                        } else if (event.type = "jsonAnnotation") {
-                            eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
-                        } else if (event.type = "keyDown") {
-                            eventString .= "keyDown," . event.key
-                        } else if (event.type = "keyUp") {
-                            eventString .= "keyUp," . event.key
-                        }
+        for buttonName in buttonNames {
+            if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+                events := macroEvents[buttonName]
+                eventString := ""
+                for i, event in events {
+                    if (i > 1) {
+                        eventString .= "|"
                     }
-                    content .= layerMacroName . "=" . eventString . "`n"
-
-                    ; Save recordedMode property if it exists (critical for letterboxing persistence)
-                    if (events.HasOwnProp("recordedMode")) {
-                        content .= layerMacroName . "_RecordedMode=" . events.recordedMode . "`n"
+                    if (event.type = "boundingBox") {
+                        eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
+                        ; PHASE 2B: Include ALL degradation properties for complete persistence
+                        if (event.HasOwnProp("degradationType")) {
+                            eventString .= "," . event.degradationType
+                        } else {
+                            eventString .= ",1"  ; Default to smudge (1) if not set
+                        }
+                        ; PHASE 2B: Save degradationName for intelligent system
+                        if (event.HasOwnProp("degradationName")) {
+                            eventString .= "," . event.degradationName
+                        } else {
+                            eventString .= ",smudge"  ; Default name
+                        }
+                        ; PHASE 2B: Save assignedBy for tracking
+                        if (event.HasOwnProp("assignedBy")) {
+                            eventString .= "," . event.assignedBy
+                        } else {
+                            eventString .= ",auto_default"  ; Default assignment
+                        }
+                    } else if (event.type = "jsonAnnotation") {
+                        eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
+                    } else if (event.type = "keyDown") {
+                        eventString .= "keyDown," . event.key
+                    } else if (event.type = "keyUp") {
+                        eventString .= "keyUp," . event.key
                     }
-
-                    macrosSaved++
                 }
+                content .= buttonName . "=" . eventString . "`n"
+
+                ; Save recordedMode property if it exists (critical for letterboxing persistence)
+                if (events.HasOwnProp("recordedMode")) {
+                    content .= buttonName . "_RecordedMode=" . events.recordedMode . "`n"
+                }
+
+                macrosSaved++
             }
         }
 
@@ -312,10 +306,9 @@ LoadConfig() {
                     case "Settings":
                         ; Process core settings
                         switch key {
-                            case "currentLayer": currentLayer := EnsureInteger(value, 1)
-                            case "totalLayers": totalLayers := EnsureInteger(value, 5)
                             case "annotationMode": annotationMode := value
                             case "darkMode": darkMode := (value = "true")
+                            case "currentDegradation": currentDegradation := EnsureInteger(value, 1)
                             case "windowWidth": windowWidth := EnsureInteger(value, 1200)
                             case "windowHeight": windowHeight := EnsureInteger(value, 800)
                             case "scaleFactor": scaleFactor := Number(value)
@@ -331,12 +324,8 @@ LoadConfig() {
                             case "hotkeyStats": hotkeyStats := value
                             case "hotkeyBreakMode": hotkeyBreakMode := value
                             case "hotkeySettings": hotkeySettings := value
-                            case "hotkeyLayerPrev": hotkeyLayerPrev := value
-                            case "hotkeyLayerNext": hotkeyLayerNext := value
                             case "hotkeyProfileActive": hotkeyProfileActive := (value = "true")
                             case "wasdLabelsEnabled": wasdLabelsEnabled := (value = "true")
-                            case "corpVisualizationMethod": corpVisualizationMethod := EnsureInteger(value, 1)
-                            case "corporateEnvironmentDetected": corporateEnvironmentDetected := (value = "true")
                             case "visualizationSavePath": visualizationSavePath := value
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)
@@ -349,16 +338,6 @@ LoadConfig() {
                             case "mouseHoverDelay": mouseHoverDelay := EnsureInteger(value, 35)
                             case "smartBoxClickDelay": smartBoxClickDelay := EnsureInteger(value, 35)
                             case "smartMenuClickDelay": smartMenuClickDelay := EnsureInteger(value, 120)
-                            case "layerName1": layerNames[1] := value
-                            case "layerName2": layerNames[2] := value
-                            case "layerName3": layerNames[3] := value
-                            case "layerName4": layerNames[4] := value
-                            case "layerName5": layerNames[5] := value
-                            case "layerBorderColor1": layerBorderColors[1] := value
-                            case "layerBorderColor2": layerBorderColors[2] := value
-                            case "layerBorderColor3": layerBorderColors[3] := value
-                            case "layerBorderColor4": layerBorderColors[4] := value
-                            case "layerBorderColor5": layerBorderColors[5] := value
                         }
 
                     case "Macros":
@@ -431,6 +410,7 @@ LoadConfig() {
 ApplyLoadedSettingsToGUI() {
     ; Apply loaded settings to GUI controls after initialization
     global wasdLabelsEnabled, annotationMode, modeToggleBtn
+    global gdiPlusInitialized, hbitmapCache
 
     try {
         ; CRITICAL: Update mode toggle button text to match loaded state
@@ -447,7 +427,24 @@ ApplyLoadedSettingsToGUI() {
             UpdateButtonLabelsWithWASD()
         }
 
-        ; Refresh all button appearances
+        ; PHASE 2C: Ensure GDI+ is initialized before visualization regeneration
+        if (!gdiPlusInitialized) {
+            try {
+                InitializeVisualizationSystem()
+            } catch Error as vizError {
+                UpdateStatus("⚠️ Visualization initialization failed: " . vizError.Message)
+            }
+        }
+
+        ; PHASE 2C: Clear HBITMAP cache to force regeneration on load
+        try {
+            CleanupHBITMAPCache()
+        } catch {
+            ; Silently continue if cleanup fails
+        }
+        hbitmapCache := Map()  ; Reset cache
+
+        ; PHASE 2C: Refresh all button appearances with fresh visualizations
         RefreshAllButtonAppearances()
 
         ; Settings applied silently

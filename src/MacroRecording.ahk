@@ -37,6 +37,7 @@ MouseProc(nCode, wParam, lParam) {
 
     static WM_LBUTTONDOWN := 0x0201, WM_LBUTTONUP := 0x0202, WM_MOUSEMOVE := 0x0200
     static lastX := 0, lastY := 0, lastMoveTime := 0, isDrawingBox := false, boxStartX := 0, boxStartY := 0
+    static lastClickTime := 0  ; PHASE 2D: Add debouncing
 
     local x := NumGet(lParam, 0, "Int")
     local y := NumGet(lParam, 4, "Int")
@@ -48,10 +49,25 @@ MouseProc(nCode, wParam, lParam) {
     local events := macroEvents[currentMacro]
 
     if (wParam = WM_LBUTTONDOWN) {
+        ; PHASE 2D: Debounce clicks (min 50ms between downs)
+        if (timestamp - lastClickTime < 50) {
+            return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
+        }
+        lastClickTime := timestamp
+
         isDrawingBox := true
         boxStartX := x
         boxStartY := y
         events.Push({type: "mouseDown", button: "left", x: x, y: y, time: timestamp})
+
+        ; PHASE 2D: Log first click for debugging (optional, can be removed later)
+        if (events.Length = 1) {
+            try {
+                FileAppend("First click registered: " . x . "," . y . " at " . timestamp . "`n", A_ScriptDir . "\click_debug.log")
+            } catch {
+                ; Silently continue if logging fails
+            }
+        }
 
     } else if (wParam = WM_LBUTTONUP) {
         if (isDrawingBox) {
@@ -186,38 +202,37 @@ CancelAssignmentProcess() {
 }
 
 AssignToButton(buttonName) {
-    global currentMacro, macroEvents, currentLayer, awaitingAssignment
+    global currentMacro, macroEvents, awaitingAssignment
 
     awaitingAssignment := false
-    layerMacroName := "L" . currentLayer . "_" . buttonName
 
     if (!macroEvents.Has(currentMacro) || macroEvents[currentMacro].Length = 0) {
         UpdateStatus("⚠️ No macro to assign")
         return
     }
 
-    if (macroEvents.Has(layerMacroName)) {
-        macroEvents.Delete(layerMacroName)
+    if (macroEvents.Has(buttonName)) {
+        macroEvents.Delete(buttonName)
         ; PERFORMANCE: Clear related HBITMAP cache entries
-        ClearHBitmapCacheForMacro(layerMacroName)
+        ClearHBitmapCacheForMacro(buttonName)
     }
 
-    macroEvents[layerMacroName] := []
+    macroEvents[buttonName] := []
     for event in macroEvents[currentMacro] {
-        macroEvents[layerMacroName].Push(event)
+        macroEvents[buttonName].Push(event)
     }
 
     ; Store the annotation mode with the macro for visualization
     global annotationMode
-    macroEvents[layerMacroName].recordedMode := annotationMode
+    macroEvents[buttonName].recordedMode := annotationMode
 
     macroEvents.Delete(currentMacro)
 
-    events := macroEvents[layerMacroName]
+    events := macroEvents[buttonName]
     UpdateButtonAppearance(buttonName)
     SaveMacroState()
 
-    UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
+    UpdateStatus("✅ Assigned to " . buttonName . " (" . events.Length . " events)")
 }
 
 ; ===== ANALYSIS FUNCTIONS =====
@@ -375,12 +390,21 @@ F9_RecordingOnly(*) {
 }
 
 ForceStartRecording() {
-    global recording, currentMacro, macroEvents, currentLayer, mainGui, pendingBoxForTagging
+    global recording, currentMacro, macroEvents, mainGui, pendingBoxForTagging
 
     ; Force clean state
     recording := false
     SafeUninstallMouseHook()
     SafeUninstallKeyboardHook()
+
+    ; PHASE 2D: Initialize mouse state
+    CoordMode("Mouse", "Screen")  ; Ensure screen coordinates
+
+    ; PHASE 2D: Get current mouse position to initialize tracking
+    MouseGetPos(&initX, &initY)
+
+    ; PHASE 2D: Small delay to ensure hooks are ready (50ms)
+    Sleep(50)
 
     ; Start fresh
     recording := true
@@ -388,9 +412,16 @@ ForceStartRecording() {
     macroEvents[currentMacro] := []
     pendingBoxForTagging := ""
 
-    CoordMode("Mouse", "Screen")
     InstallMouseHook()
     InstallKeyboardHook()
+
+    ; PHASE 2D: Verify hooks installed successfully
+    global mouseHook, keyboardHook
+    if (!mouseHook || !keyboardHook) {
+        recording := false
+        UpdateStatus("❌ Failed to install hooks")
+        return
+    }
 
     ; Update UI
     if (mainGui && mainGui.HasProp("btnRecord")) {
@@ -398,7 +429,7 @@ ForceStartRecording() {
         mainGui.btnRecord.Opt("+Background0xDC143C")
     }
 
-    UpdateStatus("🎥 RECORDING ACTIVE on Layer " . currentLayer . " - Draw boxes, F9 to stop")
+    UpdateStatus("🎥 RECORDING ACTIVE - Draw boxes, F9 to stop")
 }
 
 ForceStopRecording() {
@@ -485,20 +516,16 @@ RemoveYellowOutline(buttonName) {
 
 ; ===== RECORDING DEBUG FUNCTION =====
 ShowRecordingDebug() {
-    global recording, currentMacro, macroEvents, currentLayer, buttonNames
+    global recording, currentMacro, macroEvents, buttonNames
 
     debugInfo := "=== F9 DEBUG INFO ===`n"
     debugInfo .= "Recording: " . (recording ? "ACTIVE" : "INACTIVE") . "`n"
-    debugInfo .= "Current Macro: " . currentMacro . "`n"
-    debugInfo .= "Layer: " . currentLayer . "`n`n"
+    debugInfo .= "Current Macro: " . currentMacro . "`n`n"
 
     totalMacros := 0
-    for layer in 1..8 {
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                totalMacros++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+            totalMacros++
         }
     }
 

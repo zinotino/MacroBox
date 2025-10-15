@@ -1,15 +1,4 @@
 ; ===== PROCESSING FUNCTIONS =====
-ProcessLayerColor(key, value) {
-    global layerBorderColors
-
-    if (RegExMatch(key, "Layer(\d+)", &match)) {
-        layerIndex := Integer(match[1])
-        if (layerIndex >= 1 && layerIndex <= layerBorderColors.Length) {
-            layerBorderColors[layerIndex] := value
-        }
-    }
-}
-
 ProcessCustomLabel(key, value) {
     global buttonCustomLabels
 
@@ -50,7 +39,7 @@ ProcessMacroLine(key, value) {
                     event.top := EnsureInteger(parts[3], 0)
                     event.right := EnsureInteger(parts[4], 0)
                     event.bottom := EnsureInteger(parts[5], 0)
-                    ; Load degradationType for stats tracking (added after isTagged field)
+                    ; PHASE 2B: Load ALL degradation properties for complete persistence
                     if (parts.Length >= 6) {
                         ; Check if part 6 is degradationType (number 1-9) or isTagged (0/1)
                         part6Value := EnsureInteger(parts[6], 1)
@@ -62,6 +51,19 @@ ProcessMacroLine(key, value) {
                         }
                     } else {
                         event.degradationType := 1  ; Default to smudge if not saved
+                    }
+                    ; PHASE 2B: Load degradationName (part 7)
+                    if (parts.Length >= 7) {
+                        event.degradationName := parts[7]
+                    } else {
+                        ; Default based on degradationType
+                        event.degradationName := degradationTypes.Has(event.degradationType) ? degradationTypes[event.degradationType] : "smudge"
+                    }
+                    ; PHASE 2B: Load assignedBy (part 8)
+                    if (parts.Length >= 8) {
+                        event.assignedBy := parts[8]
+                    } else {
+                        event.assignedBy := "auto_default"
                     }
                     validEvent := true
                 }
@@ -114,10 +116,9 @@ ProcessMacroLine(key, value) {
 ; ===== GLOBAL CONFIGURATION VARIABLES =====
 
 ; Core application state
-global currentLayer := 1
-global totalLayers := 5
 global annotationMode := "Wide"
 global darkMode := true
+global currentDegradation := 1  ; Intelligent system state (no per-layer)
 
 ; Window settings
 global windowWidth := 1200
@@ -158,21 +159,13 @@ global hotkeyDirectClear := "NumpadEnter"
 global hotkeyStats := ""
 global hotkeyBreakMode := "^b"
 global hotkeySettings := ""
-global hotkeyLayerPrev := "NumpadDiv"
-global hotkeyLayerNext := "NumpadSub"
 
 ; WASD settings
 global hotkeyProfileActive := true  ; FIXED: Was false, should default to true
 global wasdLabelsEnabled := false
 
 ; Visualization settings
-global corpVisualizationMethod := 1
-global corporateEnvironmentDetected := false
 global visualizationSavePath := "auto"  ; Options: "auto", "data", "documents", "profile", "temp"
-
-; Layer settings
-global layerNames := ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]
-global layerBorderColors := ["0x404040", "0x505050", "0x606060", "0x707070", "0x808080"]
 
 ; Timing settings
 global boxDrawDelay := 75
@@ -198,8 +191,8 @@ global buttonThumbnails := Map()  ; Custom thumbnail file paths (kept per user r
 
 ; ===== CONFIG DIAGNOSTICS =====
 DiagnoseConfigSystem() {
-    global configFile, workDir, macroEvents, buttonNames, totalLayers
-    
+    global configFile, workDir, macroEvents, buttonNames
+
     diagnostic := "🔍 CONFIG SYSTEM DIAGNOSTICS`n"
     diagnostic .= "═══════════════════════════════════════`n`n"
     
@@ -230,22 +223,17 @@ DiagnoseConfigSystem() {
     }
     
     diagnostic .= "`n📊 IN-MEMORY STATE:`n"
-    
+
     ; Count macros
     macroCount := 0
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                macroCount++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+            macroCount++
         }
     }
-    
+
     diagnostic .= "Macros in Memory: " . macroCount . "`n"
-    diagnostic .= "Current Layer: " . currentLayer . "`n"
-    diagnostic .= "Total Layers: " . totalLayers . "`n"
+    diagnostic .= "Current Degradation: " . currentDegradation . "`n"
     
     ; Lock status
     lockFile := workDir . "\config.lock"
@@ -303,17 +291,13 @@ DiagnoseConfigSystem() {
 
 ; ===== FORCED SAVE/LOAD TEST =====
 TestConfigSystem() {
-    global macroEvents, buttonNames, currentLayer, totalLayers
-    
+    global macroEvents, buttonNames
+
     ; Step 1: Count current macros
     originalCount := 0
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                originalCount++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+            originalCount++
         }
     }
 
@@ -326,27 +310,19 @@ TestConfigSystem() {
     }
     
     Sleep(500)
-    
+
     ; Step 3: Backup in-memory data
     backupEvents := Map()
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName)) {
-                backupEvents[layerMacroName] := macroEvents[layerMacroName].Clone()
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName)) {
+            backupEvents[buttonName] := macroEvents[buttonName].Clone()
         }
     }
-    
+
     ; Step 4: Clear in-memory data
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName)) {
-                macroEvents.Delete(layerMacroName)
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName)) {
+            macroEvents.Delete(buttonName)
         }
     }
 
@@ -363,16 +339,12 @@ TestConfigSystem() {
     }
     
     Sleep(500)
-    
+
     ; Step 6: Count loaded macros
     loadedCount := 0
-    Loop Integer(totalLayers) {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                loadedCount++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
+            loadedCount++
         }
     }
     

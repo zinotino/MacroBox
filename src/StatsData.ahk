@@ -2271,7 +2271,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-    global breakMode, recording, currentLayer, annotationMode, totalActiveTime, lastActiveTime, sessionStartTime
+    global breakMode, recording, annotationMode, totalActiveTime, lastActiveTime, sessionStartTime
 
 
 
@@ -2355,7 +2355,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 
 
 
-    executionData["layer"] := currentLayer
+    executionData["layer"] := 1  ; Single-layer system
 
 
 
@@ -2778,11 +2778,16 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 ; ===== ASYNC STATS QUEUE SYSTEM =====
 global statsWriteQueue := []
 global statsWriteTimer := 0
-global statsQueueMaxSize := 10
+global statsQueueMaxSize := 50  ; PHASE 2A: Increased from 10 to 50 to handle rapid executions
 global statsFlushInProgress := false
 
 AppendToCSV(executionData) {
     global permanentStatsFile, statsWriteQueue, statsWriteTimer, statsQueueMaxSize
+
+    ; PHASE 2A: Drop oldest if queue full (overflow protection)
+    if (statsWriteQueue.Length >= statsQueueMaxSize) {
+        statsWriteQueue.RemoveAt(1)  ; Drop oldest to prevent memory issues
+    }
 
     ; Add to queue instead of immediate write (prevents freezing)
     statsWriteQueue.Push(executionData)
@@ -2810,6 +2815,7 @@ FlushStatsQueue() {
     }
 
     statsFlushInProgress := true
+    flushStartTime := A_TickCount  ; PHASE 2A: Track flush time
 
     try {
         ; Process all queued stats in one batch
@@ -2820,8 +2826,8 @@ FlushStatsQueue() {
         SetTimer(FlushStatsQueue, 0)
         statsWriteTimer := false
 
-        ; Batch write to both files
-        BatchWriteToCSV(queueCopy)
+        ; PHASE 2A: Batch write with timeout protection (max 100ms)
+        BatchWriteToCSVWithTimeout(queueCopy, flushStartTime)
 
     } catch Error as e {
         ; Silent fail - don't break execution
@@ -2830,7 +2836,48 @@ FlushStatsQueue() {
     }
 }
 
+BatchWriteToCSVWithTimeout(queuedData, startTime) {
+    ; PHASE 2A: New timeout-protected batch write function
+    global masterStatsCSV, permanentStatsFile
+
+    if (queuedData.Length = 0) {
+        return
+    }
+
+    try {
+        ; Ensure files exist
+        Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
+        Stats_EnsureStatsFile(permanentStatsFile, "UTF-8")
+
+        ; Build batch rows with timeout check
+        masterRows := ""
+        permanentRows := ""
+
+        for executionData in queuedData {
+            ; PHASE 2A: Check if we've exceeded 100ms timeout
+            if (A_TickCount - startTime > 100) {
+                ; Drop remaining items and exit early to prevent freeze
+                break
+            }
+
+            row := Stats_BuildCsvRow(executionData)
+            masterRows .= row
+            permanentRows .= row
+        }
+
+        ; Single write operation per file (much faster than individual writes)
+        FileAppend(masterRows, masterStatsCSV)
+        FileAppend(permanentRows, permanentStatsFile, "UTF-8")
+
+        return true
+
+    } catch {
+        return false
+    }
+}
+
 BatchWriteToCSV(queuedData) {
+    ; Legacy function - kept for backward compatibility
     global masterStatsCSV, permanentStatsFile
 
     if (queuedData.Length = 0) {

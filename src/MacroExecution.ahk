@@ -7,7 +7,7 @@ Handles all macro execution, automation, and playback operations
 
 ; ===== SAFE MACRO EXECUTION - BLOCKS F9 =====
 SafeExecuteMacroByKey(buttonName) {
-    global currentLayer, breakMode, playback, lastExecutionTime
+    global breakMode, playback, lastExecutionTime
 
     ; CRITICAL: Block ALL execution during break mode
     if (breakMode) {
@@ -36,7 +36,7 @@ SafeExecuteMacroByKey(buttonName) {
 }
 
 ExecuteMacro(buttonName) {
-    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, degradationTypes
+    global awaitingAssignment, macroEvents, playback, focusDelay, degradationTypes
 
     ; PERFORMANCE MONITORING - Start timing execution
     executionStartTime := A_TickCount
@@ -52,8 +52,7 @@ ExecuteMacro(buttonName) {
         return
     }
 
-    layerMacroName := "L" . currentLayer . "_" . buttonName
-    if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length = 0) {
+    if (!macroEvents.Has(buttonName) || macroEvents[buttonName].Length = 0) {
         return
     }
 
@@ -68,7 +67,7 @@ ExecuteMacro(buttonName) {
         FlashButton(buttonName, true)
         FocusBrowser()
 
-        events := macroEvents[layerMacroName]
+        events := macroEvents[buttonName]
         startTime := A_TickCount
 
         if (events.Length = 1 && events[1].type = "jsonAnnotation") {
@@ -261,6 +260,10 @@ PlayEventsOptimized(recordedEvents) {
         SetKeyDelay(5)
         CoordMode("Mouse", "Screen")
 
+        ; PHASE 2D: Initialize mouse state for reliable first click
+        MouseGetPos(&initX, &initY)
+        Sleep(50)  ; 50ms delay to ensure mouse system is ready
+
         ; ===== OPTIMIZE STARTUP: Skip ALL events before tool selection =====
         ; Find the first "1" keypress (tool selection)
         toolSelectionIndex := 0
@@ -271,6 +274,9 @@ PlayEventsOptimized(recordedEvents) {
                 break
             }
         }
+
+        ; PHASE 2D: Track first mouse operation for extra reliability
+        firstMouseOperation := true
 
         for eventIndex, event in recordedEvents {
             ; IMPROVED: Use local state snapshot instead of global flag
@@ -290,6 +296,12 @@ PlayEventsOptimized(recordedEvents) {
                 }
 
                 if (event.type = "boundingBox") {
+                    ; PHASE 2D: Extra delay for first mouse operation (reliability)
+                    if (firstMouseOperation) {
+                        Sleep(20)
+                        firstMouseOperation := false
+                    }
+
                     MouseMove(event.left, event.top, 3)
                     ; Always use at least minimal hover delay for reliability
                     Sleep(Max(10, mouseHoverDelay))
@@ -304,6 +316,12 @@ PlayEventsOptimized(recordedEvents) {
                     Sleep(Max(30, betweenBoxDelay))
                 }
                 else if (event.type = "mouseDown") {
+                    ; PHASE 2D: Extra delay for first mouse operation (reliability)
+                    if (firstMouseOperation) {
+                        Sleep(20)
+                        firstMouseOperation := false
+                    }
+
                     MouseMove(event.x, event.y, 3)
                     ; Always use at least minimal hover delay for reliability
                     Sleep(Max(10, mouseHoverDelay))
