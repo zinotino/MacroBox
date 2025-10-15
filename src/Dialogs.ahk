@@ -372,35 +372,6 @@ ResetHotkeySettings(settingsGui) {
     }
 }
 
-ApplyAutomationSettings(chkAutoExecutionMode, editAutoInterval, editAutoMaxCount, settingsGui) {
-    global autoExecutionMode, autoExecutionInterval, autoExecutionMaxCount
-
-    ; Validate inputs
-    interval := Integer(editAutoInterval.Text)
-    maxCount := Integer(editAutoMaxCount.Text)
-
-    if (interval < 1 || interval > 300) {
-        MsgBox("Interval must be between 1 and 300 seconds.", "Invalid Interval", "Icon!")
-        return
-    }
-
-    if (maxCount < 0) {
-        MsgBox("Max executions cannot be negative.", "Invalid Max Count", "Icon!")
-        return
-    }
-
-    ; Apply settings
-    autoExecutionMode := chkAutoExecutionMode.Value
-    autoExecutionInterval := interval * 1000  ; Convert to milliseconds
-    autoExecutionMaxCount := maxCount
-
-    ; Save configuration
-    SaveConfig()
-
-    status := autoExecutionMode ? "✅ Auto execution enabled" : "❌ Auto execution disabled"
-    UpdateStatus(status . " (interval: " . interval . "s, max: " . (maxCount = 0 ? "infinite" : maxCount) . ")")
-}
-
 ApplyWASDSettings(chkWASDProfile, chkWASDLabels, settingsGui) {
     global hotkeyProfileActive, wasdLabelsEnabled
 
