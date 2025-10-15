@@ -364,11 +364,6 @@ LoadConfig() {
                             case "layerBorderColor3": layerBorderColors[3] := value
                             case "layerBorderColor4": layerBorderColors[4] := value
                             case "layerBorderColor5": layerBorderColors[5] := value
-                            case "layerBorderColor6": layerBorderColors[6] := value
-                            case "layerBorderColor7": layerBorderColors[7] := value
-                            case "layerBorderColor8": layerBorderColors[8] := value
-                            case "layerBorderColor9": layerBorderColors[9] := value
-                            case "layerBorderColor10": layerBorderColors[10] := value
                         }
 
                     case "Macros":
