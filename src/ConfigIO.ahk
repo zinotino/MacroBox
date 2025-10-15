@@ -16,7 +16,7 @@ SaveConfig() {
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode
     global hotkeySettings, hotkeyLayerPrev, hotkeyLayerNext, hotkeyProfileActive, wasdLabelsEnabled
-    global corpVisualizationMethod, corporateEnvironmentDetected
+    global corpVisualizationMethod, corporateEnvironmentDetected, visualizationSavePath
     global layerNames, layerBorderColors
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
     global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
@@ -259,7 +259,7 @@ LoadConfig() {
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global workDir
+    global workDir, visualizationSavePath
 
     try {
         ; Ensure config directory exists (MacroMaster\data folder in Documents)
