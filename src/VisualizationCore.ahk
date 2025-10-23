@@ -5,120 +5,7 @@ VISUALIZATION CORE MODULE - Core bitmap and GDI+ operations
 Handles GDI+ initialization, bitmap creation, and PNG saving
 */
 
-; ===== MAIN VISUALIZATION ENTRY POINT =====
-CreateMacroVisualization(macroEvents, buttonDims) {
-    global gdiPlusInitialized, degradationColors, canvasType
 
-    if (!gdiPlusInitialized || !macroEvents || macroEvents.Length = 0) {
-        return ""
-    }
-
-    ; Extract box drawing events
-    boxes := ExtractBoxEvents(macroEvents)
-    if (boxes.Length = 0) {
-        return ""
-    }
-
-    ; Handle both old (single size) and new (width/height object) format
-    if (IsObject(buttonDims)) {
-        buttonWidth := buttonDims.width
-        buttonHeight := buttonDims.height
-    } else {
-        buttonWidth := buttonDims
-        buttonHeight := buttonDims
-    }
-
-    ; Create visualization bitmap with proper dimensions
-    try {
-        bitmap := 0
-        DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
-
-        graphics := 0
-        DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
-
-        ; Black background for letterboxing contrast
-        DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
-
-        ; Skip canvas type indicator - not needed for button view
-
-        ; Draw macro boxes optimized for button dimensions (pass entire macroEvents for mode detection)
-        DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
-
-        ; IMPROVED: Try corporate-safe fallback paths first (not just A_Temp)
-        ; This ensures visualization works even if temp folder is restricted
-        tempFile := SaveVisualizationPNG(bitmap, A_TickCount)
-
-        ; Cleanup
-        DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
-        DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
-
-        return tempFile  ; Returns actual working path (not empty string)
-
-    } catch Error as e {
-        return ""
-    }
-}
-
-; ===== PNG SAVING WITH USER-SELECTED PATH =====
-SaveVisualizationPNG(bitmap, uniqueId) {
-    ; USER-CONTROLLED: Respect user's visualization save path preference
-    ; Returns actual working file path (not just boolean)
-
-    global documentsDir, workDir, visualizationSavePath
-
-    clsid := Buffer(16)
-    NumPut("UInt", 0x557CF406, clsid, 0)
-    NumPut("UInt", 0x11D31A04, clsid, 4)
-    NumPut("UInt", 0x0000739A, clsid, 8)
-    NumPut("UInt", 0x2EF31EF8, clsid, 12)
-
-    fileName := "macro_viz_" . uniqueId . ".png"
-
-    ; Build path list based on user preference
-    fallbackPaths := []
-
-    ; Add user's preferred path FIRST
-    switch visualizationSavePath {
-        case "data":
-            fallbackPaths.Push(workDir . "\" . fileName)
-        case "documents":
-            fallbackPaths.Push(documentsDir . "\" . fileName)
-        case "profile":
-            fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName)
-        case "temp":
-            fallbackPaths.Push(A_Temp . "\" . fileName)
-        default:  ; "auto" - try all paths in order
-            fallbackPaths.Push(workDir . "\" . fileName)               ; Best: Data directory
-            fallbackPaths.Push(documentsDir . "\" . fileName)          ; Good: MacroMaster root
-            fallbackPaths.Push(A_MyDocuments . "\" . fileName)         ; Fallback: Documents root
-            fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName) ; Fallback: User profile root
-            fallbackPaths.Push(A_Temp . "\" . fileName)                ; Last resort: Temp folder
-    }
-
-    ; If user selected a specific path, add auto fallbacks as backup
-    if (visualizationSavePath != "auto") {
-        fallbackPaths.Push(workDir . "\" . fileName)
-        fallbackPaths.Push(documentsDir . "\" . fileName)
-        fallbackPaths.Push(A_MyDocuments . "\" . fileName)
-        fallbackPaths.Push(EnvGet("USERPROFILE") . "\" . fileName)
-        fallbackPaths.Push(A_Temp . "\" . fileName)
-    }
-
-    for testPath in fallbackPaths {
-        try {
-            result := DllCall("gdiplus\GdipSaveImageToFile", "Ptr", bitmap, "WStr", testPath, "Ptr", clsid, "Ptr", 0)
-            if (result = 0 && FileExist(testPath)) {
-                ; SUCCESS: Return the working path
-                return testPath
-            }
-        } catch {
-            continue
-        }
-    }
-
-    ; FAILURE: No paths worked
-    return ""
-}
 
 ; ===== VISUALIZATION SYSTEM INITIALIZATION =====
 InitializeVisualizationSystem() {
@@ -141,6 +28,7 @@ InitializeVisualizationSystem() {
             gdiPlusInitialized := false
         }
     }
+
 
     ; Detect initial canvas type
     DetectCanvasType()
@@ -209,7 +97,19 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
 
     ; Check cache first
     if (hbitmapCache.Has(cacheKey)) {
-        return hbitmapCache[cacheKey]
+        cachedHBITMAP := hbitmapCache[cacheKey]
+        ; Validate cached HBITMAP before returning
+        if (IsHBITMAPValid(cachedHBITMAP)) {
+            ; DEBUG: Log cache hit
+            FileAppend("=== CreateHBITMAPVisualization: CACHE HIT for key: " . cacheKey . " ===`n", "mono/visualization_test_log.txt")
+            ; Add reference when returning cached HBITMAP
+            AddHBITMAPReference(cachedHBITMAP)
+            return cachedHBITMAP
+        } else {
+            ; Invalid cached HBITMAP - remove from cache
+            FileAppend("=== CreateHBITMAPVisualization: INVALID CACHED HBITMAP for key: " . cacheKey . " - removing from cache ===`n", "mono/visualization_test_log.txt")
+            hbitmapCache.Delete(cacheKey)
+        }
     }
 
     ; Extract box drawing events
@@ -229,15 +129,25 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
             return 0
         }
 
-        ; Create GDI+ bitmap
+        ; DEBUG: Log bitmap creation start
+        FileAppend("=== CreateHBITMAPVisualization: Creating GDI+ bitmap " . buttonWidth . "x" . buttonHeight . " ===`n", "mono/visualization_test_log.txt")
+        FileAppend("=== CreateHBITMAPVisualization: GDI+ initialized: " . gdiPlusInitialized . ", token: " . gdiPlusToken . " ===`n", "mono/visualization_test_log.txt")
+
+        ; Create GDI+ bitmap (PixelFormat32bppPARGB = 0x26200A for premultiplied alpha)
+        bitmap := 0
         result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+        FileAppend("=== CreateHBITMAPVisualization: GdipCreateBitmapFromScan0 result=" . result . ", bitmap=" . bitmap . " ===`n", "mono/visualization_test_log.txt")
         if (result != 0 || !bitmap) {
+            FileAppend("=== CreateHBITMAPVisualization: GdipCreateBitmapFromScan0 FAILED, result=" . result . " ===`n", "mono/visualization_test_log.txt")
             return 0
         }
 
         ; Create graphics context from bitmap
+        graphics := 0
         result := DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+        FileAppend("=== CreateHBITMAPVisualization: GdipGetImageGraphicsContext result=" . result . ", graphics=" . graphics . " ===`n", "mono/visualization_test_log.txt")
         if (result != 0 || !graphics) {
+            FileAppend("=== CreateHBITMAPVisualization: GdipGetImageGraphicsContext FAILED, result=" . result . " ===`n", "mono/visualization_test_log.txt")
             DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
             return 0
         }
@@ -246,57 +156,167 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
         DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
 
         ; Draw macro boxes optimized for button dimensions (pass entire macroEvents for mode detection)
+        FileAppend("=== CreateHBITMAPVisualization: About to call DrawMacroBoxesOnButton ===`n", "mono/visualization_test_log.txt")
         DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEvents)
+        FileAppend("=== CreateHBITMAPVisualization: DrawMacroBoxesOnButton completed ===`n", "mono/visualization_test_log.txt")
+
+        ; CRITICAL FIX: Flush graphics to ensure all drawing is committed to bitmap
+        FileAppend("=== CreateHBITMAPVisualization: Flushing graphics ===`n", "mono/visualization_test_log.txt")
+        DllCall("gdiplus\GdipFlush", "Ptr", graphics, "Int", 1)  ; FlushIntentionSync
 
         ; Convert GDI+ bitmap to HBITMAP
-        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0x00000000)
+        FileAppend("=== CreateHBITMAPVisualization: Converting to HBITMAP ===`n", "mono/visualization_test_log.txt")
+        ; Use proper calling convention - background color for transparent pixels
+        hbitmap := 0
+        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0xFF000000)
+        FileAppend("=== CreateHBITMAPVisualization: GdipCreateHBITMAPFromBitmap result=" . result . ", hbitmap=" . hbitmap . " ===`n", "mono/visualization_test_log.txt")
 
         ; Clean up GDI+ objects
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
         if (result = 0 && hbitmap) {
-            ; PERFORMANCE: Cache the HBITMAP for future use
-            hbitmapCache[cacheKey] := hbitmap
-            return hbitmap
+            ; Validate HBITMAP immediately after creation
+            hbitmapType := DllCall("GetObjectType", "Ptr", hbitmap)
+            FileAppend("=== CreateHBITMAPVisualization: HBITMAP created, type=" . hbitmapType . " ===`n", "mono/visualization_test_log.txt")
+
+            if (hbitmapType == 7) {  ; OBJ_BITMAP = 7
+                ; PERFORMANCE: Cache the HBITMAP for future use and add reference
+                hbitmapCache[cacheKey] := hbitmap
+                AddHBITMAPReference(hbitmap)
+                FileAppend("=== CreateHBITMAPVisualization: SUCCESS - HBITMAP cached and returned ===`n", "mono/visualization_test_log.txt")
+                return hbitmap
+            } else {
+                ; Invalid HBITMAP type - clean up
+                FileAppend("=== CreateHBITMAPVisualization: INVALID HBITMAP TYPE " . hbitmapType . " - cleaning up ===`n", "mono/visualization_test_log.txt")
+                DllCall("DeleteObject", "Ptr", hbitmap)
+                return 0
+            }
         } else {
+            FileAppend("=== CreateHBITMAPVisualization: GdipCreateHBITMAPFromBitmap FAILED, result=" . result . " ===`n", "mono/visualization_test_log.txt")
             return 0
         }
 
     } catch Error as e {
         ; Clean up on error
+        FileAppend("=== CreateHBITMAPVisualization: EXCEPTION - " . e.Message . " ===`n", "mono/visualization_test_log.txt")
         if (graphics) {
             DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         }
         if (bitmap) {
             DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
         }
-        return 0
-    }
-}
-
-; ===== HBITMAP CACHE CLEANUP =====
-CleanupHBITMAPCache() {
-    global hbitmapCache
-
-    ; Delete all HBITMAP handles
-    for cacheKey, hbitmap in hbitmapCache {
         if (hbitmap) {
             DllCall("DeleteObject", "Ptr", hbitmap)
         }
+        return 0
+    }
+}
+; ===== HBITMAP REFERENCE COUNTING SYSTEM =====
+; Global reference counting for HBITMAP handles to prevent premature deletion
+global hbitmapRefCounts := Map()
+
+; ===== HBITMAP REFERENCE MANAGEMENT =====
+AddHBITMAPReference(hbitmap) {
+    global hbitmapRefCounts
+
+    if (!hbitmap || hbitmap = 0) {
+        return
     }
 
-    ; Clear the cache Map
-    hbitmapCache := Map()
+    if (hbitmapRefCounts.Has(hbitmap)) {
+        hbitmapRefCounts[hbitmap]++
+        FileAppend("=== AddHBITMAPReference: INCREMENTED ref count for " . hbitmap . " to " . hbitmapRefCounts[hbitmap] . " ===`n", "mono/visualization_test_log.txt")
+    } else {
+        hbitmapRefCounts[hbitmap] := 1
+        FileAppend("=== AddHBITMAPReference: NEW ref count for " . hbitmap . " set to 1 ===`n", "mono/visualization_test_log.txt")
+    }
 }
 
-; ===== JSON PROFILE COLORED BOX VISUALIZATION =====
-CreateJsonVisualization(colorHex, buttonDims, mode, labelText := "") {
-    ; Create colored box visualization with letterboxing for Narrow mode
-    global gdiPlusInitialized
+RemoveHBITMAPReference(hbitmap) {
+    global hbitmapRefCounts
+
+    if (!hbitmap || hbitmap = 0 || !hbitmapRefCounts.Has(hbitmap)) {
+        FileAppend("=== RemoveHBITMAPReference: INVALID CALL - hbitmap=" . hbitmap . " not in refCounts ===`n", "mono/visualization_test_log.txt")
+        return
+    }
+
+    hbitmapRefCounts[hbitmap]--
+    FileAppend("=== RemoveHBITMAPReference: DECREMENTED ref count for " . hbitmap . " to " . hbitmapRefCounts[hbitmap] . " ===`n", "mono/visualization_test_log.txt")
+
+    if (hbitmapRefCounts[hbitmap] <= 0) {
+        ; No more references - safe to delete
+        FileAppend("=== RemoveHBITMAPReference: NO MORE REFERENCES - deleting " . hbitmap . " ===`n", "mono/visualization_test_log.txt")
+        hbitmapRefCounts.Delete(hbitmap)
+        try {
+            ; Validate before deleting
+            result := DllCall("GetObject", "Ptr", hbitmap, "Int", 0, "Ptr", 0)
+            if (result != 0) {
+                DllCall("DeleteObject", "Ptr", hbitmap)
+                FileAppend("=== RemoveHBITMAPReference: HBITMAP " . hbitmap . " successfully deleted ===`n", "mono/visualization_test_log.txt")
+            } else {
+                FileAppend("=== RemoveHBITMAPReference: HBITMAP " . hbitmap . " already invalid, skipped deletion ===`n", "mono/visualization_test_log.txt")
+            }
+        } catch {
+            ; Handle already deleted
+            FileAppend("=== RemoveHBITMAPReference: Exception during deletion of " . hbitmap . " ===`n", "mono/visualization_test_log.txt")
+        }
+    }
+}
+
+; ===== HBITMAP VALIDATION =====
+IsHBITMAPValid(hbitmap) {
+    if (!hbitmap || hbitmap = 0) {
+        FileAppend("=== IsHBITMAPValid: INVALID - null or zero handle ===`n", "mono/visualization_test_log.txt")
+        return false
+    }
+
+    try {
+        result := DllCall("GetObject", "Ptr", hbitmap, "Int", 0, "Ptr", 0)
+        valid := (result != 0)
+        FileAppend("=== IsHBITMAPValid: HBITMAP " . hbitmap . " is " . (valid ? "VALID" : "INVALID") . " (GetObject result: " . result . ") ===`n", "mono/visualization_test_log.txt")
+        return valid
+    } catch {
+        FileAppend("=== IsHBITMAPValid: EXCEPTION validating " . hbitmap . " ===`n", "mono/visualization_test_log.txt")
+        return false
+    }
+}
+
+
+; ===== HBITMAP CACHE CLEANUP =====
+CleanupHBITMAPCache() {
+    global hbitmapCache, buttonDisplayedHBITMAPs
+
+    ; Delete all displayed HBITMAP handles
+    for buttonName, hbitmap in buttonDisplayedHBITMAPs {
+        if (hbitmap && hbitmap != 0) {
+            try {
+                result := DllCall("GetObject", "Ptr", hbitmap, "Int", 0, "Ptr", 0)
+                if (result != 0) {
+                    DllCall("DeleteObject", "Ptr", hbitmap)
+                }
+            } catch {
+                ; Handle already deleted
+            }
+        }
+    }
+
+    ; Clear both maps
+    buttonDisplayedHBITMAPs := Map()
+    hbitmapCache := Map()
+
+}
+
+; ===== JSON PROFILE HBITMAP VISUALIZATION =====
+CreateJsonHBITMAPVisualization(colorHex, buttonDims, mode, labelText := "") {
+    ; Create colored box HBITMAP visualization (in-memory, no file I/O)
+    global gdiPlusInitialized, hbitmapCache
 
     if (!gdiPlusInitialized) {
-        return ""
+        InitializeVisualizationSystem()
+        if (!gdiPlusInitialized) {
+            return 0
+        }
     }
 
     ; Handle both old (single size) and new (width/height object) format
@@ -311,12 +331,36 @@ CreateJsonVisualization(colorHex, buttonDims, mode, labelText := "") {
     ; Convert hex color string to integer
     colorValue := Integer(colorHex)
 
-    try {
-        bitmap := 0
-        DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+    ; Generate cache key for JSON visualizations
+    cacheKey := "json_" . colorHex . "_" . mode . "_" . buttonWidth . "x" . buttonHeight . "_" . labelText
 
-        graphics := 0
-        DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+    ; Check cache first
+    if (hbitmapCache.Has(cacheKey)) {
+        return hbitmapCache[cacheKey]
+    }
+
+    bitmap := 0
+    graphics := 0
+    hbitmap := 0
+
+    try {
+        ; Validate dimensions
+        if (buttonWidth <= 0 || buttonHeight <= 0 || buttonWidth > 4096 || buttonHeight > 4096) {
+            return 0
+        }
+
+        ; Create GDI+ bitmap
+        result := DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x22009, "Ptr", 0, "Ptr*", &bitmap)
+        if (result != 0 || !bitmap) {
+            return 0
+        }
+
+        ; Create graphics context
+        result := DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+        if (result != 0 || !graphics) {
+            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+            return 0
+        }
 
         ; Black background
         DllCall("gdiplus\GdipGraphicsClear", "Ptr", graphics, "UInt", 0xFF000000)
@@ -405,16 +449,38 @@ CreateJsonVisualization(colorHex, buttonDims, mode, labelText := "") {
             DllCall("gdiplus\GdipDeleteFontFamily", "Ptr", fontFamily)
         }
 
-        ; IMPROVED: Use corporate-safe fallback paths (same as macro viz)
-        tempFile := SaveVisualizationPNG(bitmap, A_TickCount)
+        ; Flush graphics to commit all drawing
+        DllCall("gdiplus\GdipFlush", "Ptr", graphics, "Int", 1)
 
-        ; Cleanup
+        ; Convert GDI+ bitmap to HBITMAP
+        hbitmap := 0
+        result := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0xFF000000)
+
+        ; Clean up GDI+ objects
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
-        return tempFile  ; Returns actual working path
+        if (result = 0 && hbitmap) {
+            ; Cache the HBITMAP for future use and add reference
+            hbitmapCache[cacheKey] := hbitmap
+            AddHBITMAPReference(hbitmap)
+            return hbitmap
+        } else {
+            return 0
+        }
 
     } catch Error as e {
-        return ""
+        ; Clean up on error
+        if (graphics) {
+            DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        }
+        if (bitmap) {
+            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+        }
+        if (hbitmap) {
+            DllCall("DeleteObject", "Ptr", hbitmap)
+        }
+        return 0
     }
 }
+

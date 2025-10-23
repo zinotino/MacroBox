@@ -15,8 +15,16 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     global degradationColors, annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global buttonLetterboxingStates
+
+    ; DEBUG: Log function entry and parameters
+    FileAppend("=== DrawMacroBoxesOnButton START ===`n", "mono/visualization_test_log.txt")
+    FileAppend("Button dims: " . buttonWidth . "x" . buttonHeight . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Boxes count: " . boxes.Length . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Annotation mode: " . annotationMode . "`n", "mono/visualization_test_log.txt")
 
     if (boxes.Length = 0) {
+        FileAppend("No boxes to draw, returning early.`n", "mono/visualization_test_log.txt")
         return
     }
 
@@ -34,6 +42,10 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     recordedHeight := maxY - minY
     recordedAspectRatio := recordedWidth / recordedHeight
 
+    ; DEBUG: Log recorded content analysis
+    FileAppend("Recorded bounds: (" . minX . "," . minY . ") to (" . maxX . "," . maxY . ")`n", "mono/visualization_test_log.txt")
+    FileAppend("Recorded dims: " . recordedWidth . "x" . recordedHeight . ", aspect: " . recordedAspectRatio . "`n", "mono/visualization_test_log.txt")
+
     ; INTELLIGENT CANVAS DETECTION: Check both aspect ratio and coordinate boundaries
     ; to determine the most appropriate canvas configuration
 
@@ -48,14 +60,22 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
 
     ; More robust boundary checking that accounts for recording variations
     fitsInWideCanvas := (minX >= (wideCanvasLeft - edgeTolerance) &&
-                          maxX <= (wideCanvasRight + edgeTolerance) &&
-                          minY >= (wideCanvasTop - edgeTolerance) &&
-                          maxY <= (wideCanvasBottom + edgeTolerance))
+                           maxX <= (wideCanvasRight + edgeTolerance) &&
+                           minY >= (wideCanvasTop - edgeTolerance) &&
+                           maxY <= (wideCanvasBottom + edgeTolerance))
 
     fitsInNarrowCanvas := (minX >= (narrowCanvasLeft - edgeTolerance) &&
-                            maxX <= (narrowCanvasRight + edgeTolerance) &&
-                            minY >= (narrowCanvasTop - edgeTolerance) &&
-                            maxY <= (narrowCanvasBottom + edgeTolerance))
+                             maxX <= (narrowCanvasRight + edgeTolerance) &&
+                             minY >= (narrowCanvasTop - edgeTolerance) &&
+                             maxY <= (narrowCanvasBottom + edgeTolerance))
+
+    ; DEBUG: Log canvas calibration data and fit checks
+    FileAppend("Canvas calibration data:`n", "mono/visualization_test_log.txt")
+    FileAppend("  Wide: (" . wideCanvasLeft . "," . wideCanvasTop . ") to (" . wideCanvasRight . "," . wideCanvasBottom . ") [" . wideCanvasW . "x" . wideCanvasH . "]`n", "mono/visualization_test_log.txt")
+    FileAppend("  Narrow: (" . narrowCanvasLeft . "," . narrowCanvasTop . ") to (" . narrowCanvasRight . "," . narrowCanvasBottom . ") [" . narrowCanvasW . "x" . narrowCanvasH . "]`n", "mono/visualization_test_log.txt")
+    FileAppend("  User: (" . userCanvasLeft . "," . userCanvasTop . ") to (" . userCanvasRight . "," . userCanvasBottom . ")`n", "mono/visualization_test_log.txt")
+    FileAppend("  Calibrated: Wide=" . isWideCanvasCalibrated . ", Narrow=" . isNarrowCanvasCalibrated . ", User=" . isCanvasCalibrated . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Fit checks: Wide=" . fitsInWideCanvas . ", Narrow=" . fitsInNarrowCanvas . "`n", "mono/visualization_test_log.txt")
 
     ; Calculate coverage percentages for better canvas selection
     wideCoverage := 0
@@ -77,45 +97,28 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
 
     ; Check if macro has a stored recording mode (takes priority)
     storedMode := ""
-    if (macroEventsArray != "" && IsObject(macroEventsArray) && macroEventsArray.HasOwnProp("recordedMode")) {
-        storedMode := macroEventsArray.recordedMode
+    if (macroEventsArray != "" && IsObject(macroEventsArray)) {
+        ; Handle both Map and Object types
+        if (Type(macroEventsArray) = "Map") {
+            storedMode := macroEventsArray.Has("recordedMode") ? macroEventsArray["recordedMode"] : ""
+        } else if (macroEventsArray.HasOwnProp("recordedMode")) {
+            storedMode := macroEventsArray.recordedMode
+        }
     }
 
-    ; RESPECT ANNOTATION MODE: Use stored mode if available, otherwise current mode
+    ; PRIORITIZE RECORDED MODE: Use stored mode if available, otherwise current mode
     effectiveMode := storedMode != "" ? storedMode : annotationMode
 
     if (effectiveMode = "Wide") {
-        ; User selected Wide mode - use calibrated wide canvas if available, otherwise detected
-        if (isWideCanvasCalibrated) {
-            useWideCanvas := true
-            useNarrowCanvas := false
-            useLegacyCanvas := false
-        } else if (fitsInWideCanvas) {
-            useWideCanvas := true
-            useNarrowCanvas := false
-            useLegacyCanvas := false
-        } else {
-            ; Wide canvas not available - use narrow or fallback
-            useWideCanvas := false
-            useNarrowCanvas := fitsInNarrowCanvas
-            useLegacyCanvas := !fitsInNarrowCanvas
-        }
+        ; Wide mode - always use wide canvas (stretch to fill, no letterboxing)
+        useWideCanvas := true
+        useNarrowCanvas := false
+        useLegacyCanvas := false
     } else if (effectiveMode = "Narrow") {
-        ; User selected Narrow mode - use calibrated narrow canvas if available, otherwise detected
-        if (isNarrowCanvasCalibrated) {
-            useWideCanvas := false
-            useNarrowCanvas := true
-            useLegacyCanvas := false
-        } else if (fitsInNarrowCanvas) {
-            useWideCanvas := false
-            useNarrowCanvas := true
-            useLegacyCanvas := false
-        } else {
-            ; Narrow canvas not available - use wide or fallback
-            useWideCanvas := fitsInWideCanvas
-            useNarrowCanvas := false
-            useLegacyCanvas := !fitsInWideCanvas
-        }
+        ; Narrow mode - always use narrow canvas (letterboxed 4:3)
+        useWideCanvas := false
+        useNarrowCanvas := true
+        useLegacyCanvas := false
     } else {
         ; No annotation mode set - use intelligent detection
         if (fitsInWideCanvas && fitsInNarrowCanvas) {
@@ -163,6 +166,10 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     }
     global lastCanvasDetection := debugInfo
 
+    ; DEBUG: Log canvas selection decision
+    FileAppend("Canvas selection: " . debugInfo . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Use: Wide=" . useWideCanvas . ", Narrow=" . useNarrowCanvas . ", Legacy=" . useLegacyCanvas . "`n", "mono/visualization_test_log.txt")
+
     ; Choose appropriate canvas configuration based on recorded macro characteristics
     if (useWideCanvas) {
         ; Use WIDE canvas configuration for wide-aspect recorded macros
@@ -198,6 +205,9 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasW := canvasRight - canvasLeft
         canvasH := canvasBottom - canvasTop
     }
+
+    ; DEBUG: Log selected canvas configuration
+    FileAppend("Selected canvas: (" . canvasLeft . "," . canvasTop . ") to (" . canvasRight . "," . canvasBottom . ") [" . canvasW . "x" . canvasH . "]`n", "mono/visualization_test_log.txt")
 
     ; VISUAL DIFFERENTIATION: Wide = stretch to fill, Narrow = letterboxing
     ; Background is already set by caller - we draw a colored overlay for the content area
@@ -259,8 +269,18 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         offsetY := 0
     }
 
+    ; DEBUG: Log scaling and offset calculations
+    FileAppend("Scaling: X=" . scaleX . ", Y=" . scaleY . ", Offset: (" . offsetX . "," . offsetY . ")`n", "mono/visualization_test_log.txt")
+    if (useNarrowCanvas) {
+        FileAppend("Narrow content area: " . contentWidth . "x" . contentHeight . " at (" . offsetX . "," . offsetY . ")`n", "mono/visualization_test_log.txt")
+    }
+
     ; Draw the boxes with enhanced precision and accuracy
+    FileAppend("Drawing " . boxes.Length . " boxes:`n", "mono/visualization_test_log.txt")
     for box in boxes {
+        ; DEBUG: Log original box coordinates
+        FileAppend("  Box " . A_Index . ": (" . box.left . "," . box.top . ") to (" . box.right . "," . box.bottom . ") [" . (box.right - box.left) . "x" . (box.bottom - box.top) . "] deg=" . box.degradationType . "`n", "mono/visualization_test_log.txt")
+
         ; Map box coordinates from canvas to button space
         rawX1 := ((box.left - canvasLeft) * scaleX) + offsetX
         rawY1 := ((box.top - canvasTop) * scaleY) + offsetY
@@ -270,6 +290,9 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         ; Calculate raw dimensions with floating-point precision
         rawW := rawX2 - rawX1
         rawH := rawY2 - rawY1
+
+        ; DEBUG: Log transformed coordinates
+        FileAppend("    Transformed: (" . rawX1 . "," . rawY1 . ") to (" . rawX2 . "," . rawY2 . ") [" . rawW . "x" . rawH . "]`n", "mono/visualization_test_log.txt")
 
         ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
         minSize := 2.5  ; Slightly smaller minimum for better area utilization
@@ -324,8 +347,12 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         w := x2 - x1
         h := y2 - y1
 
+        ; DEBUG: Log bounds validation and final coordinates
+        FileAppend("    Bounds validated: (" . x1 . "," . y1 . ") to (" . x2 . "," . y2 . ") [" . w . "x" . h . "]`n", "mono/visualization_test_log.txt")
+
         ; Skip boxes that are completely outside the thumbnail area or too small to see
         if (w < 1.5 || h < 1.5) {
+            FileAppend("    SKIPPED: Box too small (" . w . "x" . h . ")`n", "mono/visualization_test_log.txt")
             continue
         }
 
@@ -349,6 +376,9 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         ; ENHANCED RENDERING: Pure color with sub-pixel precision
         fillColor := 0xFF000000 | color  ; Full opacity (FF = 255)
 
+        ; DEBUG: Log drawing parameters
+        FileAppend("    Drawing box: color=0x" . Format("{:X}", fillColor) . ", pos=(" . x1 . "," . y1 . "), size=(" . w . "x" . h . ")`n", "mono/visualization_test_log.txt")
+
         ; Enable high-quality rendering for fractional coordinates
         ; Set graphics to use high-quality smoothing mode for precise rendering
         DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)  ; HighQuality
@@ -356,13 +386,24 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
 
         ; Draw with sub-pixel precision using floating-point coordinates
         brush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+        result := DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
+        if (result != 0) {
+            FileAppend("    ERROR: GdipCreateSolidFill failed with result " . result . "`n", "mono/visualization_test_log.txt")
+        } else {
+            result := DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
+            if (result != 0) {
+                FileAppend("    ERROR: GdipFillRectangle failed with result " . result . "`n", "mono/visualization_test_log.txt")
+            } else {
+                FileAppend("    SUCCESS: Box drawn`n", "mono/visualization_test_log.txt")
+            }
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+        }
 
         ; Reset to default rendering for other elements
         DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)  ; Default
         DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0) ; Default
     }
+
+    FileAppend("=== DrawMacroBoxesOnButton END ===`n`n", "mono/visualization_test_log.txt")
 
 }
