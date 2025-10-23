@@ -41,11 +41,6 @@ ExecuteMacro(buttonName) {
     ; PERFORMANCE MONITORING - Start timing execution
     executionStartTime := A_TickCount
 
-    ; Double-check F9 protection (silent block)
-    if (buttonName = "F9" || InStr(buttonName, "F9")) {
-        return
-    }
-
     if (awaitingAssignment) {
         SetTimer(CheckForAssignment, 0)
         AssignToButton(buttonName)
@@ -372,9 +367,7 @@ ExecuteJsonAnnotation(jsonEvent) {
         focusResult := FocusBrowser()
         if (!focusResult) {
             ; Fallback attempt with more aggressive focusing
-            ; Sleep(200) - REMOVED: Between-execution delay, not internal macro timing
-
-            ; Try one more time with extended delay
+            ; Try one more time
             focusResult := FocusBrowser()
             if (!focusResult) {
                 throw Error("Browser focus failed after retry - ensure browser is running")
@@ -426,17 +419,10 @@ ExecuteJsonAnnotation(jsonEvent) {
         ; OPTIMIZED JSON EXECUTION - 77% speed improvement
         ; Use speed-optimized timing profile for JSON operations
 
-        ; Set clipboard with minimal delay
+        ; Set clipboard and execute immediately
         A_Clipboard := currentAnnotation
-        ; Sleep(25) - REMOVED for rapid labeling performance
-
-        ; Send paste command immediately
         Send("^v")
-        ; Sleep(50) - REMOVED for rapid labeling performance
-
-        ; Send Shift+Enter to execute the annotation
         Send("+{Enter}")
-        ; Sleep(50) - REMOVED for rapid labeling performance
     } catch Error as e {
         UpdateStatus("⚠️ JSON annotation failed: " . e.Message)
         ; Re-throw to be caught by ExecuteMacro's exception handler
@@ -464,33 +450,23 @@ FocusBrowser() {
             Loop maxRetries {
                 try {
                     WinActivate(browser.exe)
-                    ; Sleep(retryDelay) - REMOVED for rapid labeling performance
 
                     ; Verify focus succeeded by checking if window is active
                     if (WinActive(browser.exe)) {
-                        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
                         return true
                     }
 
                     ; If not focused, try more aggressive methods
                     WinRestore(browser.exe)  ; Restore if minimized
-                    ; Sleep(50) - REMOVED for rapid labeling performance
                     WinActivate(browser.exe)
-                    ; Sleep(retryDelay) - REMOVED for rapid labeling performance
 
                     if (WinActive(browser.exe)) {
-                        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
                         return true
                     }
 
                 } catch Error as e {
                     ; Continue with next retry attempt
                     continue
-                }
-
-                ; Wait before retry
-                if (A_Index < maxRetries) {
-                    ; Sleep(retryDelay * A_Index) - REMOVED for rapid labeling performance
                 }
             }
         }

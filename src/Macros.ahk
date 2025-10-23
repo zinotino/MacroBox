@@ -2,81 +2,37 @@
 ; This module handles macro state persistence and basic utilities
 ; Execution and recording functionality has been extracted to separate modules
 
-; ===== MACRO STATE MANAGEMENT =====
+; SIMPLIFIED: No complex JSON - macros stored in INI config file
+; LoadMacroState and SaveMacroState moved to ConfigIO.ahk
+
 LoadMacroState() {
-    global macroEvents, configFile
+    ; This is now handled by LoadConfig() in ConfigIO.ahk
+    ; Just count and return loaded macros
+    global macroEvents, buttonNames
 
     loadedMacros := 0
-
-    try {
-        if (!FileExist(configFile)) {
-            return 0
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && Type(macroEvents[buttonName]) = "Array" && macroEvents[buttonName].Length > 0) {
+            loadedMacros++
         }
-
-        ; Read config file
-        configContent := FileRead(configFile, "UTF-8")
-        configLines := StrSplit(configContent, "`n")
-
-        for line in configLines {
-            line := Trim(line)
-            if (line = "" || InStr(line, ";")) {
-                continue
-            }
-
-            ; Parse macro definitions
-            if (RegExMatch(line, "^(\w+)=(.*)$", &match)) {
-                key := match[1]
-                value := match[2]
-
-                ; Handle macro events
-                if (InStr(key, "_events")) {
-                    macroKey := StrReplace(key, "_events", "")
-                    events := []
-
-                    ; Parse JSON-like event array
-                    if (RegExMatch(value, "\[(.*)\]", &eventsMatch)) {
-                        eventStr := eventsMatch[1]
-                        ; Simple parsing - in real implementation would use proper JSON parsing
-                        if (eventStr != "") {
-                            ; For now, just count events - full parsing would be more complex
-                            loadedMacros++
-                        }
-                    }
-                }
-            }
-        }
-
-        UpdateStatus("📄 Loaded macro state from config")
-        return loadedMacros
-
-    } catch Error as e {
-        UpdateStatus("⚠️ Error loading macro state: " . e.Message)
-        return 0
     }
+
+    return loadedMacros
 }
 
 SaveMacroState() {
+    ; This is now handled by SaveConfig() in ConfigIO.ahk
+    ; Just count and return saved macros
     global macroEvents, buttonNames
 
     savedMacros := 0
-
-    try {
-        ; Count total macros (single-layer system)
-        for buttonName in buttonNames {
-            if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
-                savedMacros++
-            }
+    for buttonName in buttonNames {
+        if (macroEvents.Has(buttonName) && Type(macroEvents[buttonName]) = "Array" && macroEvents[buttonName].Length > 0) {
+            savedMacros++
         }
-
-        ; CRITICAL: Actually save the config now
-        SaveConfig()
-        UpdateStatus("💾 Macro state saved (" . savedMacros . " macros)")
-        return savedMacros
-
-    } catch Error as e {
-        UpdateStatus("⚠️ Error saving macro state: " . e.Message)
-        return 0
     }
+
+    return savedMacros
 }
 
 ; ===== CLEAR MACRO FUNCTION =====
@@ -106,8 +62,12 @@ ClearMacro(buttonName) {
         UpdateButtonAppearance(buttonName)
 
         ; Save changes
+        SaveMacroState()
         SaveConfig()
 
         UpdateStatus("🗑️ Cleared " . buttonName . " - all data removed")
     }
 }
+
+
+

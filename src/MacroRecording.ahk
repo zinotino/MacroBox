@@ -6,10 +6,112 @@ Handles all macro recording, hooks, and assignment operations
 */
 
 ; ===== RECORDING HOOKS =====
+global macroEvents  ; Declare global to access the macro events map
+
+InitializeMacroRecordingModule()
+
+InitializeMacroRecordingModule() {
+    global macroEvents, mouseMoveThreshold, mouseMoveInterval, boxDragMinDistance
+    global annotationMode, degradationTypes, breakMode, playback
+    global mainGui, buttonGrid, yellowOutlineButtons, buttonNames
+
+    if (!IsSet(macroEvents) || Type(macroEvents) != "Map") {
+        macroEvents := Map()
+    }
+    if (!IsSet(mouseMoveThreshold)) {
+        mouseMoveThreshold := 3
+    }
+    if (!IsSet(mouseMoveInterval)) {
+        mouseMoveInterval := 12
+    }
+    if (!IsSet(boxDragMinDistance)) {
+        boxDragMinDistance := 5
+    }
+    if (!IsSet(annotationMode)) {
+        annotationMode := "Wide"
+    }
+    if (!IsSet(degradationTypes) || Type(degradationTypes) != "Map") {
+        degradationTypes := Map(
+            1, "smudge",
+            2, "glare",
+            3, "splashes",
+            4, "partial_blockage",
+            5, "full_blockage",
+            6, "light_flare",
+            7, "rain",
+            8, "haze",
+            9, "snow"
+        )
+    }
+    if (!IsSet(breakMode)) {
+        breakMode := false
+    }
+    if (!IsSet(playback)) {
+        playback := false
+    }
+    if (!IsSet(mainGui)) {
+        mainGui := 0
+    }
+    if (!IsSet(buttonGrid) || Type(buttonGrid) != "Map") {
+        buttonGrid := Map()
+    }
+    if (!IsSet(yellowOutlineButtons) || Type(yellowOutlineButtons) != "Map") {
+        yellowOutlineButtons := Map()
+    }
+    if (!IsSet(buttonNames) || buttonNames.Length = 0) {
+        buttonNames := ["Num7", "Num8", "Num9", "Num4", "Num5", "Num6", "Num1", "Num2", "Num3", "Num0", "NumDot", "NumMult"]
+    }
+}
+
+CallMacroSupport(funcName, defaultValue := "", args*) {
+    try {
+        return %funcName%(args*)
+    } catch {
+        return defaultValue
+    }
+}
+
+RecordingStatus(message) {
+    CallMacroSupport("UpdateStatus", "", message)
+}
+
+RecordingSaveState() {
+    CallMacroSupport("SaveMacroState")
+}
+
+RecordingSaveConfig() {
+    CallMacroSupport("SaveConfig")
+}
+
+RecordingClearCache(buttonName) {
+    CallMacroSupport("ClearHBitmapCacheForMacro", "", buttonName)
+}
+
+RecordingUpdateButton(buttonName) {
+    CallMacroSupport("UpdateButtonAppearance", "", buttonName)
+}
+
+RecordingJoin(items, delimiter := ", ") {
+    return CallMacroSupport("JoinArray", "", items, delimiter)
+}
+
+RecordingIsNumberKey(keyName) {
+    return CallMacroSupport("IsNumberKey", false, keyName)
+}
+
+RecordingGetNumberFromKey(keyName) {
+    return CallMacroSupport("GetNumberFromKey", 0, keyName)
+}
+
 InstallMouseHook() {
     global mouseHook
     if (!mouseHook) {
-        mouseHook := DllCall("SetWindowsHookEx", "Int", 14, "Ptr", CallbackCreate(MouseProc), "Ptr", 0, "UInt", 0, "Ptr")
+        hMod := DllCall("GetModuleHandle", "Ptr", 0, "Ptr")
+        mouseHook := DllCall("SetWindowsHookEx", "Int", 14  ; WH_MOUSE_LL
+            , "Ptr", CallbackCreate(MouseProc)
+            , "Ptr", hMod
+            , "UInt", 0
+            , "Ptr")
     }
 }
 
@@ -17,13 +119,20 @@ SafeUninstallMouseHook() {
     global mouseHook
     if (mouseHook) {
         try {
+            ; CRITICAL FIX: Only clear handle if unhook succeeds
             result := DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
-            if (!result) {
-                DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
+            if (result) {
+                ; Unhook succeeded - safe to clear handle
+                mouseHook := 0
+            } else {
+                ; First attempt failed - try once more
+                result := DllCall("UnhookWindowsHookEx", "Ptr", mouseHook)
+                if (result) {
+                    mouseHook := 0
+                }
             }
         } catch {
-        } finally {
-            mouseHook := 0
+            ; Exception occurred - don't clear handle as hook may still be active
         }
     }
 }
@@ -31,84 +140,72 @@ SafeUninstallMouseHook() {
 MouseProc(nCode, wParam, lParam) {
     global recording, currentMacro, macroEvents, mouseMoveThreshold, mouseMoveInterval, boxDragMinDistance
 
-    if (nCode < 0 || !recording || currentMacro = "") {
+    if (nCode < 0 || !recording || currentMacro = "")
         return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
-    }
 
     static WM_LBUTTONDOWN := 0x0201, WM_LBUTTONUP := 0x0202, WM_MOUSEMOVE := 0x0200
     static lastX := 0, lastY := 0, lastMoveTime := 0, isDrawingBox := false, boxStartX := 0, boxStartY := 0
-    static lastClickTime := 0  ; PHASE 2D: Add debouncing
+    static lastClickTime := 0
 
-    local x := NumGet(lParam, 0, "Int")
-    local y := NumGet(lParam, 4, "Int")
-    local timestamp := A_TickCount
+    x := NumGet(lParam, 0, "Int")
+    y := NumGet(lParam, 4, "Int")
+    ts := A_TickCount
 
     if (!macroEvents.Has(currentMacro))
         macroEvents[currentMacro] := []
-
-    local events := macroEvents[currentMacro]
+    events := macroEvents[currentMacro]
 
     if (wParam = WM_LBUTTONDOWN) {
-        ; PHASE 2D: Debounce clicks (min 50ms between downs)
-        if (timestamp - lastClickTime < 50) {
+        if (ts - lastClickTime < 50)
             return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
-        }
-        lastClickTime := timestamp
+        lastClickTime := ts
 
         isDrawingBox := true
         boxStartX := x
         boxStartY := y
-        events.Push({type: "mouseDown", button: "left", x: x, y: y, time: timestamp})
+        events.Push({type:"mouseDown", button:"left", x:x, y:y, time:ts})
 
-        ; PHASE 2D: Log first click for debugging (optional, can be removed later)
         if (events.Length = 1) {
-            try {
-                FileAppend("First click registered: " . x . "," . y . " at " . timestamp . "`n", A_ScriptDir . "\click_debug.log")
-            } catch {
-                ; Silently continue if logging fails
-            }
+            ToolTip("First click")
+            SetTimer(() => ToolTip(), -600)
         }
-
     } else if (wParam = WM_LBUTTONUP) {
         if (isDrawingBox) {
-            local dragDistX := Abs(x - boxStartX)
-            local dragDistY := Abs(y - boxStartY)
-
-            if (dragDistX > boxDragMinDistance && dragDistY > boxDragMinDistance) {
-                local boundingBoxEvent := {
-                    type: "boundingBox",
-                    left: Min(boxStartX, x),
-                    top: Min(boxStartY, y),
-                    right: Max(boxStartX, x),
-                    bottom: Max(boxStartY, y),
-                    time: timestamp
-                }
-                events.Push(boundingBoxEvent)
+            dx := Abs(x - boxStartX)
+            dy := Abs(y - boxStartY)
+            if (dx > 0 || dy > 0) {
+                events.Push({type:"boundingBox", left:Min(boxStartX, x), top:Min(boxStartY, y)
+                    , right:Max(boxStartX, x), bottom:Max(boxStartY, y), time:ts
+                    , degradationType: 1, degradationName: "smudge", assignedBy: "auto_default"})
+                RecordingStatus("Box created - press 1-9 to tag")
             } else {
-                events.Push({type: "click", button: "left", x: x, y: y, time: timestamp})
+                events.Push({type:"click", button:"left", x:x, y:y, time:ts})
             }
             isDrawingBox := false
         }
-        events.Push({type: "mouseUp", button: "left", x: x, y: y, time: timestamp})
-
+        events.Push({type:"mouseUp", button:"left", x:x, y:y, time:ts})
     } else if (wParam = WM_MOUSEMOVE) {
-        local moveDistance := Sqrt((x - lastX) ** 2 + (y - lastY) ** 2)
-        local timeDelta := timestamp - lastMoveTime
-        if (moveDistance > mouseMoveThreshold && timeDelta > mouseMoveInterval) {
-            events.Push({type: "mouseMove", x: x, y: y, time: timestamp})
+        dist := Sqrt((x - lastX) ** 2 + (y - lastY) ** 2)
+        dt := ts - lastMoveTime
+        if (dist >= mouseMoveThreshold && dt >= mouseMoveInterval) {
+            events.Push({type:"mouseMove", x:x, y:y, time:ts})
             lastX := x
             lastY := y
-            lastMoveTime := timestamp
+            lastMoveTime := ts
         }
     }
-
     return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
 }
 
 InstallKeyboardHook() {
     global keyboardHook
     if (!keyboardHook) {
-        keyboardHook := DllCall("SetWindowsHookEx", "Int", 13, "Ptr", CallbackCreate(KeyboardProc), "Ptr", 0, "UInt", 0, "Ptr")
+        hMod := DllCall("GetModuleHandle", "Ptr", 0, "Ptr")
+        keyboardHook := DllCall("SetWindowsHookEx", "Int", 13  ; WH_KEYBOARD_LL
+            , "Ptr", CallbackCreate(KeyboardProc)
+            , "Ptr", hMod
+            , "UInt", 0
+            , "Ptr")
     }
 }
 
@@ -116,13 +213,20 @@ SafeUninstallKeyboardHook() {
     global keyboardHook
     if (keyboardHook) {
         try {
+            ; CRITICAL FIX: Only clear handle if unhook succeeds
             result := DllCall("UnhookWindowsHookEx", "Ptr", keyboardHook)
-            if (!result) {
-                DllCall("UnhookWindowsHookEx", "Ptr", keyboardHook)
+            if (result) {
+                ; Unhook succeeded - safe to clear handle
+                keyboardHook := 0
+            } else {
+                ; First attempt failed - try once more
+                result := DllCall("UnhookWindowsHookEx", "Ptr", keyboardHook)
+                if (result) {
+                    keyboardHook := 0
+                }
             }
         } catch {
-        } finally {
-            keyboardHook := 0
+            ; Exception occurred - don't clear handle as hook may still be active
         }
     }
 }
@@ -183,13 +287,6 @@ CheckForAssignment() {
         }
     }
 
-    if (GetKeyState("Escape", "P")) {
-        awaitingAssignment := false
-        SetTimer(CheckForAssignment, 0)
-        KeyWait("Escape")
-        CancelAssignmentProcess()
-        return
-    }
 }
 
 CancelAssignmentProcess() {
@@ -198,7 +295,22 @@ CancelAssignmentProcess() {
     if (macroEvents.Has(currentMacro)) {
         macroEvents.Delete(currentMacro)
     }
-    UpdateStatus("⚠️ Assignment cancelled")
+    RecordingStatus("⚠️ Assignment cancelled")
+}
+
+
+FinalizeRecording(macroKey, eventCount) {
+    global macroEvents
+
+    if (!macroEvents.Has(macroKey))
+        return
+
+    if (eventCount > 0) {
+        AnalyzeRecordedMacro(macroKey)
+    }
+
+    RecordingSaveState()
+    RecordingSaveConfig()
 }
 
 AssignToButton(buttonName) {
@@ -207,14 +319,14 @@ AssignToButton(buttonName) {
     awaitingAssignment := false
 
     if (!macroEvents.Has(currentMacro) || macroEvents[currentMacro].Length = 0) {
-        UpdateStatus("⚠️ No macro to assign")
+        RecordingStatus("⚠️ No macro to assign")
         return
     }
 
     if (macroEvents.Has(buttonName)) {
         macroEvents.Delete(buttonName)
         ; PERFORMANCE: Clear related HBITMAP cache entries
-        ClearHBitmapCacheForMacro(buttonName)
+        RecordingClearCache(buttonName)
     }
 
     macroEvents[buttonName] := []
@@ -229,10 +341,11 @@ AssignToButton(buttonName) {
     macroEvents.Delete(currentMacro)
 
     events := macroEvents[buttonName]
-    UpdateButtonAppearance(buttonName)
-    SaveMacroState()
+    RecordingUpdateButton(buttonName)
+    RecordingSaveState()
+    RecordingSaveConfig()
 
-    UpdateStatus("✅ Assigned to " . buttonName . " (" . events.Length . " events)")
+    RecordingStatus("✅ Assigned to " . buttonName . " (" . events.Length . " events)")
 }
 
 ; ===== ANALYSIS FUNCTIONS =====
@@ -260,7 +373,7 @@ AnalyzeRecordedMacro(macroKey) {
             statusMsg .= " | " . degradationAnalysis.summary
         }
 
-        UpdateStatus(statusMsg)
+        RecordingStatus(statusMsg)
     }
 }
 
@@ -279,8 +392,8 @@ GetDegradationData(events) {
                 degradationType: 1,
                 assignedBy: "default"
             })
-        } else if (event.type = "keyDown" && IsNumberKey(event.key)) {
-            local keyNum := GetNumberFromKey(event.key)
+        } else if (event.type = "keyDown" && RecordingIsNumberKey(event.key)) {
+            local keyNum := RecordingGetNumberFromKey(event.key)
             if (keyNum >= 1 && keyNum <= 9) {
                 keyPresses.Push({
                     time: event.time,
@@ -340,7 +453,7 @@ GetDegradationData(events) {
 
     return {
         totalBoxes: totalBoxes,
-        summary: summary.Length > 0 ? JoinArray(summary, ", ") : "",
+        summary: summary.Length > 0 ? RecordingJoin(summary, ", ") : "",
         counts: degradationCounts,
         boxes: boxes
     }
@@ -352,17 +465,17 @@ F9_RecordingOnly(*) {
 
     ; CRITICAL: Block ALL F9 operations during break mode
     if (breakMode) {
-        UpdateStatus("🔴 BREAK MODE - Recording blocked")
+        RecordingStatus("🔴 BREAK MODE - Recording blocked")
         return
     }
 
     if (playback) {
-        UpdateStatus("⏸️ Playback active")
+        RecordingStatus("⏸️ Playback active")
         return
     }
 
     if (awaitingAssignment) {
-        UpdateStatus("🎯 Assignment pending - ESC to cancel")
+        RecordingStatus("🎯 Assignment pending - ESC to cancel")
         return
     }
 
@@ -380,7 +493,7 @@ F9_RecordingOnly(*) {
             ForceStartRecording()
         }
     } catch Error as e {
-        UpdateStatus("❌ Recording error: " . e.Message)
+        RecordingStatus("❌ Recording error: " . e.Message)
         ; Emergency state reset
         recording := false
         SafeUninstallMouseHook()
@@ -419,7 +532,7 @@ ForceStartRecording() {
     global mouseHook, keyboardHook
     if (!mouseHook || !keyboardHook) {
         recording := false
-        UpdateStatus("❌ Failed to install hooks")
+        RecordingStatus("❌ Failed to install hooks")
         return
     }
 
@@ -429,7 +542,7 @@ ForceStartRecording() {
         mainGui.btnRecord.Opt("+Background0xDC143C")
     }
 
-    UpdateStatus("🎥 RECORDING ACTIVE - Draw boxes, F9 to stop")
+    RecordingStatus("🎥 RECORDING ACTIVE - Draw boxes, F9 to stop")
 }
 
 ForceStopRecording() {
@@ -455,18 +568,15 @@ ForceStopRecording() {
     }
 
     ; Analyze and save
-    AnalyzeRecordedMacro(currentMacro)
-    try {
-        SaveConfig()
-    } catch Error as e {
-        UpdateStatus("⚠️ Failed to save config after recording: " . e.Message)
-    }
-
     awaitingAssignment := true
-    UpdateStatus("🎯 Recording complete (" . eventCount . " events) → Press numpad key to assign")
-    SetTimer(CheckForAssignment, 25)
-}
+    RecordingStatus("Recording ready - press a numpad key to assign")
+    ; FIX: Reduce timer frequency from 25ms to 100ms to lower CPU usage
+    SetTimer(CheckForAssignment, 100)
 
+    macroKey := currentMacro
+    SetTimer(FinalizeRecording.Bind(macroKey, eventCount), -1)
+
+}
 ResetRecordingUI() {
     global mainGui
     if (mainGui && mainGui.HasProp("btnRecord")) {
@@ -493,7 +603,7 @@ AddYellowOutline(buttonName) {
         yellowOutlineButtons[buttonName] := true
 
         ; Update button appearance to show automation status
-        UpdateButtonAppearance(buttonName)
+        RecordingUpdateButton(buttonName)
     }
 }
 
@@ -511,7 +621,7 @@ RemoveYellowOutline(buttonName) {
     yellowOutlineButtons.Delete(buttonName)
 
     ; Update button appearance to normal
-    UpdateButtonAppearance(buttonName)
+    RecordingUpdateButton(buttonName)
 }
 
 ; ===== RECORDING DEBUG FUNCTION =====
@@ -537,3 +647,14 @@ ShowRecordingDebug() {
 
     MsgBox(debugInfo, "F9 Debug", "Icon!")
 }
+
+
+
+
+
+
+
+
+
+
+

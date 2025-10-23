@@ -100,17 +100,23 @@ Canvas_CalibrateWide() {
 
     UpdateStatus("🔦 Wide: Click TOP-LEFT...")
 
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
+    ; FIX: Add timeouts to prevent infinite hangs (T = timeout in seconds)
+    KeyWait("LButton", "U T30")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x1, &y1)
-    KeyWait("LButton", "U")
-    Sleep(200)
+    KeyWait("LButton", "U T5")
 
     UpdateStatus("🔦 Wide: Click BOTTOM-RIGHT...")
 
-    KeyWait("LButton", "D")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
+    KeyWait("LButton", "U T5")
 
     ; Calculate bounds
     left := Min(x1, x2)
@@ -174,17 +180,23 @@ Canvas_CalibrateNarrow() {
 
     UpdateStatus("📱 Narrow: Click TOP-LEFT...")
 
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
+    ; FIX: Add timeouts to prevent infinite hangs (T = timeout in seconds)
+    KeyWait("LButton", "U T30")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x1, &y1)
-    KeyWait("LButton", "U")
-    Sleep(200)
+    KeyWait("LButton", "U T5")
 
     UpdateStatus("📱 Narrow: Click BOTTOM-RIGHT...")
 
-    KeyWait("LButton", "D")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
+    KeyWait("LButton", "U T5")
 
     ; Calculate bounds
     left := Min(x1, x2)
@@ -248,17 +260,23 @@ Canvas_CalibrateUser() {
 
     UpdateStatus("📐 Click TOP-LEFT...")
 
-    KeyWait("LButton", "U")
-    KeyWait("LButton", "D")
+    ; FIX: Add timeouts to prevent infinite hangs (T = timeout in seconds)
+    KeyWait("LButton", "U T30")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x1, &y1)
-    KeyWait("LButton", "U")
-    Sleep(200)
+    KeyWait("LButton", "U T5")
 
     UpdateStatus("📐 Click BOTTOM-RIGHT...")
 
-    KeyWait("LButton", "D")
+    if (!KeyWait("LButton", "D T30")) {
+        UpdateStatus("⚠️ Calibration timeout")
+        return false
+    }
     MouseGetPos(&x2, &y2)
-    KeyWait("LButton", "U")
+    KeyWait("LButton", "U T5")
 
     ; Calculate bounds
     left := Min(x1, x2)
@@ -339,45 +357,6 @@ Canvas_Reset(mode) {
     }
 
     return false
-}
-
-; ===== CANVAS VALIDATION =====
-Canvas_Validate(canvasObj) {
-    ; Validate canvas bounds are sensible
-    if (!IsNumber(canvasObj.left) || !IsNumber(canvasObj.top) || !IsNumber(canvasObj.right) || !IsNumber(canvasObj.bottom)) {
-        return false
-    }
-
-    if (canvasObj.right <= canvasObj.left || canvasObj.bottom <= canvasObj.top) {
-        return false
-    }
-
-    return true
-}
-
-; ===== CANVAS GETTERS =====
-Canvas_GetActive() {
-    global annotationMode, CanvasState
-
-    if (annotationMode = "Narrow") {
-        return CanvasState.narrow
-    } else {
-        return CanvasState.wide
-    }
-}
-
-Canvas_Get(mode) {
-    global CanvasState
-
-    if (mode = "wide") {
-        return CanvasState.wide
-    } else if (mode = "narrow") {
-        return CanvasState.narrow
-    } else if (mode = "user") {
-        return CanvasState.user
-    }
-
-    return CanvasState.wide
 }
 
 ; ===== CHECK CANVAS CONFIGURATION =====

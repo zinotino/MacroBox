@@ -5,6 +5,36 @@ GUI CONTROLS MODULE - Button controls and appearance management
 Handles button appearance updates, thumbnails, flashing, and visual state
 */
 
+; ===== VISUALIZATION LOGGING =====
+LogVisualizationAttempt(buttonName, method, success, errorMsg := "") {
+    ; Comprehensive logging for visualization method attempts
+    global visualizationLogFile
+
+    ; Initialize log file path if needed
+    if (!visualizationLogFile) {
+        visualizationLogFile := A_ScriptDir . "\mono\visualization_test_log.txt"
+    }
+
+    ; Format log message
+    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    status := success ? "SUCCESS" : "FAILED"
+    logMsg := "[" . timestamp . "] [VISUALIZATION] Button " . buttonName . " using " . method . " - " . status
+
+    if (errorMsg != "") {
+        logMsg .= " (" . errorMsg . ")"
+    }
+
+    ; Append to log file
+    try {
+        FileAppend(logMsg . "`n", visualizationLogFile)
+    } catch {
+        ; Ignore logging errors
+    }
+
+    ; Also output to console for debugging
+    OutputDebug(logMsg)
+}
+
 ; ===== BUTTON APPEARANCE =====
 RefreshAllButtonAppearances() {
     global buttonNames
@@ -14,7 +44,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, degradationTypes, degradationColors, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, buttonCustomLabels, darkMode, degradationTypes, degradationColors, buttonLabels, wasdLabelsEnabled, hbitmapCache, annotationMode, buttonDisplayedHBITMAPs, buttonLetterboxingStates
 
     ; Early return for invalid button names
     if (!buttonGrid.Has(buttonName)) {
@@ -23,6 +53,16 @@ UpdateButtonAppearance(buttonName) {
 
     button := buttonGrid[buttonName]
     picture := buttonPictures[buttonName]
+
+    ; Clean up old HBITMAP if this button had one displayed
+    if (buttonDisplayedHBITMAPs.Has(buttonName) && buttonDisplayedHBITMAPs[buttonName] != 0) {
+        oldHbitmap := buttonDisplayedHBITMAPs[buttonName]
+        ; DEBUG: Log HBITMAP cleanup
+        FileAppend("=== UpdateButtonAppearance: Cleaning up old HBITMAP " . oldHbitmap . " for button " . buttonName . " ===`n", "mono/visualization_test_log.txt")
+        ; Remove reference instead of deleting directly
+        RemoveHBITMAPReference(oldHbitmap)
+        buttonDisplayedHBITMAPs[buttonName] := 0
+    }
 
     ; Check macro existence (simple button name, no layer prefix)
     hasMacro := macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0
@@ -54,8 +94,12 @@ UpdateButtonAppearance(buttonName) {
         isJsonAnnotation := true
         jsonEvent := macroEvents[buttonName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
-        ; Use stored mode from event, fallback to current annotationMode
-        jsonMode := (jsonEvent.HasOwnProp("mode") && jsonEvent.mode != "") ? jsonEvent.mode : annotationMode
+        ; CRITICAL: Use stored mode from event for correct letterboxing
+        if (Type(jsonEvent) = "Map") {
+            jsonMode := jsonEvent.Has("mode") && jsonEvent["mode"] != "" ? jsonEvent["mode"] : annotationMode
+        } else {
+            jsonMode := (jsonEvent.HasOwnProp("mode") && jsonEvent.mode != "") ? jsonEvent.mode : annotationMode
+        }
         jsonInfo := typeName . "`n" . StrUpper(jsonEvent.severity)
 
         if (degradationColors.Has(jsonEvent.categoryId)) {
@@ -67,50 +111,93 @@ UpdateButtonAppearance(buttonName) {
     hasVisualizableMacro := hasMacro && !isJsonAnnotation && macroEvents[buttonName].Length > 1
 
     if (hasVisualizableMacro) {
-        ; Generate live macro visualization
+        ; HBITMAP IN-MEMORY VISUALIZATION: Use the proven working method from stable snapshot
+        FileAppend("=== UpdateButtonAppearance: Getting button size for " . buttonName . " ===`n", "mono/visualization_test_log.txt")
         buttonSize := GetButtonThumbnailSize()
+        FileAppend("=== UpdateButtonAppearance: Extracted " . boxes.Length . " boxes for " . buttonName . " ===`n", "mono/visualization_test_log.txt")
         boxes := ExtractBoxEvents(macroEvents[buttonName])
 
         if (boxes.Length > 0) {
+            ; Check per-button letterboxing preference first
+            buttonLetterboxingPref := ""
+            if (IsSet(buttonLetterboxingStates) && Type(buttonLetterboxingStates) = "Map" && buttonLetterboxingStates.Has(buttonName)) {
+                buttonLetterboxingPref := buttonLetterboxingStates[buttonName]
+            }
 
-            ; Use PNG visualization (matches working MacroLauncherX45.ahk)
-            pngFile := CreateMacroVisualization(macroEvents[buttonName], buttonSize)
+            ; Override recorded mode if user has set a specific preference
+            if (buttonLetterboxingPref = "wide") {
+                macroEvents[buttonName].recordedMode := "Wide"
+            } else if (buttonLetterboxingPref = "narrow") {
+                macroEvents[buttonName].recordedMode := "Narrow"
+            } else if (buttonLetterboxingPref = "auto") {
+                ; Auto mode - keep existing recorded mode
+            }
 
-            if (pngFile && FileExist(pngFile)) {
-                ; CRITICAL: Register PNG for cleanup to prevent accumulation
-                RegisterPNGFile(buttonName, pngFile)
+            FileAppend("=== UpdateButtonAppearance: About to call CreateHBITMAPVisualization for " . buttonName . " ===`n", "mono/visualization_test_log.txt")
+            ; Create HBITMAP visualization directly (no PNG fallback)
+            hbitmap := CreateHBITMAPVisualization(macroEvents[buttonName], buttonSize)
+            FileAppend("=== UpdateButtonAppearance: CreateHBITMAPVisualization returned " . hbitmap . " for " . buttonName . " ===`n", "mono/visualization_test_log.txt")
 
-                ; PNG succeeded - use picture control
+            if (hbitmap && hbitmap != 0) {
+                ; HBITMAP creation succeeded - use picture control
                 button.Visible := false
                 picture.Visible := true
-                picture.Value := pngFile
+                try {
+                    picture.Value := "HBITMAP:" . hbitmap
+                    ; Track this HBITMAP as displayed on this button and add reference
+                    buttonDisplayedHBITMAPs[buttonName] := hbitmap
+                    AddHBITMAPReference(hbitmap)
+                    FileAppend("=== UpdateButtonAppearance: HBITMAP " . hbitmap . " assigned to button " . buttonName . " ===`n", "mono/visualization_test_log.txt")
+                    LogVisualizationAttempt(buttonName, "HBITMAP in-memory visualization", true)
+                } catch as e {
+                    ; HBITMAP assignment failed - fallback to text
+                    LogVisualizationAttempt(buttonName, "HBITMAP assignment", false, "Exception: " . e.Message)
+                    button.Visible := true
+                    picture.Visible := false
+                    button.Opt("+Background0x404040")
+                    button.SetFont("s7 bold", "cWhite")
+                    button.Text := "MACRO`n" . boxes.Length . " boxes"
+                }
             } else {
-                ; PNG failed - use text display
+                ; HBITMAP creation failed - use text display
+                LogVisualizationAttempt(buttonName, "HBITMAP in-memory visualization", false, "CreateHBITMAPVisualization returned invalid handle")
                 button.Visible := true
                 picture.Visible := false
-                button.Opt("+Background0x404040")  ; Fixed color for single-layer system
+                button.Opt("+Background0x404040")
                 button.SetFont("s7 bold", "cWhite")
                 button.Text := "MACRO`n" . boxes.Length . " boxes"
             }
+        } else {
+            FileAppend("=== UpdateButtonAppearance: No boxes found for " . buttonName . " - using text display ===`n", "mono/visualization_test_log.txt")
         }
         ; If no boxes found, button stays as text display
     } else if (isJsonAnnotation) {
-        ; JSON annotation with colored box visualization
+        ; JSON annotation with HBITMAP visualization (simplified to match stable snapshot)
         buttonSize := GetButtonThumbnailSize()
 
-        ; Create JSON visualization with letterboxing based on CURRENT annotation mode
-        pngFile := CreateJsonVisualization(jsonColor, buttonSize, annotationMode, jsonInfo)
+        ; Create HBITMAP visualization directly for JSON annotations
+        hbitmap := CreateJsonHBITMAPVisualization(jsonColor, buttonSize, jsonMode, jsonInfo)
 
-        if (pngFile && FileExist(pngFile)) {
-            ; CRITICAL: Register PNG for cleanup to prevent accumulation
-            RegisterPNGFile(buttonName . "_json", pngFile)
-
-            ; Visualization succeeded - use picture control
+        if (hbitmap && hbitmap != 0) {
+            ; HBITMAP creation succeeded - use picture control
             button.Visible := false
             picture.Visible := true
-            picture.Value := pngFile
+            try {
+                picture.Value := "HBITMAP:" . hbitmap
+                ; Track this HBITMAP as displayed on this button and add reference
+                buttonDisplayedHBITMAPs[buttonName] := hbitmap
+                AddHBITMAPReference(hbitmap)
+                FileAppend("=== UpdateButtonAppearance: JSON HBITMAP " . hbitmap . " assigned to button " . buttonName . " ===`n", "mono/visualization_test_log.txt")
+            } catch {
+                ; HBITMAP assignment failed - fallback to text
+                picture.Visible := false
+                button.Visible := true
+                button.Opt("+Background" . jsonColor)
+                button.SetFont("s7 bold", "cBlack")
+                button.Text := jsonInfo
+            }
         } else {
-            ; Visualization failed - fallback to text display
+            ; HBITMAP creation failed - use text display
             picture.Visible := false
             button.Visible := true
             button.Opt("+Background" . jsonColor)
@@ -158,13 +245,6 @@ UpdateButtonAppearance(buttonName) {
     buttonLabels[buttonName].Text := buttonCustomLabels.Has(buttonName) ? buttonCustomLabels[buttonName] : buttonName
 }
 
-UpdateAllButtonAppearances() {
-    global buttonNames
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-}
-
 ; ===== THUMBNAIL OPERATIONS =====
 AddThumbnail(buttonName) {
     global buttonThumbnails
@@ -204,7 +284,7 @@ FlashButton(buttonName, enable) {
     if (enable) {
         ; Start flashing - change to a bright color
         button.Opt("+Background0x00FF00")  ; Bright green for execution
-        button.Redraw()
+        ; No need for Redraw() - button updates automatically
     } else {
         ; Stop flashing - restore normal appearance
         UpdateButtonAppearance(buttonName)
@@ -224,58 +304,10 @@ UpdateGridOutlineColor() {
             ; Normal mode - use fixed color for single-layer system
             gridOutline.Opt("+Background0x404040")
         }
-        gridOutline.Redraw()
+        ; No need for Redraw() - outline updates automatically
     }
 }
 
-; ===== EMERGENCY BUTTON TEXT UPDATE =====
-UpdateEmergencyButtonText() {
-    global mainGui, hotkeyEmergency
-
-    if (mainGui.HasProp("btnEmergency") && mainGui.btnEmergency) {
-        mainGui.btnEmergency.Text := "🚨 " . hotkeyEmergency
-    }
-}
-
-; ===== STATUS MANAGEMENT WITH THROTTLING =====
-global lastStatusUpdate := 0
-global lastStatusText := ""
-global statusThrottleMs := 100  ; Only update status every 100ms
-global priorityStatusKeywords := ["ERROR", "CRITICAL", "⚠️", "❌", "✅", "🚨"]
-
-UpdateStatus(text) {
-    global statusBar, lastStatusUpdate, lastStatusText, statusThrottleMs, priorityStatusKeywords
-
-    if (!statusBar) {
-        return
-    }
-
-    currentTime := A_TickCount
-
-    ; Check if this is a priority message (errors, warnings, critical events)
-    isPriority := false
-    for keyword in priorityStatusKeywords {
-        if (InStr(text, keyword)) {
-            isPriority := true
-            break
-        }
-    }
-
-    ; Throttle non-priority status updates to prevent GUI flooding
-    if (!isPriority && (currentTime - lastStatusUpdate) < statusThrottleMs && lastStatusText != "") {
-        return  ; Skip this update to reduce GUI overhead
-    }
-
-    ; Update status bar
-    statusBar.Text := text
-    lastStatusUpdate := currentTime
-    lastStatusText := text
-
-    ; Only force redraw for priority messages
-    if (isPriority) {
-        statusBar.Redraw()
-    }
-}
 
 ; ===== VISUALIZATION HELPER =====
 GetButtonThumbnailSize() {
@@ -293,4 +325,5 @@ GetButtonThumbnailSize() {
         height: Integer(h)
     }
 }
+
 

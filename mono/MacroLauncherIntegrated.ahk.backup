@@ -168,259 +168,6 @@ global wasdLabelsEnabled := false
 global wasdHotkeyMap := Map()
 global capsLockPressed := false
 
-GetVirtualScreenBounds(&left, &top, &right, &bottom) {
-    left := DllCall("GetSystemMetrics", "Int", 76, "Int")
-    top := DllCall("GetSystemMetrics", "Int", 77, "Int")
-    width := DllCall("GetSystemMetrics", "Int", 78, "Int")
-    height := DllCall("GetSystemMetrics", "Int", 79, "Int")
-    right := left + width
-    bottom := top + height
-}
-
-PtrToUInt(ptrValue) {
-    buf := Buffer(A_PtrSize)
-    NumPut("Ptr", ptrValue, buf)
-    return NumGet(buf, 0, "UPtr")
-}
-
-HBITMAPToPictureValue(hbitmap) {
-    if (!hbitmap)
-        return "HBITMAP:0"
-    return "HBITMAP:" . PtrToUInt(hbitmap)
-}
-
-ExpandAndClampCanvas(&left, &top, &right, &bottom, minX, minY, maxX, maxY, pad, clampLeft, clampTop, clampRight, clampBottom, enforceAspect := 0) {
-    if (maxX <= minX || maxY <= minY) {
-        left := clampLeft
-        top := clampTop
-        right := clampRight
-        bottom := clampBottom
-        return
-    }
-
-    desiredLeft := Floor(minX - pad)
-    desiredTop := Floor(minY - pad)
-    desiredRight := Ceil(maxX + pad)
-    desiredBottom := Ceil(maxY + pad)
-
-    if (enforceAspect > 0) {
-        desiredWidth := desiredRight - desiredLeft
-        desiredHeight := desiredBottom - desiredTop
-        currentAspect := desiredWidth / desiredHeight
-        targetAspect := enforceAspect
-
-        if (currentAspect > targetAspect) {
-            targetHeight := desiredWidth / targetAspect
-            extra := (targetHeight - desiredHeight) / 2
-            desiredTop := Floor(desiredTop - extra)
-            desiredBottom := Ceil(desiredBottom + extra)
-        } else if (currentAspect < targetAspect) {
-            targetWidth := desiredHeight * targetAspect
-            extra := (targetWidth - desiredWidth) / 2
-            desiredLeft := Floor(desiredLeft - extra)
-            desiredRight := Ceil(desiredRight + extra)
-        }
-    }
-
-    if (desiredLeft < clampLeft)
-        desiredLeft := clampLeft
-    if (desiredTop < clampTop)
-        desiredTop := clampTop
-    if (desiredRight > clampRight)
-        desiredRight := clampRight
-    if (desiredBottom > clampBottom)
-        desiredBottom := clampBottom
-
-    if (desiredRight <= desiredLeft)
-        desiredRight := desiredLeft + 100
-    if (desiredBottom <= desiredTop)
-        desiredBottom := desiredTop + 100
-
-    left := desiredLeft
-    top := desiredTop
-    right := desiredRight
-    bottom := desiredBottom
-}
-
-NormalizeCanvasCalibration() {
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    global macroEvents
-
-    GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-    vsWidth := vsRight - vsLeft
-    vsHeight := vsBottom - vsTop
-
-    if (vsWidth <= 0 || vsHeight <= 0) {
-        vsLeft := 0
-        vsTop := 0
-        vsWidth := A_ScreenWidth
-        vsHeight := A_ScreenHeight
-        vsRight := vsLeft + vsWidth
-        vsBottom := vsTop + vsHeight
-    }
-
-    ; Gather bounding box statistics (overall, wide-mode, narrow-mode)
-    overallMinX := 2147483647, overallMinY := 2147483647
-    overallMaxX := -2147483647, overallMaxY := -2147483647
-    narrowMinX := 2147483647, narrowMinY := 2147483647
-    narrowMaxX := -2147483647, narrowMaxY := -2147483647
-    wideMinX := 2147483647, wideMinY := 2147483647
-    wideMaxX := -2147483647, wideMaxY := -2147483647
-    overallCount := 0, narrowCount := 0, wideCount := 0
-
-    for macroName, events in macroEvents {
-        if (!IsObject(events))
-            continue
-
-        recordedMode := ""
-        if (events.HasOwnProp("recordedMode")) {
-            recordedMode := events.recordedMode
-        }
-
-        for event in events {
-            if (IsObject(event) && event.HasOwnProp("type") && event.type = "boundingBox") {
-                left := event.left
-                top := event.top
-                right := event.right
-                bottom := event.bottom
-
-                if (left < overallMinX) overallMinX := left
-                if (top < overallMinY) overallMinY := top
-                if (right > overallMaxX) overallMaxX := right
-                if (bottom > overallMaxY) overallMaxY := bottom
-                overallCount++
-
-                if (recordedMode = "Narrow") {
-                    if (left < narrowMinX) narrowMinX := left
-                    if (top < narrowMinY) narrowMinY := top
-                    if (right > narrowMaxX) narrowMaxX := right
-                    if (bottom > narrowMaxY) narrowMaxY := bottom
-                    narrowCount++
-                } else if (recordedMode = "Wide") {
-                    if (left < wideMinX) wideMinX := left
-                    if (top < wideMinY) wideMinY := top
-                    if (right > wideMaxX) wideMaxX := right
-                    if (bottom > wideMaxY) wideMaxY := bottom
-                    wideCount++
-                }
-            }
-        }
-    }
-
-    padding := 20
-    if (overallCount > 0) {
-        contentWidth := overallMaxX - overallMinX
-        contentHeight := overallMaxY - overallMinY
-        maxSpan := Max(contentWidth, contentHeight)
-        dynamicPad := Max(20, Round(maxSpan * 0.02))
-        padding := dynamicPad
-    }
-
-    if (overallCount > 0) {
-        tempLeft := userCanvasLeft
-        tempTop := userCanvasTop
-        tempRight := userCanvasRight
-        tempBottom := userCanvasBottom
-
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , overallMinX, overallMinY, overallMaxX, overallMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom)
-
-        if (!isCanvasCalibrated
-            || tempLeft < userCanvasLeft
-            || tempTop < userCanvasTop
-            || tempRight > userCanvasRight
-            || tempBottom > userCanvasBottom) {
-            userCanvasLeft := tempLeft
-            userCanvasTop := tempTop
-            userCanvasRight := tempRight
-            userCanvasBottom := tempBottom
-            isCanvasCalibrated := true
-        }
-    } else if (!isCanvasCalibrated) {
-        userCanvasLeft := vsLeft
-        userCanvasTop := vsTop
-        userCanvasRight := vsRight
-        userCanvasBottom := vsBottom
-        isCanvasCalibrated := true
-    }
-
-    ; Update wide canvas if we have wide-mode data, otherwise mirror overall
-    if (wideCount > 0) {
-        tempLeft := wideCanvasLeft
-        tempTop := wideCanvasTop
-        tempRight := wideCanvasRight
-        tempBottom := wideCanvasBottom
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , wideMinX, wideMinY, wideMaxX, wideMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom)
-        wideCanvasLeft := tempLeft
-        wideCanvasTop := tempTop
-        wideCanvasRight := tempRight
-        wideCanvasBottom := tempBottom
-        isWideCanvasCalibrated := true
-    } else if (!isWideCanvasCalibrated) {
-        wideCanvasLeft := userCanvasLeft
-        wideCanvasTop := userCanvasTop
-        wideCanvasRight := userCanvasRight
-        wideCanvasBottom := userCanvasBottom
-        isWideCanvasCalibrated := true
-    }
-
-    ; Update narrow canvas if we have narrow-mode data (maintain 4:3)
-    if (narrowCount > 0) {
-        tempLeft := narrowCanvasLeft
-        tempTop := narrowCanvasTop
-        tempRight := narrowCanvasRight
-        tempBottom := narrowCanvasBottom
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , narrowMinX, narrowMinY, narrowMaxX, narrowMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom, 4.0 / 3.0)
-        narrowCanvasLeft := tempLeft
-        narrowCanvasTop := tempTop
-        narrowCanvasRight := tempRight
-        narrowCanvasBottom := tempBottom
-        isNarrowCanvasCalibrated := true
-    } else if (!isNarrowCanvasCalibrated) {
-        ; Derive a centered 4:3 region from user canvas
-        userWidth := userCanvasRight - userCanvasLeft
-        userHeight := userCanvasBottom - userCanvasTop
-        if (userWidth > 0 && userHeight > 0) {
-            aspect := userWidth / userHeight
-            targetAspect := 4.0 / 3.0
-            if (aspect > targetAspect) {
-                targetHeight := userWidth / targetAspect
-                extra := (targetHeight - userHeight) / 2
-                narrowCanvasLeft := userCanvasLeft
-                narrowCanvasRight := userCanvasRight
-                narrowCanvasTop := Floor(userCanvasTop - extra)
-                narrowCanvasBottom := Ceil(userCanvasBottom + extra)
-            } else {
-                targetWidth := userHeight * targetAspect
-                extra := (targetWidth - userWidth) / 2
-                narrowCanvasTop := userCanvasTop
-                narrowCanvasBottom := userCanvasBottom
-                narrowCanvasLeft := Floor(userCanvasLeft - extra)
-                narrowCanvasRight := Ceil(userCanvasRight + extra)
-            }
-            narrowCanvasLeft := Max(narrowCanvasLeft, vsLeft)
-            narrowCanvasTop := Max(narrowCanvasTop, vsTop)
-            narrowCanvasRight := Min(narrowCanvasRight, vsRight)
-            narrowCanvasBottom := Min(narrowCanvasBottom, vsBottom)
-            isNarrowCanvasCalibrated := true
-        } else {
-            narrowCanvasLeft := vsLeft
-            narrowCanvasTop := vsTop
-            narrowCanvasRight := vsRight
-            narrowCanvasBottom := vsBottom
-            isNarrowCanvasCalibrated := true
-        }
-    }
-}
-
-
 ; ===== CANVAS CALIBRATION RESET FUNCTIONS =====
 ResetWideCanvasCalibration(settingsGui) {
 global isWideCanvasCalibrated, wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
@@ -428,11 +175,10 @@ global isWideCanvasCalibrated, wideCanvasLeft, wideCanvasTop, wideCanvasRight, w
 result := MsgBox("Reset Wide canvas calibration to automatic detection?", "Reset Wide Canvas", "YesNo")
 if (result = "Yes") {
     isWideCanvasCalibrated := false
-    GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-    wideCanvasLeft := vsLeft
-    wideCanvasTop := vsTop
-    wideCanvasRight := vsRight
-    wideCanvasBottom := vsBottom
+    wideCanvasLeft := 0
+    wideCanvasTop := 0
+    wideCanvasRight := A_ScreenWidth
+    wideCanvasBottom := A_ScreenHeight
     SaveConfig()
     UpdateStatus("🔄 Wide canvas reset")
     RefreshAllButtonAppearances()
@@ -449,36 +195,23 @@ if (result = "Yes") {
     isNarrowCanvasCalibrated := false
     ; Reset to 4:3 aspect ratio centered
     narrowAspectRatio := 4.0 / 3.0
-    GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-    screenWidth := vsRight - vsLeft
-    screenHeight := vsBottom - vsTop
-
-    if (screenWidth <= 0 || screenHeight <= 0) {
-        screenWidth := A_ScreenWidth
-        screenHeight := A_ScreenHeight
-        vsLeft := 0
-        vsTop := 0
-        vsRight := screenWidth
-        vsBottom := screenHeight
-    }
-
-    screenAspectRatio := screenWidth / screenHeight
+    screenAspectRatio := A_ScreenWidth / A_ScreenHeight
 
     if (screenAspectRatio > narrowAspectRatio) {
         ; Screen is wider than 4:3 - add horizontal padding
-        contentHeight := screenHeight
+        contentHeight := A_ScreenHeight
         contentWidth := contentHeight * narrowAspectRatio
-        narrowCanvasLeft := vsLeft + (screenWidth - contentWidth) / 2
-        narrowCanvasTop := vsTop
+        narrowCanvasLeft := (A_ScreenWidth - contentWidth) / 2
+        narrowCanvasTop := 0
         narrowCanvasRight := narrowCanvasLeft + contentWidth
-        narrowCanvasBottom := vsTop + contentHeight
+        narrowCanvasBottom := A_ScreenHeight
     } else {
         ; Screen is taller than 4:3 - add vertical padding
-        contentWidth := screenWidth
+        contentWidth := A_ScreenWidth
         contentHeight := contentWidth / narrowAspectRatio
-        narrowCanvasLeft := vsLeft
-        narrowCanvasTop := vsTop + (screenHeight - contentHeight) / 2
-        narrowCanvasRight := vsLeft + contentWidth
+        narrowCanvasLeft := 0
+        narrowCanvasTop := (A_ScreenHeight - contentHeight) / 2
+        narrowCanvasRight := A_ScreenWidth
         narrowCanvasBottom := narrowCanvasTop + contentHeight
     }
     SaveConfig()
@@ -812,82 +545,42 @@ global isNarrowCanvasCalibrated := false
 ; ===== CANVAS CALIBRATION INITIALIZATION =====
 ; Set default canvas calibration values for visualization system
 ; These can be overridden by user calibration or loaded from config
-GetVirtualScreenBounds(&virtualLeft, &virtualTop, &virtualRight, &virtualBottom)
-virtualWidth := virtualRight - virtualLeft
-virtualHeight := virtualBottom - virtualTop
-
-if (virtualWidth <= 0 || virtualHeight <= 0) {
-    virtualLeft := 0
-    virtualTop := 0
-    virtualWidth := A_ScreenWidth
-    virtualHeight := A_ScreenHeight
-    virtualRight := virtualLeft + virtualWidth
-    virtualBottom := virtualTop + virtualHeight
-}
-
-defaultScreenWidth := A_ScreenWidth
-defaultScreenHeight := A_ScreenHeight
-if (isCanvasCalibrated && userCanvasLeft = 0 && userCanvasTop = 0 && userCanvasRight = defaultScreenWidth && userCanvasBottom = defaultScreenHeight && (virtualLeft != 0 || virtualTop != 0)) {
-    userCanvasLeft := virtualLeft
-    userCanvasTop := virtualTop
-    userCanvasRight := virtualRight
-    userCanvasBottom := virtualBottom
-}
-
-if (isWideCanvasCalibrated && wideCanvasLeft = 0 && wideCanvasTop = 0 && wideCanvasRight = defaultScreenWidth && wideCanvasBottom = defaultScreenHeight && (virtualLeft != 0 || virtualTop != 0)) {
-    wideCanvasLeft := virtualLeft
-    wideCanvasTop := virtualTop
-    wideCanvasRight := virtualRight
-    wideCanvasBottom := virtualBottom
-}
-
-if (isNarrowCanvasCalibrated && (virtualLeft != 0 || virtualTop != 0)) {
-    if (narrowCanvasLeft >= 0 && narrowCanvasRight <= defaultScreenWidth) {
-        narrowCanvasLeft += virtualLeft
-        narrowCanvasRight += virtualLeft
-    }
-    if (narrowCanvasTop >= 0 && narrowCanvasBottom <= defaultScreenHeight) {
-        narrowCanvasTop += virtualTop
-        narrowCanvasBottom += virtualTop
-    }
-}
-
 if (!isCanvasCalibrated) {
-    userCanvasLeft := virtualLeft
-    userCanvasTop := virtualTop
-    userCanvasRight := virtualRight
-    userCanvasBottom := virtualBottom
+    userCanvasLeft := 0
+    userCanvasTop := 0
+    userCanvasRight := A_ScreenWidth
+    userCanvasBottom := A_ScreenHeight
     isCanvasCalibrated := true
 }
 
 if (!isWideCanvasCalibrated) {
-    wideCanvasLeft := virtualLeft
-    wideCanvasTop := virtualTop
-    wideCanvasRight := virtualRight
-    wideCanvasBottom := virtualBottom
+    wideCanvasLeft := 0
+    wideCanvasTop := 0
+    wideCanvasRight := A_ScreenWidth
+    wideCanvasBottom := A_ScreenHeight
     isWideCanvasCalibrated := true
 }
 
 if (!isNarrowCanvasCalibrated) {
     ; Narrow canvas defaults to 4:3 aspect ratio centered
     narrowAspectRatio := 4.0 / 3.0
-    screenAspectRatio := virtualWidth / virtualHeight
+    screenAspectRatio := A_ScreenWidth / A_ScreenHeight
 
     if (screenAspectRatio > narrowAspectRatio) {
         ; Screen is wider than 4:3 - add horizontal padding
-        contentHeight := virtualHeight
+        contentHeight := A_ScreenHeight
         contentWidth := contentHeight * narrowAspectRatio
-        narrowCanvasLeft := virtualLeft + (virtualWidth - contentWidth) / 2
-        narrowCanvasTop := virtualTop
+        narrowCanvasLeft := (A_ScreenWidth - contentWidth) / 2
+        narrowCanvasTop := 0
         narrowCanvasRight := narrowCanvasLeft + contentWidth
-        narrowCanvasBottom := virtualTop + contentHeight
+        narrowCanvasBottom := A_ScreenHeight
     } else {
         ; Screen is taller than 4:3 - add vertical padding
-        contentWidth := virtualWidth
+        contentWidth := A_ScreenWidth
         contentHeight := contentWidth / narrowAspectRatio
-        narrowCanvasLeft := virtualLeft
-        narrowCanvasTop := virtualTop + (virtualHeight - contentHeight) / 2
-        narrowCanvasRight := virtualLeft + contentWidth
+        narrowCanvasLeft := 0
+        narrowCanvasTop := (A_ScreenHeight - contentHeight) / 2
+        narrowCanvasRight := A_ScreenWidth
         narrowCanvasBottom := narrowCanvasTop + contentHeight
     }
     isNarrowCanvasCalibrated := true
@@ -1027,8 +720,13 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     global buttonLetterboxingStates
 
     ; DEBUG: Log function entry and parameters
+    FileAppend("=== DrawMacroBoxesOnButton START ===`n", "mono/visualization_test_log.txt")
+    FileAppend("Button dims: " . buttonWidth . "x" . buttonHeight . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Boxes count: " . boxes.Length . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Annotation mode: " . annotationMode . "`n", "mono/visualization_test_log.txt")
 
     if (boxes.Length = 0) {
+        FileAppend("No boxes to draw, returning early.`n", "mono/visualization_test_log.txt")
         return
     }
 
@@ -1047,6 +745,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     recordedAspectRatio := recordedWidth / recordedHeight
 
     ; DEBUG: Log recorded content analysis
+    FileAppend("Recorded bounds: (" . minX . "," . minY . ") to (" . maxX . "," . maxY . ")`n", "mono/visualization_test_log.txt")
+    FileAppend("Recorded dims: " . recordedWidth . "x" . recordedHeight . ", aspect: " . recordedAspectRatio . "`n", "mono/visualization_test_log.txt")
 
     ; INTELLIGENT CANVAS DETECTION: Check both aspect ratio and coordinate boundaries
     ; to determine the most appropriate canvas configuration
@@ -1072,6 +772,12 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
                              maxY <= (narrowCanvasBottom + edgeTolerance))
 
     ; DEBUG: Log canvas calibration data and fit checks
+    FileAppend("Canvas calibration data:`n", "mono/visualization_test_log.txt")
+    FileAppend("  Wide: (" . wideCanvasLeft . "," . wideCanvasTop . ") to (" . wideCanvasRight . "," . wideCanvasBottom . ") [" . wideCanvasW . "x" . wideCanvasH . "]`n", "mono/visualization_test_log.txt")
+    FileAppend("  Narrow: (" . narrowCanvasLeft . "," . narrowCanvasTop . ") to (" . narrowCanvasRight . "," . narrowCanvasBottom . ") [" . narrowCanvasW . "x" . narrowCanvasH . "]`n", "mono/visualization_test_log.txt")
+    FileAppend("  User: (" . userCanvasLeft . "," . userCanvasTop . ") to (" . userCanvasRight . "," . userCanvasBottom . ")`n", "mono/visualization_test_log.txt")
+    FileAppend("  Calibrated: Wide=" . isWideCanvasCalibrated . ", Narrow=" . isNarrowCanvasCalibrated . ", User=" . isCanvasCalibrated . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Fit checks: Wide=" . fitsInWideCanvas . ", Narrow=" . fitsInNarrowCanvas . "`n", "mono/visualization_test_log.txt")
 
     ; Calculate coverage percentages for better canvas selection
     wideCoverage := 0
@@ -1163,6 +869,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     global lastCanvasDetection := debugInfo
 
     ; DEBUG: Log canvas selection decision
+    FileAppend("Canvas selection: " . debugInfo . "`n", "mono/visualization_test_log.txt")
+    FileAppend("Use: Wide=" . useWideCanvas . ", Narrow=" . useNarrowCanvas . ", Legacy=" . useLegacyCanvas . "`n", "mono/visualization_test_log.txt")
 
     ; Choose appropriate canvas configuration based on recorded macro characteristics
     if (useWideCanvas) {
@@ -1200,70 +908,11 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasH := canvasBottom - canvasTop
     }
 
-    if (canvasW <= 0 || canvasH <= 0) {
-        fallbackPad := Max(20, Round(Max(recordedWidth, recordedHeight) * 0.02))
-        canvasLeft := minX - fallbackPad
-        canvasTop := minY - fallbackPad
-        canvasRight := maxX + fallbackPad
-        canvasBottom := maxY + fallbackPad
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-    }
-
-    if (recordedWidth > 0 && recordedHeight > 0) {
-        needsExpansion := (minX < canvasLeft) || (maxX > canvasRight) || (minY < canvasTop) || (maxY > canvasBottom)
-        if (needsExpansion) {
-            expandPad := Max(15, Round(Max(recordedWidth, recordedHeight) * 0.015))
-            desiredLeft := Floor(minX - expandPad)
-            desiredTop := Floor(minY - expandPad)
-            desiredRight := Ceil(maxX + expandPad)
-            desiredBottom := Ceil(maxY + expandPad)
-
-            GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-
-            if (useNarrowCanvas) {
-                targetAspect := 4.0 / 3.0
-                desiredWidth := desiredRight - desiredLeft
-                desiredHeight := desiredBottom - desiredTop
-                currentAspect := desiredWidth / desiredHeight
-                if (currentAspect > targetAspect) {
-                    targetHeight := desiredWidth / targetAspect
-                    extra := (targetHeight - desiredHeight) / 2
-                    desiredTop := Floor(desiredTop - extra)
-                    desiredBottom := Ceil(desiredBottom + extra)
-                } else if (currentAspect < targetAspect) {
-                    targetWidth := desiredHeight * targetAspect
-                    extra := (targetWidth - desiredWidth) / 2
-                    desiredLeft := Floor(desiredLeft - extra)
-                    desiredRight := Ceil(desiredRight + extra)
-                }
-            }
-
-            if (desiredLeft < vsLeft) desiredLeft := vsLeft
-            if (desiredTop < vsTop) desiredTop := vsTop
-            if (desiredRight > vsRight) desiredRight := vsRight
-            if (desiredBottom > vsBottom) desiredBottom := vsBottom
-
-            if (desiredRight > desiredLeft && desiredBottom > desiredTop) {
-                canvasLeft := desiredLeft
-                canvasTop := desiredTop
-                canvasRight := desiredRight
-                canvasBottom := desiredBottom
-                canvasW := canvasRight - canvasLeft
-                canvasH := canvasBottom - canvasTop
-            }
-        }
-    }
-
     ; DEBUG: Log selected canvas configuration
+    FileAppend("Selected canvas: (" . canvasLeft . "," . canvasTop . ") to (" . canvasRight . "," . canvasBottom . ") [" . canvasW . "x" . canvasH . "]`n", "mono/visualization_test_log.txt")
 
     ; VISUAL DIFFERENTIATION: Wide = stretch to fill, Narrow = letterboxing
     ; Background is already set by caller - we draw a colored overlay for the content area
-
-    if (canvasW <= 0)
-        canvasW := 1
-    if (canvasH <= 0)
-        canvasH := 1
 
     ; Apply different scaling strategies based on canvas type
     if (useWideCanvas) {
@@ -1323,12 +972,16 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     }
 
     ; DEBUG: Log scaling and offset calculations
+    FileAppend("Scaling: X=" . scaleX . ", Y=" . scaleY . ", Offset: (" . offsetX . "," . offsetY . ")`n", "mono/visualization_test_log.txt")
     if (useNarrowCanvas) {
+        FileAppend("Narrow content area: " . contentWidth . "x" . contentHeight . " at (" . offsetX . "," . offsetY . ")`n", "mono/visualization_test_log.txt")
     }
 
     ; Draw the boxes with enhanced precision and accuracy
+    FileAppend("Drawing " . boxes.Length . " boxes:`n", "mono/visualization_test_log.txt")
     for box in boxes {
         ; DEBUG: Log original box coordinates
+        FileAppend("  Box " . A_Index . ": (" . box.left . "," . box.top . ") to (" . box.right . "," . box.bottom . ") [" . (box.right - box.left) . "x" . (box.bottom - box.top) . "] deg=" . box.degradationType . "`n", "mono/visualization_test_log.txt")
 
         ; Map box coordinates from canvas to button space
         rawX1 := ((box.left - canvasLeft) * scaleX) + offsetX
@@ -1341,6 +994,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         rawH := rawY2 - rawY1
 
         ; DEBUG: Log transformed coordinates
+        FileAppend("    Transformed: (" . rawX1 . "," . rawY1 . ") to (" . rawX2 . "," . rawY2 . ") [" . rawW . "x" . rawH . "]`n", "mono/visualization_test_log.txt")
 
         ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
         minSize := 2.5  ; Slightly smaller minimum for better area utilization
@@ -1396,9 +1050,11 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         h := y2 - y1
 
         ; DEBUG: Log bounds validation and final coordinates
+        FileAppend("    Bounds validated: (" . x1 . "," . y1 . ") to (" . x2 . "," . y2 . ") [" . w . "x" . h . "]`n", "mono/visualization_test_log.txt")
 
         ; Skip boxes that are completely outside the thumbnail area or too small to see
         if (w < 1.5 || h < 1.5) {
+            FileAppend("    SKIPPED: Box too small (" . w . "x" . h . ")`n", "mono/visualization_test_log.txt")
             continue
         }
 
@@ -1423,6 +1079,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         fillColor := 0xFF000000 | color  ; Full opacity (FF = 255)
 
         ; DEBUG: Log drawing parameters
+        FileAppend("    Drawing box: color=0x" . Format("{:X}", fillColor) . ", pos=(" . x1 . "," . y1 . "), size=(" . w . "x" . h . ")`n", "mono/visualization_test_log.txt")
 
         ; Enable high-quality rendering for fractional coordinates
         ; Set graphics to use high-quality smoothing mode for precise rendering
@@ -1433,10 +1090,13 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         brush := 0
         result := DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
         if (result != 0) {
+            FileAppend("    ERROR: GdipCreateSolidFill failed with result " . result . "`n", "mono/visualization_test_log.txt")
         } else {
             result := DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
             if (result != 0) {
+                FileAppend("    ERROR: GdipFillRectangle failed with result " . result . "`n", "mono/visualization_test_log.txt")
             } else {
+                FileAppend("    SUCCESS: Box drawn`n", "mono/visualization_test_log.txt")
             }
             DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
         }
@@ -1446,6 +1106,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0) ; Default
     }
 
+    FileAppend("=== DrawMacroBoxesOnButton END ===`n`n", "mono/visualization_test_log.txt")
 
 }
 
@@ -1477,62 +1138,17 @@ DetectCanvasType() {
 
 ; Simple logger that appends to a single line buffer to avoid file locking
 global vizLogBuffer := ""
-global vizLogPath := ""
 VizLog(msg) {
     global vizLogBuffer
     vizLogBuffer .= msg . "`n"
 }
 
-EnsureVizLogPath() {
-    global vizLogPath
-
-    if (vizLogPath != "")
-        return vizLogPath
-
-    tempDir := A_Temp . "\MacroMasterViz"
-
-    try {
-        if !DirExist(tempDir) {
-            DirCreate(tempDir)
-        }
-        vizLogPath := tempDir . "\viz_debug.log"
-    } catch {
-        vizLogPath := ""
-    }
-
-    if (vizLogPath = "") {
-        vizLogPath := A_ScriptDir . "\viz_debug.log"
-    }
-
-    return vizLogPath
-}
-
 FlushVizLog() {
     global vizLogBuffer
     if (vizLogBuffer != "") {
-        logPath := EnsureVizLogPath()
-        writeSucceeded := false
-
         try {
-            FileAppend(vizLogBuffer, logPath)
-            writeSucceeded := true
-        } catch {
-            fallbackPath := A_ScriptDir . "\viz_debug.log"
-            if (fallbackPath != logPath) {
-                try {
-                    FileAppend(vizLogBuffer, fallbackPath)
-                    writeSucceeded := true
-                } catch {
-                }
-            }
-        }
-
-        if (writeSucceeded) {
+            FileAppend(vizLogBuffer, "viz_debug.log")
             vizLogBuffer := ""
-        } else {
-            if (StrLen(vizLogBuffer) > 20000) {
-                vizLogBuffer := SubStr(vizLogBuffer, -20000)
-            }
         }
     }
 }
@@ -1943,20 +1559,20 @@ ForceStartRecording() {
 }
 
 ForceStopRecording() {
-    global recording, currentMacro, macroEvents, awaitingAssignment, mainGui, pendingBoxForTagging, annotationMode
-
+    global recording, currentMacro, macroEvents, awaitingAssignment, mainGui, pendingBoxForTagging
+    
     if (!recording) {
         UpdateStatus("⚠️ Not recording - CapsLock+F ignored")
         return
     }
-
+    
     recording := false
     SafeUninstallMouseHook()
     SafeUninstallKeyboardHook()
     pendingBoxForTagging := ""
-
+    
     ResetRecordingUI()
-
+    
     eventCount := macroEvents.Has(currentMacro) ? macroEvents[currentMacro].Length : 0
     if (eventCount = 0) {
         UpdateStatus("🎬 Recording stopped - No events captured")
@@ -1965,14 +1581,7 @@ ForceStopRecording() {
         }
         return
     }
-
-    ; Save the current annotationMode as recordedMode for this macro
-    if (macroEvents.Has(currentMacro)) {
-        macroEvents[currentMacro].recordedMode := annotationMode
-        VizLog("SET recordedMode for " . currentMacro . " to: " . annotationMode)
-        FlushVizLog()
-    }
-
+    
     ; Analyze macro
     AnalyzeRecordedMacro(currentMacro)
     ; PERFORMANCE: SaveConfig() removed - auto-save timer handles persistence
@@ -2293,19 +1902,12 @@ AssignToButton(buttonName) {
     if (macroEvents.Has(layerMacroName)) {
         macroEvents.Delete(layerMacroName)
     }
-
+    
     macroEvents[layerMacroName] := []
     for event in macroEvents[currentMacro] {
         macroEvents[layerMacroName].Push(event)
     }
-
-    ; CRITICAL: Copy recordedMode property from temp macro to assigned macro
-    if (macroEvents[currentMacro].HasOwnProp("recordedMode")) {
-        macroEvents[layerMacroName].recordedMode := macroEvents[currentMacro].recordedMode
-        VizLog("COPIED recordedMode from " . currentMacro . " to " . layerMacroName . ": " . macroEvents[currentMacro].recordedMode)
-        FlushVizLog()
-    }
-
+    
     macroEvents.Delete(currentMacro)
     
     events := macroEvents[layerMacroName]
@@ -2678,8 +2280,8 @@ UpdateButtonAppearance(buttonName) {
                     DllCall("DeleteObject", "Ptr", oldHbitmap)
                 }
 
-                ; Use unsigned string form so Picture control accepts high-bit handles
-                picture.Value := HBITMAPToPictureValue(hbitmap)
+                ; Use "HBITMAP:*" syntax for direct memory loading
+                picture.Value := "HBITMAP:" . hbitmap
                 buttonDisplayedHBITMAPs[buttonName] := hbitmap
                 picture.Redraw()
                 VizLog(">>> UpdateButtonAppearance: SUCCESS - HBITMAP displayed")
@@ -4080,26 +3682,14 @@ LoadStatsData() {
 }
 SaveMacroState() {
     global macroEvents, buttonThumbnails, configFile
-
+    
     stateFile := StrReplace(configFile, ".ini", "_simple.txt")
     stateContent := ""
     macroCount := 0
-
+    
     for macroName, events in macroEvents {
         if (events.Length > 0) {
             macroCount++
-
-            ; Save recordedMode if it exists
-            ; DEBUG: Check if property exists and log it
-            if (events.HasOwnProp("recordedMode")) {
-                VizLog("Saving recordedMode for " . macroName . ": " . events.recordedMode)
-                if (events.recordedMode != "") {
-                    stateContent .= macroName . "=recordedMode," . events.recordedMode . "`n"
-                }
-            } else {
-                VizLog("NO recordedMode property for " . macroName)
-            }
-
             for event in events {
                 if (event.type = "boundingBox") {
                     stateContent .= macroName . "=boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom . "`n"
@@ -4135,8 +3725,7 @@ SaveMacroState() {
         FileDelete(stateFile)
     if (stateContent != "")
         FileAppend(stateContent, stateFile)
-
-    FlushVizLog()
+    
     return macroCount
 }
 
@@ -4215,15 +3804,6 @@ LoadMacroState() {
                         button: parts[4]
                     }
                 }
-                else if (parts[1] = "recordedMode" && parts.Length >= 2) {
-                    ; Load recordedMode property and attach it to the macro array
-                    if (!macroEvents.Has(macroName)) {
-                        macroEvents[macroName] := []
-                        macroCount++
-                    }
-                    macroEvents[macroName].recordedMode := parts[2]
-                    continue
-                }
                 else if (parts[1] = "thumbnail" && parts.Length >= 2) {
                     thumbnailPath := parts[2]
                     if (FileExist(thumbnailPath)) {
@@ -4231,7 +3811,7 @@ LoadMacroState() {
                     }
                     continue
                 }
-
+                
                 if (event.HasOwnProp("type")) {
                     if (!macroEvents.Has(macroName)) {
                         macroEvents[macroName] := []
@@ -4242,9 +3822,7 @@ LoadMacroState() {
             }
         }
     }
-
-    NormalizeCanvasCalibration()
-
+    
     return macroCount
 }
 
@@ -4420,23 +3998,18 @@ SaveConfig() {
             configContent .= "`n"
         }
         
-; Add canvas calibration section
-configContent .= "[Canvas]`n"
-configContent .= "wideCanvasLeft=" . wideCanvasLeft . "`n"
-configContent .= "wideCanvasTop=" . wideCanvasTop . "`n"
-configContent .= "wideCanvasRight=" . wideCanvasRight . "`n"
-configContent .= "wideCanvasBottom=" . wideCanvasBottom . "`n"
-configContent .= "isWideCanvasCalibrated=" . isWideCanvasCalibrated . "`n"
-configContent .= "narrowCanvasLeft=" . narrowCanvasLeft . "`n"
-configContent .= "narrowCanvasTop=" . narrowCanvasTop . "`n"
-configContent .= "narrowCanvasRight=" . narrowCanvasRight . "`n"
-configContent .= "narrowCanvasBottom=" . narrowCanvasBottom . "`n"
-configContent .= "isNarrowCanvasCalibrated=" . isNarrowCanvasCalibrated . "`n"
-configContent .= "userCanvasLeft=" . userCanvasLeft . "`n"
-configContent .= "userCanvasTop=" . userCanvasTop . "`n"
-configContent .= "userCanvasRight=" . userCanvasRight . "`n"
-configContent .= "userCanvasBottom=" . userCanvasBottom . "`n"
-configContent .= "isCanvasCalibrated=" . isCanvasCalibrated . "`n`n"
+        ; Add canvas calibration section
+        configContent .= "[Canvas]`n"
+        configContent .= "wideCanvasLeft=" . wideCanvasLeft . "`n"
+        configContent .= "wideCanvasTop=" . wideCanvasTop . "`n"
+        configContent .= "wideCanvasRight=" . wideCanvasRight . "`n"
+        configContent .= "wideCanvasBottom=" . wideCanvasBottom . "`n"
+        configContent .= "isWideCanvasCalibrated=" . isWideCanvasCalibrated . "`n"
+        configContent .= "narrowCanvasLeft=" . narrowCanvasLeft . "`n"
+        configContent .= "narrowCanvasTop=" . narrowCanvasTop . "`n"
+        configContent .= "narrowCanvasRight=" . narrowCanvasRight . "`n"
+        configContent .= "narrowCanvasBottom=" . narrowCanvasBottom . "`n"
+        configContent .= "isNarrowCanvasCalibrated=" . isNarrowCanvasCalibrated . "`n`n"
 
         ; Add macros section
         configContent .= "[Macros]`n"
@@ -4565,16 +4138,6 @@ LoadConfig() {
                         narrowCanvasBottom := Integer(value)
                     } else if (key = "isNarrowCanvasCalibrated") {
                         isNarrowCanvasCalibrated := (value = "1" || value = "true")
-                    } else if (key = "userCanvasLeft") {
-                        userCanvasLeft := Integer(value)
-                    } else if (key = "userCanvasTop") {
-                        userCanvasTop := Integer(value)
-                    } else if (key = "userCanvasRight") {
-                        userCanvasRight := Integer(value)
-                    } else if (key = "userCanvasBottom") {
-                        userCanvasBottom := Integer(value)
-                    } else if (key = "isCanvasCalibrated") {
-                        isCanvasCalibrated := (value = "1" || value = "true")
                     }
                 } else if (currentSection = "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -4676,8 +4239,6 @@ LoadConfig() {
             ; Force redraw the button
             modeToggleBtn.Redraw()
         }
-
-        NormalizeCanvasCalibration()
         
         ; Update UI to reflect loaded configuration
         SwitchLayer("")

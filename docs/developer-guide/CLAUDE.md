@@ -1,287 +1,150 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
-**MacroMaster V555** is a comprehensive AutoHotkey v2.0 macro recording and playback system designed for offline data labeling workflows. The system uses a modular architecture with multiple visualization layers and a high-performance SQLite backend for analytics.
-
-**Key Features:**
-- Multi-layer macro organization (5 layers with 12 buttons each = 60 macro slots)
-- Three-tier visualization system (HBITMAP/PNG/Plotly)
-- SQLite-based statistics with real-time dashboard generation
-- Break mode functionality for time management
-- Dual canvas support (wide/narrow aspect ratios)
-- JSON annotation integration
-- Per-box degradation tracking (9 types)
-
-**Architecture:**
-- **Modular AHK**: 10 separate .ahk modules in `src/`
-- **Visualization**: HBITMAP (memory) primary, PNG fallback, Plotly dashboard
-- **Stats Backend**: SQLite with Python analytics layer
-- **Storage**: Dual-write (CSV backup + database inserts)
-
-## Core Architecture
-
-### Main Components
-
-**Global State Management:**
-- Recording/playback states: `recording`, `playback`, `awaitingAssignment`
-- Layer system: `currentLayer` (1-5), button grid mapping via `macroEvents` Map
-- Canvas system: `canvasType` ("wide"/"narrow"), dual aspect ratio support
-- Time tracking: `applicationStartTime`, `totalActiveTime`, `breakMode`
-- Degradation system: 9 types (smudge, glare, splashes, etc.) with color coding
-
-**Key Functions:**
-- `ExecuteMacro(buttonName)` - Main macro execution at line ~934
-- `ShowStats()` - Comprehensive analytics display at line ~1862  
-- `SafeExecuteMacroByKey(buttonName)` - Protected execution wrapper at line ~923
-- Macro recording system starting around line ~983
-- GUI management functions around line ~1272
-
-**Data Storage:**
-- Macros stored in `macroEvents` Map with layer-specific keys (e.g., "L1_Num7")
-- CSV statistics in `data/master_stats.csv` (when implemented)
-- Configuration in `config.ini`
-- Thumbnails in `thumbnails/` directory
+CLAUDE.mdThis file provides comprehensive guidance to Claude Code (claude.ai/code) when working with code in this repository. It consolidates all system documentation into a single, condensed reference for development, architecture, and maintenance of MacroMaster.Project OverviewMacroMaster V2.0 is a comprehensive AutoHotkey v2.0 macro recording and playback system designed for offline data labeling workflows. It features a modular architecture with multi-layer visualization, real-time CSV-based analytics, and corporate-safe fallbacks.Key Features:Multi-layer macro organization (5-10 layers, 12 buttons each = 60+ slots)
+Three-tier visualization: HBITMAP (primary, in-memory), PNG (fallback, file-based), Plotly (stats dashboards)
+Dual canvas support: Wide (16:9) and Narrow (4:3) aspect ratios with automatic detection
+Degradation tracking: 9 types (smudge, glare, splashes, partial_blockage, full_blockage, light_flare, rain, haze, snow) with color-coded rendering
+Statistics: Real-time tracking via CSV (session/master) and SQLite backend with Python dashboards
+Break mode: Pauses time tracking and stats collection
+JSON integration: Annotation exports
+Corporate compatibility: No network, local storage, multiple fallbacks
+
+Status: Production Ready (Last Updated: 2025-10-08)High-Level ArchitectureMacroMaster uses 20+ modular AHK files with clear separation of concerns. Core components include state management, macro recording/execution, visualization, GUI, and stats.System Diagrammermaid
+
+graph TB
+    subgraph "User Interface"
+        GUI[Main GUI: Layers, Buttons, Stats]
+        CONFIG[Config: Canvas Calibration, Settings]
+    end
+    subgraph "Core Engine"
+        CORE[Core.ahk: State, Init, Config]
+        RECORD[MacroRecording.ahk: Event Capture]
+        EXECUTE[MacroExecution.ahk: Playback]
+    end
+    subgraph "Visualization"
+        VISUAL[VisualizationCore.ahk: GDI+ Bitmaps]
+        CANVAS[VisualizationCanvas.ahk: Scaling]
+        UTILS[VisualizationUtils.ahk: Colors/Events]
+    end
+    subgraph "Data & Analytics"
+        STATS[Stats.ahk: CSV/SQLite Tracking]
+        DATA[(CSV/SQLite: session/master_stats)]
+    end
+    subgraph "Supporting"
+        HOTKEYS[Hotkeys.ahk: Inputs]
+        DIALOGS[Dialogs.ahk: Modals]
+        CONTROLS[GUIControls.ahk: Events]
+    end
+
+    GUI --> CORE --> RECORD --> STATS --> DATA
+    GUI --> CORE --> EXECUTE --> STATS --> DATA
+    CORE --> VISUAL --> CANVAS --> UTILS
+    HOTKEYS --> CORE
+    DIALOGS --> GUI
+    CONTROLS --> GUI
+
+Module DependenciesCore: Config.ahk, Visualization.ahk, Stats.ahk, GUI.ahk
+Visualization: Core.ahk (HBITMAP/PNG), Canvas.ahk (scaling), Utils.ahk (events)
+Stats: CSV/SQLite writes, Python scripts (generate_dashboard.py, record_execution.py)
+Runtime: GDI+ library (no external deps beyond AHK v2.0)
+
+Data FlowRecording: F9 toggle → Capture mouse/keyboard → Assign degradations (1-9 keys) → Generate thumbnail → Save to macroEvents Map → Write stats to CSV/SQLite
+Playback: Numpad key → Execute events with delays → Record stats
+Stats Display: Click Stats → Read CSV/SQLite → Generate Plotly HTML → Open in browser
+
+Core System DetailsGlobal State VariablesExecution: recording (bool), playback (bool), awaitingAssignment (bool), lastExecutionTime (timestamp)
+Config: currentLayer (1-5+), canvasType (wide/narrow/custom), darkMode (bool)
+Resources: hbitmapCache (Map), mouseHook/keyboardHook, mainGui/statusBar
+Stats: sessionId (string), totalActiveTime (ms), breakMode (bool), statsQueue (array)
+
+Initialization Pipeline (Main())Directories: Create Documents\MacroMaster\data & thumbnails (fallbacks: ScriptDir, UserProfile, Desktop)
+Variables: Set defaults (hotkeys, timings, canvas dims)
+Canvas: Set wide (1920x1080), narrow (1440x1080 centered)
+Stats: Init CSV (session/master_stats.csv), SQLite (macromaster_stats.db)
+Visualization: GDI+ startup, test HBITMAP support
+GUI/Hotkeys: Load config, apply settings, setup timers (autosave, health checks)
+
+Macro ManagementStorage: macroEvents Map (key: "L{layer}_{buttonName}", value: event array)
+Functions: ExecuteMacro(buttonName), SafeExecuteMacroByKey, CountLoadedMacros
+Cache: hbitmapCache for thumbnails; clear with CleanupHBITMAPCache() or per-macro
+
+Time Tracking & Break ModeTrack active time (exclude breaks); toggle with Ctrl+B
+UpdateActiveTime(): Accumulate ms if !breakMode
+Session: ID as "sess_yyyyMMdd_HHmmss", reset on startup
+
+ConfigurationFile: config.ini (sections: Settings, Macros, Canvas, Hotkeys)
+Functions: LoadConfig() (restore globals/GUI), SaveConfig() (persist), ValidateConfigIntegrity() (timer-based checks)
+Autosave: Every 30s if !recording && !breakMode
+
+Error Handling & RecoveryEmergencyStop(): Halt activity, release hooks, reset states
+ForceStateReset(): Clear bool flags, stop timers
+MonitorExecutionState(): Detect stuck states (>30s playback, >5min recording)
+Fallbacks: Silent degradation, no dialogs
+
+PerformanceMetrics: HBITMAP <1ms cached, PNG 15-30ms, stats display <100ms
+Memory: HBITMAP cache 40%, GUI 25%; cleanup every 50 executions
+Scalability: 1000+ macros, efficient CSV/SQLite for long sessions
+
+Visualization System DetailsMulti-Tier SystemHBITMAP (Primary): In-memory for GUI; CreateHBITMAPVisualization() → GDI+ bitmap → HBITMAP handle → Cache
+PNG (Fallback): File-based; CreateMacroVisualization() → Save to thumbnails/ (fallbacks for corporate paths)
+Plotly (Stats): Python-generated HTML dashboards from SQLite
+
+Canvas Detection & ScalingDetect: Compute aspect ratio from boxes; prefer user mode, fit bounds, coverage >65%
+Scaling: Wide → stretch fill; Narrow → letterbox to 4:3
+Functions: DetectCanvasType(), DrawMacroBoxesOnButton() (sub-pixel, min size 2.5px)
+
+Box RenderingExtractBoxEvents(): Parse events, assign degradations from keypresses
+Render: GDI+ with anti-aliasing; fill rects with color from degradationColors Map
+
+Degradation Colors (Consistent Across Systems)autohotkey
+
+degradationColors := Map(1, 0xFF4500, 2, 0xFFD700, 3, 0x8A2BE2, 4, 0x00FF32, 5, 0x8B0000, 6, 0xFF1493, 7, 0xB8860B, 8, 0x556B2F, 9, 0x00FF7F)
+
+Stats System ArchitectureBackendCSV: session_stats.csv (resets on startup), master_stats.csv (permanent)
+Schema: timestamp,session_id,button_key,layer,execution_time_ms,total_boxes,smudge,...snow
+SQLite: macromaster_stats.db (tables: executions, degradations, sessions); Python scripts for init/migrate/record/query
+Integration: AppendToCSV() dual-writes CSV + JSON → record_execution.py inserts to DB
+
+DisplayShowStats(): Read CSV/SQLite → Calculate today/all-time → Horizontal GUI or Plotly dashboard
+Charts: Degradation bars/pies, time/efficiency lines, stats tables
+Launch: Stats.ahk → generate_dashboard.py → HTML → Browser
+
+Development GuidelinesFile Structure
+
+src/                        # AHK modules (Core.ahk, Macro*.ahk, Visualization*.ahk, GUI*.ahk, Stats.ahk, etc.)
+docs/                       # ARCHITECTURE.md, CORE_SYSTEM.md, VISUALIZATION_SYSTEM.md, STATS_SYSTEM.md
+data/                       # session/master_stats.csv, macromaster_stats.db, config.ini
+thumbnails/                 # PNG visuals
+stats/                      # Python: generate_dashboard.py, record_execution.py, init_database.py
+tests/                      # test_*.ahk
+
+CommandsRun: AutoHotkey.exe MacroLauncherX45.txt (or main script)
+Syntax Check: AutoHotkey.exe /ErrorStdOut script.ahk
+Git Baseline: git init; git add .; git commit -m "Baseline"; git tag v1.0
+Recovery: git reset --hard v1.0; or copy backup
+
+Modification SafetyTest compilation post-changes
+Preserve hotkeys (F9 record, Numpad execute, Ctrl+B break, RCtrl emergency)
+Maintain macro format in config.ini
+Core mods: ExecuteMacro(L934), ShowStats(L1862)
+Add stats: InitializeCSVFile(), AppendToCSV(), ReadStatsFromCSV()
+Naming: Global prefix, descriptive UI vars, bool flags for states
+
+Testing ProtocolLaunch GUI
+Record (F9): Draw boxes, assign 1-9
+Playback (Numpad): Verify accuracy
+Layer switch: Isolate macros
+Break toggle: Check time pause
+Stats: Verify data
+Restart: Check persistence
+
+Future EnhancementsPhase 3: Enhanced analytics, exports, filtering
+Phase 4: Multi-user, network sync, ML features
+
+Quick ReferenceHotkeys: F9 (record), Ctrl+B (break), Numpad0-9 (execute), Shift+Enter (submit), RCtrl (emergency)
+Files: config.ini (settings), session/master_stats.csv (data), thumbnails/ (PNGs)
+Degradations: 1=smudge (#FF4500), ..., 9=snow (#00FF7F)
+Troubleshooting: Check GDI+ init, canvas calibration, cache size; use UpdateStatus() for debug; EmergencyStop() for recovery
+
+Maintained By: MacroMaster Team
+Last Review: 2025-10-08
+Next Review: 2025-11-08
 
-### File System Structure
-
-```
-/
-├── MacroLauncherX45.txt    # Main 4,800-line AutoHotkey script
-├── claude_code_exact_steps.md  # Detailed implementation plan for CSV stats
-├── data/                   # CSV data storage (created at runtime)
-├── thumbnails/            # Button thumbnail storage (created at runtime)
-└── config.ini             # Configuration file (created at runtime)
-```
-
-## Development Commands
-
-**Running the Application:**
-```bash
-# Execute with AutoHotkey v2.0 runtime
-"C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" MacroLauncherX45.txt
-```
-
-**Testing:**
-```bash
-# No automated test suite - manual testing via GUI
-# Use F9 for macro recording, numpad keys for playback
-# Test break mode with Ctrl+B (when implemented)
-```
-
-**Validation:**
-```bash
-# Check AutoHotkey syntax
-"C:\Program Files\AutoHotkey\v2\AutoHotkey.exe" /ErrorStdOut MacroLauncherX45.txt
-```
-
-## Key Implementation Details
-
-### CSV Stats System Integration
-
-The `claude_code_exact_steps.md` file contains a detailed 11-step implementation plan for integrating CSV-based statistics tracking. Key integration points:
-
-**Critical Functions to Modify:**
-- `ExecuteMacro()` at line ~934 - Add execution tracking
-- `ShowStats()` at line ~1862 - Replace data source with CSV reading
-- Add new functions: `InitializeCSVFile()`, `AppendToCSV()`, `ReadStatsFromCSV()`
-
-**CSV Schema:**
-```
-timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,bbox_count,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active
-```
-
-### Safety and Version Control
-
-**Git Integration:**
-```bash
-git init
-git add .
-git commit -m "BASELINE: 4565-line working system before modifications"
-git tag v1.0-working-baseline
-```
-
-**Emergency Recovery:**
-```bash
-# Restore from backup
-git reset --hard v1.0-working-baseline
-# Or manual backup
-copy MacroLauncherX45.txt MacroLauncherX45_BACKUP.txt
-```
-
-### Layer System Architecture
-
-- 5 layers with specific purposes: Base, Advanced, Tools, Custom, AUTO
-- Button mapping: 12 numpad keys (Num0-Num9, NumDot, NumMult)
-- Storage key format: "L{layer}_{buttonName}" (e.g., "L1_Num7")
-- Layer switching via UI controls and hotkeys
-
-## Visualization Systems
-
-MacroMaster uses **three distinct visualization systems** working in parallel:
-
-### 1. HBITMAP System (Primary) - `src/GUI.ahk`
-
-**Purpose:** Memory-only button thumbnails
-
-**Key Functions:**
-- `CreateHBITMAPVisualization(macroEvents, buttonSize)` - Lines 205-302
-- `TestHBITMAPSupport()` - Lines 175-203
-
-**Process:**
-```
-GDI+ Bitmap → HBITMAP Handle → Cache in hbitmapCache Map → picture.Value = "HBITMAP:*{handle}"
-```
-
-**Performance:** <1ms cached, ~5-10ms initial creation
-
-**Advantages:** Zero file I/O, instant display, memory-efficient caching
-
-### 2. PNG File System (Fallback) - `src/Visualization.ahk`
-
-**Purpose:** File-based thumbnails when HBITMAP fails
-
-**Key Functions:**
-- `CreateMacroVisualization(macroEvents, buttonDims)` - Lines 5-56
-- `SaveVisualizationPNG(bitmap, filePath)` - Lines 546-593
-- `DrawMacroBoxesOnButton(graphics, width, height, boxes, events)` - Drawing logic
-
-**Process:**
-```
-GDI+ Bitmap → Save PNG to disk → Return file path → picture.Value = "{path}"
-```
-
-**Fallback Paths:** A_Temp, A_ScriptDir, A_MyDocuments, UserProfile, Desktop
-
-**Performance:** ~15-30ms generation, 5-50 KB file size
-
-### 3. Plotly Dashboard (Stats) - `stats/generate_dashboard.py`
-
-**Purpose:** Interactive analytics with charts
-
-**Key Functions:**
-- `generate_dashboard(filter_mode, output_path, db_path)` - Main generator
-- `query_degradation_totals()`, `query_boxes_over_time()`, etc. - Data queries
-- `create_degradation_bar_chart()`, `create_pie_chart()`, etc. - Chart builders
-
-**Process:**
-```
-SQLite Query → Plotly Chart Objects → HTML Template → Single HTML File → Browser
-```
-
-**Performance:** ~2-3 seconds total, <10ms queries, 50-500 KB output
-
-**Charts Generated:**
-- 3 degradation analysis charts (bar, bar, pie)
-- 3 time/efficiency line charts
-- 5 detailed statistical tables
-
-**Triggered by:** Stats button click → `LaunchDashboard()` in `src/Stats.ahk`
-
-### Degradation Color Consistency
-
-All three systems use identical color mapping:
-
-```ahk
-; AHK (HBITMAP/PNG)
-degradationColors := Map(
-    1, 0xFFFF4500,  ; Smudge
-    2, 0xFFFFD700,  ; Glare
-    3, 0xFF8A2BE2,  ; Splashes
-    4, 0xFF00FF32,  ; Partial Blockage
-    5, 0xFF8B0000,  ; Full Blockage
-    6, 0xFFFF1493,  ; Light Flare
-    7, 0xFFB8860B,  ; Rain
-    8, 0xFF556B2F,  ; Haze
-    9, 0xFF00FF7F   ; Snow
-)
-```
-
-```python
-# Python (Plotly)
-color_map = {
-    'smudge': '#FF4500',
-    'glare': '#FFD700',
-    # ... etc.
-}
-```
-
-**Complete Documentation:** See [VISUALIZATION_SYSTEMS.md](../VISUALIZATION_SYSTEMS.md) for full technical details.
-
-## Stats System Architecture
-
-### SQLite Backend - `stats/`
-
-**Current System (Recommended):**
-
-**Database Location:** `C:\Users\{user}\Documents\MacroMaster\data\macromaster_stats.db`
-
-**Key Scripts:**
-- `generate_dashboard.py` - Plotly dashboard generator
-- `record_execution.py` - Real-time database inserts
-- `migrate_csv_to_db.py` - CSV to SQLite migration
-- `init_database.py` - Database initialization
-- `test_database.py` - System verification
-
-**Schema:**
-- `executions` table - Main execution records
-- `degradations` table - Normalized per-box degradations
-- `sessions` table - Session aggregations
-- 9 performance indexes for <1ms queries
-
-**Integration Points:**
-- `AppendToCSV()` in `src/Stats.ahk` (lines 841-895) - Dual-write to CSV + database
-- `LaunchDashboard()` in `src/Stats.ahk` (lines 265-328) - Generate and open dashboard
-
-**Data Flow:**
-```
-User executes macro → RecordExecutionStats() → AppendToCSV()
-→ Write CSV + Create JSON → Python record_execution.py
-→ Insert to SQLite → Stats button → generate_dashboard.py
-→ Query database → Generate HTML → Open in browser
-```
-
-**Complete Documentation:**
-- [stats/STATS_SYSTEM_DOCUMENTATION.md](../stats/STATS_SYSTEM_DOCUMENTATION.md) - Full API
-- [stats/SYSTEM_ALIGNMENT.md](../stats/SYSTEM_ALIGNMENT.md) - End-to-end flow
-
-### Degradation Tracking System
-
-9 degradation types mapped to number keys 1-9:
-- 1=smudge, 2=glare, 3=splashes, 4=partial_blockage, 5=full_blockage
-- 6=light_flare, 7=rain, 8=haze, 9=snow
-- Color-coded visualization with hex color mapping
-- Assignment during macro recording via keypresses
-
-## Development Guidelines
-
-**Code Modification Safety:**
-- Always test compilation after changes: script must load without errors
-- Preserve existing hotkey system (F9 for recording, numpad for execution)
-- Maintain backward compatibility with existing macro storage format
-- Test core workflow: Record → Assign → Playback → Verify
-
-**Variable Naming Conventions:**
-- Global variables prefixed with `global`
-- UI elements: descriptive names (e.g., `mainGui`, `statusBar`)
-- System state: boolean flags (e.g., `recording`, `playback`, `breakMode`)
-- Data structures: Maps for button/macro storage
-
-**Error Handling:**
-- File operations should include error checking
-- GUI operations wrapped in try/catch where appropriate
-- Status updates via `UpdateStatus()` function for user feedback
-
-## Testing Protocol
-
-**Manual Testing Sequence:**
-1. Launch application - verify GUI loads correctly
-2. Record macro with F9 - test bounding box drawing
-3. Assign degradations with keys 1-9 during recording
-4. Execute via numpad - verify playback accuracy
-5. Test layer switching - verify macro isolation
-6. Test break mode toggle - verify tracking pause
-7. Check stats display - verify data accuracy
-8. Restart application - verify data persistence

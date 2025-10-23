@@ -254,11 +254,13 @@ ShowStatsMenu() {
 
     statsGuiOpen := true
 
-    ; Initial update and start refresh timer (500ms)
+    ; CRITICAL FIX: Slow down refresh timer to prevent freezing
+    ; Was 500ms (2x/second) causing 2-5 second freezes
+    ; Now 5000ms (every 5 seconds) for smooth operation
 
     UpdateStatsDisplay()
 
-    SetTimer(UpdateStatsDisplay, 500)
+    SetTimer(UpdateStatsDisplay, 5000)
 
 }
 
@@ -338,23 +340,27 @@ UpdateStatsDisplay() {
 
     try {
 
-        ; Get fresh stats data
+        ; Get fresh stats data from MEMORY (not CSV)
+        allStats := ReadStatsFromMemory(false)
 
-        allStats := ReadStatsFromCSV(false)
+        todayStats := GetTodayStatsFromMemory()
 
-        todayStats := GetTodayStats()
+        ; CRITICAL FIX: Always include LIVE active time from current session
+        ; The timer UpdateActiveTime() runs every 30 seconds and accumulates time in totalActiveTime
+        ; This time is only saved to CSV when macros execute, so we need to add the live accumulated time
 
-        ; CRITICAL: Recalculate hourly rates with LIVE active time for ALL-TIME
-
-        currentSessionStats := ReadStatsFromCSV(true)
+        currentSessionStats := ReadStatsFromMemory(true)
         recordedSessionActive := (currentSessionStats.Has("session_active_time") ? currentSessionStats["session_active_time"] : 0)
 
+        ; Get LIVE active time (includes time since last save to CSV)
         currentActiveTime := GetCurrentSessionActiveTime()
 
+        ; Calculate effective ALL-TIME active time (CSV saved time + live unsaved time)
         effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
-        if (currentActiveTime > recordedSessionActive) {
-            effectiveAllActiveTime += currentActiveTime - recordedSessionActive
-        }
+
+        ; CRITICAL FIX: Always add current session live time, not just when it's greater than recorded
+        ; This ensures that time accumulated before any macros are executed is counted
+        effectiveAllActiveTime += currentActiveTime - recordedSessionActive
 
         if (effectiveAllActiveTime > 5000) {
             activeTimeHours := effectiveAllActiveTime / 3600000
@@ -364,10 +370,11 @@ UpdateStatsDisplay() {
 
         allStats["session_active_time"] := effectiveAllActiveTime
 
+        ; Calculate effective TODAY active time (CSV saved time + live unsaved time)
         effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
-        if (currentActiveTime > recordedSessionActive) {
-            effectiveTodayActiveTime += currentActiveTime - recordedSessionActive
-        }
+
+        ; CRITICAL FIX: Always add current session live time for today as well
+        effectiveTodayActiveTime += currentActiveTime - recordedSessionActive
 
         if (effectiveTodayActiveTime > 5000) {
             activeTimeHours := effectiveTodayActiveTime / 3600000
@@ -545,9 +552,9 @@ CloseStatsMenu() {
 
 ExportStatsData(statsMenuGui := "") {
 
-    global masterStatsCSV
+    global macroExecutionLog, documentsDir
 
-    if (!FileExist(masterStatsCSV)) {
+    if (!macroExecutionLog || macroExecutionLog.Length = 0) {
 
         MsgBox("📊 No data to export yet`n`nStart using macros to generate performance data!", "Info", "Icon!")
 
@@ -555,15 +562,24 @@ ExportStatsData(statsMenuGui := "") {
 
     }
 
-    ; Export to Documents folder for accessibility from zipped execution
+    ; Export to Documents folder for accessibility
 
     exportPath := documentsDir . "\MacroMaster_Stats_Export_" . FormatTime(A_Now, "yyyyMMdd_HHmmss") . ".csv"
 
     try {
 
-        FileCopy(masterStatsCSV, exportPath)
+        ; Write header
+        csvContent := Stats_GetCsvHeader()
 
-        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nYou can open this file in Excel or other tools.", "Export Complete", "Icon!")
+        ; Write all in-memory execution data
+        for executionData in macroExecutionLog {
+            csvContent .= Stats_BuildCsvRow(executionData)
+        }
+
+        ; Write to file
+        FileAppend(csvContent, exportPath, "UTF-8")
+
+        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nExecutions: " . macroExecutionLog.Length . "`n`nYou can open this file in Excel or other tools.", "Export Complete", "Icon!")
 
     } catch Error as e {
 
@@ -575,29 +591,31 @@ ExportStatsData(statsMenuGui := "") {
 
 ResetAllStats() {
 
-    global masterStatsCSV, permanentStatsFile
+    global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
 
-    result := MsgBox("This will reset the DISPLAY statistics (Today and All-Time shown in the stats menu).`n`n⚠️ Your permanent master stats file will NOT be deleted - all your historical data is safe!`n`nReset display stats?", "Reset Statistics", "YesNo Icon!")
+    result := MsgBox("This will reset ALL statistics (Today and All-Time).`n`nAll execution data will be permanently deleted.`n`n⚠️ Export your stats first if you want to keep them!`n`nReset all stats?", "Reset Statistics", "YesNo Icon!")
 
     if (result = "Yes") {
 
         try {
 
-            ; Delete the CSV file (display stats)
+            ; Clear in-memory log
+            macroExecutionLog := []
 
-            if FileExist(masterStatsCSV) {
-
-                FileDelete(masterStatsCSV)
-
+            ; Delete JSON stats file
+            statsJsonFile := workDir . "\stats_log.json"
+            if FileExist(statsJsonFile) {
+                FileDelete(statsJsonFile)
             }
 
-            ; Reinitialize CSV file
+            ; Delete CSV file if it exists
+            if FileExist(masterStatsCSV) {
+                FileDelete(masterStatsCSV)
+            }
 
-            InitializeCSVFile()
+            UpdateStatus("🗑️ Stats reset complete")
 
-            ; NOTE: We do NOT delete permanentStatsFile - it persists forever!
-
-            MsgBox("Display statistics reset complete!`n`n✅ Your permanent master stats file is safe at:`n" . permanentStatsFile . "`n`nAll historical data is preserved!", "Reset Complete", "Icon!")
+            MsgBox("Statistics reset complete!`n`n✅ All execution data cleared.`n`nStart using macros to build new stats!", "Reset Complete", "Icon!")
 
         } catch Error as e {
 

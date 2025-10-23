@@ -37,67 +37,17 @@ JoinArray(array, delimiter) {
     return result
 }
 
+; Alias for StrJoin (used in ConfigIO.ahk)
+StrJoin(array, delimiter) {
+    return JoinArray(array, delimiter)
+}
+
 ; ===== UTILITY FUNCTIONS =====
 StrTitle(str) {
     str := StrReplace(str, "_", " ")
     return StrUpper(SubStr(str, 1, 1)) . SubStr(str, 2)
 }
 
-; Format milliseconds to human-readable time
-FormatMillisecondsToTime(ms) {
-    if (ms < 1000) {
-        return ms . " ms"
-    }
-
-    seconds := Round(ms / 1000, 1)
-    if (seconds < 60) {
-        return seconds . " sec"
-    }
-
-    minutes := Floor(seconds / 60)
-    remainingSeconds := Mod(seconds, 60)
-
-    if (minutes < 60) {
-        return minutes . "m " . Round(remainingSeconds) . "s"
-    }
-
-    hours := Floor(minutes / 60)
-    remainingMinutes := Mod(minutes, 60)
-
-    return hours . "h " . remainingMinutes . "m"
-}
-
-DeleteFile(filePath) {
-    ; Helper function for safe file deletion
-    try {
-        if (FileExist(filePath))
-            FileDelete(filePath)
-    } catch {
-        ; Ignore deletion errors for temporary files
-    }
-}
-
-RunWaitOne(command) {
-    ; Simple wrapper to run command and get output
-    shell := ComObject("WScript.Shell")
-    exec := shell.Exec(command)
-    output := ""
-
-    ; Wait for completion and read output
-    while !exec.Status {
-        Sleep(10)
-    }
-
-    if exec.StdOut.AtEndOfStream {
-        return ""
-    }
-
-    while !exec.StdOut.AtEndOfStream {
-        output .= exec.StdOut.ReadLine() . "`n"
-    }
-
-    return Trim(output)
-}
 
 ; ===== INTEGER VALIDATION FUNCTION =====
 ; Robust integer conversion for AHK v2 compatibility

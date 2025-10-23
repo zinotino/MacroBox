@@ -16,11 +16,10 @@ SaveConfig() {
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyStats, hotkeyBreakMode
     global hotkeySettings, hotkeyProfileActive, wasdLabelsEnabled
-    global visualizationSavePath
     global boxDrawDelay, mouseClickDelay, menuClickDelay, mouseDragDelay, mouseReleaseDelay
     global betweenBoxDelay, keyPressDelay, focusDelay, mouseHoverDelay
     global smartBoxClickDelay, smartMenuClickDelay
-    global macroEvents, buttonNames, buttonCustomLabels
+    global macroEvents, buttonNames, buttonCustomLabels, buttonLetterboxingStates
     local macrosSaved := 0, settingsSaved := 0
 
     try {
@@ -85,9 +84,7 @@ SaveConfig() {
         content .= "wasdLabelsEnabled=" . (wasdLabelsEnabled ? "true" : "false") . "`n"
         settingsSaved += 2
 
-        ; Visualization settings
-        content .= "visualizationSavePath=" . visualizationSavePath . "`n"
-        settingsSaved += 1
+        settingsSaved += 3
 
         ; Timing settings
         content .= "boxDrawDelay=" . boxDrawDelay . "`n"
@@ -103,56 +100,65 @@ SaveConfig() {
         content .= "smartMenuClickDelay=" . smartMenuClickDelay . "`n"
         settingsSaved += 10
 
-        ; Macros section
+        ; Macros section - WRITE ACTUAL MACRO DATA
         content .= "`n[Macros]`n"
+        macrosSaved := 0
         for buttonName in buttonNames {
             if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
                 events := macroEvents[buttonName]
-                eventString := ""
-                for i, event in events {
-                    if (i > 1) {
-                        eventString .= "|"
-                    }
-                    if (event.type = "boundingBox") {
-                        eventString .= "boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom
-                        ; PHASE 2B: Include ALL degradation properties for complete persistence
-                        if (event.HasOwnProp("degradationType")) {
-                            eventString .= "," . event.degradationType
-                        } else {
-                            eventString .= ",1"  ; Default to smudge (1) if not set
-                        }
-                        ; PHASE 2B: Save degradationName for intelligent system
-                        if (event.HasOwnProp("degradationName")) {
-                            eventString .= "," . event.degradationName
-                        } else {
-                            eventString .= ",smudge"  ; Default name
-                        }
-                        ; PHASE 2B: Save assignedBy for tracking
-                        if (event.HasOwnProp("assignedBy")) {
-                            eventString .= "," . event.assignedBy
-                        } else {
-                            eventString .= ",auto_default"  ; Default assignment
-                        }
-                    } else if (event.type = "jsonAnnotation") {
-                        eventString .= "jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity
-                    } else if (event.type = "keyDown") {
-                        eventString .= "keyDown," . event.key
-                    } else if (event.type = "keyUp") {
-                        eventString .= "keyUp," . event.key
-                    }
-                }
-                content .= buttonName . "=" . eventString . "`n"
+                eventStrings := []
 
-                ; Save recordedMode property if it exists (critical for letterboxing persistence)
-                if (events.HasOwnProp("recordedMode")) {
+                for event in events {
+                    eventStr := event.type
+
+                    switch event.type {
+                        case "boundingBox":
+                            eventStr .= "," . event.left . "," . event.top . "," . event.right . "," . event.bottom
+                            if (event.HasOwnProp("degradationType")) {
+                                eventStr .= "," . event.degradationType
+                            }
+                            if (event.HasOwnProp("degradationName")) {
+                                eventStr .= "," . event.degradationName
+                            }
+                            if (event.HasOwnProp("assignedBy")) {
+                                eventStr .= "," . event.assignedBy
+                            }
+
+                        case "jsonAnnotation":
+                            eventStr .= "," . event.mode . "," . event.categoryId . "," . event.severity
+                            if (event.HasOwnProp("isTagged")) {
+                                eventStr .= "," . (event.isTagged ? "1" : "0")
+                            }
+
+                        case "keyDown", "keyUp":
+                            eventStr .= "," . event.key
+
+                        case "mouseDown", "mouseUp":
+                            eventStr .= "," . event.x . "," . event.y . "," . event.button
+
+                        default:
+                            if (event.HasOwnProp("x")) {
+                                eventStr .= "," . event.x
+                            }
+                            if (event.HasOwnProp("y")) {
+                                eventStr .= "," . event.y
+                            }
+                    }
+
+                    eventStrings.Push(eventStr)
+                }
+
+                ; Join all events with pipe separator
+                content .= buttonName . "=" . StrJoin(eventStrings, "|") . "`n"
+                macrosSaved++
+
+                ; Save recordedMode if available
+                if (events.HasOwnProp("recordedMode") && events.recordedMode != "") {
                     content .= buttonName . "_RecordedMode=" . events.recordedMode . "`n"
                 }
-
-                macrosSaved++
             }
         }
 
-        ; Labels section
         content .= "`n[Labels]`n"
         if (IsSet(buttonCustomLabels) && Type(buttonCustomLabels) = "Map") {
             for buttonName, label in buttonCustomLabels {
@@ -183,68 +189,37 @@ SaveConfig() {
             }
         }
 
-        ; Write to file with verification
-        try {
-            ; Write to temp file first for atomic save
-            tempFile := configFile . ".tmp"
-            file := FileOpen(tempFile, "w", "UTF-8")
-            if (!file) {
-                throw Error("Failed to open temp file for writing: " . tempFile)
-            }
-            file.Write(content)
-            file.Close()
-
-            ; Verify temp file was written
-            if (!FileExist(tempFile)) {
-                throw Error("Temp file was not created: " . tempFile)
-            }
-
-            ; Atomic replace: backup old config, move temp to config
-            if (FileExist(configFile)) {
-                backupFile := configFile . ".backup"
+        ; Letterboxing preferences section - save per-button letterboxing states
+        content .= "`n[Letterboxing]`n"
+        if (IsSet(buttonLetterboxingStates) && Type(buttonLetterboxingStates) = "Map") {
+            for buttonKey, letterboxingState in buttonLetterboxingStates {
+                ; Validate entry before accessing
                 try {
-                    FileDelete(backupFile)
+                    if (IsSet(letterboxingState) && letterboxingState != "" && Type(letterboxingState) = "String") {
+                        content .= buttonKey . "=" . letterboxingState . "`n"
+                    }
                 } catch {
-                    ; Ignore if backup doesn't exist
+                    ; Skip entries with no value or invalid type
+                    continue
                 }
-                FileCopy(configFile, backupFile, 1)
             }
-
-            FileMove(tempFile, configFile, 1)
-
-            ; Verify final file
-            if (!FileExist(configFile)) {
-                throw Error("Config file was not created after move: " . configFile)
-            }
-
-            UpdateStatus("💾 Saved")
-
-            ; Log successful save
-            try {
-                logFile := workDir . "\save_log.txt"
-                logContent := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss") . " - Config saved: " . macrosSaved . " macros, " . settingsSaved . " settings`n"
-                FileAppend(logContent, logFile, "UTF-8")
-            } catch {
-                ; Ignore logging errors
-            }
-
-        } catch Error as writeError {
-            UpdateStatus("❌ Save error: " . writeError.Message)
-            throw writeError  ; Re-throw to catch in outer handler
         }
+
+        ; Write config file directly
+        try {
+            FileDelete(configFile)
+        } catch {
+            ; Ignore if file doesn't exist
+        }
+
+        FileAppend(content, configFile, "UTF-8")
+
+        UpdateStatus("💾 Saved")
 
     } catch Error as e {
         UpdateStatus("❌ Save failed: " . e.Message)
-        ; Log critical save failure
-        try {
-            logFile := workDir . "\save_log.txt"
-            logContent := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss") . " - SAVE FAILED: " . e.Message . "`n"
-            FileAppend(logContent, logFile, "UTF-8")
-        } catch {
-            ; Can't even log - show message box
-            MsgBox("CRITICAL: Failed to save configuration and couldn't write to log!`n`nError: " . e.Message, "Save Error", "Icon!")
-        }
-        throw e  ; Re-throw so caller knows save failed
+        MsgBox("Failed to save configuration!`n`nError: " . e.Message, "Save Error", "Icon!")
+        throw e
     }
 }
 
@@ -253,7 +228,7 @@ LoadConfig() {
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global workDir, visualizationSavePath
+    global workDir
 
     try {
         ; Ensure config directory exists (MacroMaster\data folder in Documents)
@@ -273,12 +248,6 @@ LoadConfig() {
 
         ; Read and parse the config file
         content := FileRead(configFile, "UTF-8")
-
-        ; Validate config content
-        if (!ValidateConfigData(content)) {
-            UpdateStatus("⚠️ Config validation failed - using defaults")
-            return
-        }
         lines := StrSplit(content, "`n")
 
         currentSection := ""
@@ -326,7 +295,6 @@ LoadConfig() {
                             case "hotkeySettings": hotkeySettings := value
                             case "hotkeyProfileActive": hotkeyProfileActive := (value = "true")
                             case "wasdLabelsEnabled": wasdLabelsEnabled := (value = "true")
-                            case "visualizationSavePath": visualizationSavePath := value
                             case "boxDrawDelay": boxDrawDelay := EnsureInteger(value, 75)
                             case "mouseClickDelay": mouseClickDelay := EnsureInteger(value, 85)
                             case "menuClickDelay": menuClickDelay := EnsureInteger(value, 150)
@@ -345,6 +313,7 @@ LoadConfig() {
                         if (InStr(key, "_RecordedMode")) {
                             ; Extract the macro name (remove "_RecordedMode" suffix)
                             macroName := StrReplace(key, "_RecordedMode", "")
+                            ; Apply immediately if macro already loaded
                             if (macroEvents.Has(macroName)) {
                                 macroEvents[macroName].recordedMode := value
                             }
@@ -360,6 +329,13 @@ LoadConfig() {
                         global buttonThumbnails
                         if (FileExist(value)) {
                             buttonThumbnails[key] := value
+                        }
+
+                    case "Letterboxing":
+                        ; Restore letterboxing preferences
+                        global buttonLetterboxingStates
+                        if (value = "wide" || value = "narrow" || value = "auto") {
+                            buttonLetterboxingStates[key] := value
                         }
 
                     case "Canvas":
@@ -385,196 +361,52 @@ LoadConfig() {
             }
         }
 
-        ; VALIDATE LOADED CANVAS VALUES - ensure they are valid to prevent visualization failures
-        try {
-            ValidateAndFixCanvasValues()
-            ; Sync canvas state from legacy globals
-            Canvas_SyncFromLegacyGlobals()
-        } catch Error as canvasError {
-            UpdateStatus("⚠️ Canvas validation failed")
-            throw canvasError
-        }
+        ; Validate canvas values and sync
+        ValidateAndFixCanvasValues()
+        Canvas_SyncFromLegacyGlobals()
 
         UpdateStatus("📚 Loaded")
 
-        ; DEFER GUI settings application until GUI is confirmed ready
-        ; ApplyLoadedSettingsToGUI() will be called separately after GUI initialization
-
     } catch Error as e {
         UpdateStatus("❌ Load failed: " . e.Message)
-        throw e  ; Re-throw to catch in Main()
+        throw e
     }
 }
 
 ; ===== APPLY SETTINGS TO GUI =====
 ApplyLoadedSettingsToGUI() {
-    ; Apply loaded settings to GUI controls after initialization
     global wasdLabelsEnabled, annotationMode, modeToggleBtn
     global gdiPlusInitialized, hbitmapCache
 
     try {
-        ; CRITICAL: Update mode toggle button text to match loaded state
+        ; Update mode toggle button text
         if (modeToggleBtn) {
-            if (annotationMode = "Wide") {
-                modeToggleBtn.Text := "🔦 Wide"
-            } else {
-                modeToggleBtn.Text := "📱 Narrow"
-            }
+            modeToggleBtn.Text := (annotationMode = "Wide") ? "🔦 Wide" : "📱 Narrow"
         }
 
-        ; Update button labels with WASD if enabled
+        ; Update WASD labels if enabled
         if (wasdLabelsEnabled) {
             UpdateButtonLabelsWithWASD()
         }
 
-        ; PHASE 2C: Ensure GDI+ is initialized before visualization regeneration
+        ; Initialize GDI+ if needed
         if (!gdiPlusInitialized) {
-            try {
-                InitializeVisualizationSystem()
-            } catch Error as vizError {
-                UpdateStatus("⚠️ Visualization initialization failed: " . vizError.Message)
-            }
+            InitializeVisualizationSystem()
         }
 
-        ; PHASE 2C: Clear HBITMAP cache to force regeneration on load
-        try {
-            CleanupHBITMAPCache()
-        } catch {
-            ; Silently continue if cleanup fails
-        }
-        hbitmapCache := Map()  ; Reset cache
+        ; Clear and reset HBITMAP cache
+        CleanupHBITMAPCache()
+        hbitmapCache := Map()
 
-        ; PHASE 2C: Refresh all button appearances with fresh visualizations
+        ; Refresh button appearances
         RefreshAllButtonAppearances()
 
-        ; Settings applied silently
     } catch Error as e {
         UpdateStatus("⚠️ GUI settings error: " . e.Message)
     }
 }
 
-; ===== EMERGENCY CONFIG REPAIR =====
-RepairConfigSystem() {
-    global configFile, workDir
 
-    result := MsgBox("⚠️ EMERGENCY CONFIG REPAIR`n`nThis will:`n• Remove stuck lock files`n• Delete old config files`n• Rebuild config from memory`n• Create fresh backup`n`nContinue?", "Repair Config", "YesNo Icon!")
 
-    if (result = "No") {
-        return
-    }
 
-    try {
-        ; Remove lock file
-        lockFile := workDir . "\config.lock"
-        if (FileExist(lockFile)) {
-            FileDelete(lockFile)
-        }
 
-        ; Delete old config files
-        CleanupOldConfigFiles()
-
-        ; Create fresh backup of current config
-        if (FileExist(configFile)) {
-            backupFile := configFile . ".pre-repair." . FormatTime(A_Now, "yyyyMMdd_HHmmss")
-            FileCopy(configFile, backupFile, 0)
-        }
-
-        ; Force save current state
-        SaveConfig()
-        UpdateStatus("✅ Config system repaired")
-
-        ; Verify
-        if (FileExist(configFile)) {
-            content := FileRead(configFile, "UTF-8")
-            if (ValidateConfigData(content)) {
-                MsgBox("✅ Config system repaired successfully!`n`nYour configuration has been rebuilt and validated.", "Repair Complete", "Icon!")
-            } else {
-                MsgBox("⚠️ Config was rebuilt but validation failed.`n`nCheck the diagnostics for details.", "Repair Warning", "Icon!")
-            }
-        } else {
-            MsgBox("❌ Config repair failed!`n`nFile was not created.", "Repair Failed", "Icon!")
-        }
-
-    } catch Error as e {
-        MsgBox("❌ Repair failed!`n`n" . e.Message, "Repair Error", "Icon!")
-    }
-}
-
-; ===== INITIALIZATION =====
-InitializeConfigSystem() {
-    global workDir, configFile
-
-    InitConfigLock()
-    VerifyConfigPaths()
-
-    ; Clean up any stuck locks from previous crashes
-    lockFile := workDir . "\config.lock"
-    if (FileExist(lockFile)) {
-        try {
-            FileDelete(lockFile)
-        } catch {
-            ; Ignore
-        }
-    }
-}
-
-SetupConfigTestHotkeys() {
-    ; F10 - Diagnostics
-    Hotkey("F10", (*) => DiagnoseConfigSystem())
-
-    ; F11 - Test Save/Load
-    Hotkey("F11", (*) => TestConfigSystem())
-
-    ; Ctrl+Shift+F12 - Emergency Repair
-    Hotkey("^+F12", (*) => RepairConfigSystem())
-}
-
-; ===== HELPER FUNCTIONS =====
-InitConfigLock() {
-    ; Placeholder - implement as needed
-}
-
-CleanupOldConfigFiles() {
-    ; Placeholder - implement as needed
-}
-
-VerifyConfigPaths() {
-    ; Placeholder - implement as needed
-}
-
-ValidateConfigData(content) {
-    ; Basic validation of config content
-    try {
-        ; Check for required sections
-        hasSettings := InStr(content, "[Settings]") > 0
-        hasMacros := InStr(content, "[Macros]") > 0
-
-        ; Check for basic structure
-        if (!hasSettings && !hasMacros) {
-            return false
-        }
-
-        ; Check for reasonable content length
-        if (StrLen(content) < 10) {
-            return false
-        }
-
-        ; Check for balanced brackets
-        openBrackets := 0
-        closeBrackets := 0
-        for char in StrSplit(content) {
-            if (char = "[") {
-                openBrackets++
-            } else if (char = "]") {
-                closeBrackets++
-            }
-        }
-        if (openBrackets != closeBrackets) {
-            return false
-        }
-
-        return true
-    } catch {
-        return false
-    }
-}

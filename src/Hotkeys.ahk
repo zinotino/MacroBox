@@ -26,9 +26,6 @@ InitializeWASDHotkeys() {
     wasdHotkeyMap["x"] := "NumDot"  ; X -> NumDot
     wasdHotkeyMap["c"] := "NumMult" ; C -> NumMult
 
-    ; Try to load custom mappings from file
-    LoadWASDMappingsFromFile()
-
     ; Update button labels to show WASD keys
     UpdateButtonLabelsWithWASD()
 }
@@ -222,8 +219,6 @@ SetupHotkeys() {
         } catch {
         }
 
-        ; Sleep(50) - REMOVED for rapid labeling performance
-
         ; Recording control - use configured key (default F9)
         if (hotkeyRecordToggle != "") {
             Hotkey(hotkeyRecordToggle, F9_RecordingOnly, "On")
@@ -248,7 +243,7 @@ SetupHotkeys() {
         }
 
         ; Manual state reset (not configurable - keep as Ctrl+Shift+R)
-        Hotkey("^+r", (*) => ForceStateReset())
+        Hotkey("^+r", (*) => EmergencyStop())
 
         ; Debug (not configurable - keep as F11)
         Hotkey("F11", (*) => ShowRecordingDebug())

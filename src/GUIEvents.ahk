@@ -80,6 +80,8 @@ AssignJsonAnnotation(buttonName, presetName, *) {
                 categoryId: categoryId,
                 severity: severity
             }]
+            ; CRITICAL FIX: Set recordedMode for JSON annotations too
+            macroEvents[buttonName].recordedMode := currentMode
             UpdateButtonAppearance(buttonName)
             SaveConfig()
             UpdateStatus("🏷️ Assigned " . presetName . " to " . buttonName)
@@ -105,7 +107,7 @@ ToggleAnnotationMode() {
             modeToggleBtn.Opt("+Background0xFF8C00")
         }
         modeToggleBtn.SetFont(, "cWhite")
-        modeToggleBtn.Redraw()
+        ; No need for Redraw() - button updates automatically
     }
 
     ; Switch active canvas based on annotation mode
@@ -162,13 +164,14 @@ ApplyBreakModeUI() {
         if (buttonGrid.Has(buttonName)) {
             button := buttonGrid[buttonName]
             button.Opt("+Disabled")
-            button.Redraw()
+            ; No need to call Redraw() - buttons update automatically
         }
     }
 
     ; Update main GUI appearance
     if (mainGui) {
         mainGui.BackColor := "0x8B0000"  ; Dark red
+        ; GUI redraws automatically when BackColor changes
     }
 }
 
@@ -180,14 +183,14 @@ RestoreNormalUI() {
         if (buttonGrid.Has(buttonName)) {
             button := buttonGrid[buttonName]
             button.Opt("-Disabled")
-            button.Redraw()
+            ; No need to call Redraw() - buttons update automatically
         }
     }
 
     ; Restore main GUI appearance
     if (mainGui) {
         mainGui.BackColor := darkMode ? "0x2D2D2D" : "0xF0F0F0"
-        mainGui.Redraw()
+        ; GUI redraws automatically when BackColor changes
     }
 
     ; Refresh button appearances
@@ -200,21 +203,6 @@ ShowWelcomeMessage() {
 }
 
 ; ===== UTILITY FUNCTIONS =====
-GetWASDMappingsText() {
-    global wasdHotkeyMap
-
-    if (!wasdHotkeyMap || wasdHotkeyMap.Count = 0) {
-        return "No WASD mappings configured"
-    }
-
-    text := ""
-    for wasdKey, numpadKey in wasdHotkeyMap {
-        text .= wasdKey . " → " . numpadKey . "`n"
-    }
-
-    return RTrim(text, "`n")
-}
-
 GetStatsSummary() {
     global totalActiveTime
 

@@ -1,5 +1,4 @@
-; ===== OBJECT PERSISTENCE MODULE =====
-; Simple JSON save/load for stats persistence
+#Requires AutoHotkey v2.0
 
 ObjSave(obj, path) {
     file := ""
@@ -46,7 +45,7 @@ ObjToString(value) {
             keyText := ObjToString(String(key))
             items.Push(keyText . ":" . ObjToString(itemValue))
         }
-        return "{" . StrJoin(items, ",") . "}"
+        return "{ " . StrJoin(items, ", ") . " }"
     }
 
     if (valueType = "Array") {
@@ -54,7 +53,7 @@ ObjToString(value) {
         for element in value {
             items.Push(ObjToString(element))
         }
-        return "[" . StrJoin(items, ",") . "]"
+        return "[ " . StrJoin(items, ", ") . " ]"
     }
 
     if (valueType = "String") {
@@ -62,33 +61,55 @@ ObjToString(value) {
         return quote . JsonEscape(value) . quote
     }
 
+    if (valueType = "Object") {
+        try {
+            return ObjToString(value.Clone())
+        } catch {
+            try {
+                return ObjToString(value.ToString())
+            } catch {
+                return "[object]"
+            }
+        }
+    }
+
     return String(value)
 }
 
 StrToObj(text) {
     try {
-        pos := 1
-        return Jxon_ParseValue(text, &pos)
+        result := JSON_Load(text)
+        return IsObject(result) ? result : Map()
     } catch {
         return Map()
     }
 }
 
-Jxon_ParseValue(text, &pos) {
+JSON_Load(text) {
+    return Jxon_Load(text)
+}
+
+Jxon_Load(text, reviver := "") {
+    static null := ComValue(1, 0)
+    pos := 1
+    return Jxon_ParseValue(text, &pos, reviver)
+}
+
+Jxon_ParseValue(text, &pos, reviver) {
     Jxon_SkipWhitespace(text, &pos)
     if (pos > StrLen(text))
-        throw Error("Unexpected end")
+        throw Error("Unexpected end of JSON input")
 
     char := SubStr(text, pos, 1)
     if (char = "{")
-        return Jxon_ParseObject(text, &pos)
+        return Jxon_ParseObject(text, &pos, reviver)
     if (char = "[")
-        return Jxon_ParseArray(text, &pos)
+        return Jxon_ParseArray(text, &pos, reviver)
     if (char = Chr(34))
         return Jxon_ParseString(text, &pos)
     if (SubStr(text, pos, 4) = "null") {
         pos += 4
-        return ""
+        return ComValue(1, 0)
     }
     if (SubStr(text, pos, 4) = "true") {
         pos += 4
@@ -101,7 +122,7 @@ Jxon_ParseValue(text, &pos) {
     return Jxon_ParseNumber(text, &pos)
 }
 
-Jxon_ParseObject(text, &pos) {
+Jxon_ParseObject(text, &pos, reviver) {
     obj := Map()
     pos += 1
     Jxon_SkipWhitespace(text, &pos)
@@ -116,7 +137,7 @@ Jxon_ParseObject(text, &pos) {
         if (SubStr(text, pos, 1) != ":")
             throw Error("Expected ':'")
         pos += 1
-        value := Jxon_ParseValue(text, &pos)
+        value := Jxon_ParseValue(text, &pos, reviver)
         obj[key] := value
         Jxon_SkipWhitespace(text, &pos)
         char := SubStr(text, pos, 1)
@@ -131,7 +152,7 @@ Jxon_ParseObject(text, &pos) {
     return obj
 }
 
-Jxon_ParseArray(text, &pos) {
+Jxon_ParseArray(text, &pos, reviver) {
     arr := []
     pos += 1
     Jxon_SkipWhitespace(text, &pos)
@@ -141,7 +162,7 @@ Jxon_ParseArray(text, &pos) {
     }
 
     while true {
-        value := Jxon_ParseValue(text, &pos)
+        value := Jxon_ParseValue(text, &pos, reviver)
         arr.Push(value)
         Jxon_SkipWhitespace(text, &pos)
         char := SubStr(text, pos, 1)
@@ -181,16 +202,31 @@ Jxon_ParseString(text, &pos) {
                 throw Error("Unexpected end of string")
 
             escapeChar := SubStr(text, pos, 1)
-            if (escapeChar = quote)
+            if (escapeChar = quote) {
                 result .= quote
-            else if (escapeChar = backslash)
+            } else if (escapeChar = backslash) {
                 result .= backslash
-            else if (escapeChar = "n")
+            } else if (escapeChar = "/") {
+                result .= "/"
+            } else if (escapeChar = "b") {
+                result .= Chr(8)
+            } else if (escapeChar = "f") {
+                result .= Chr(12)
+            } else if (escapeChar = "n") {
                 result .= "`n"
-            else if (escapeChar = "r")
+            } else if (escapeChar = "r") {
                 result .= "`r"
-            else if (escapeChar = "t")
+            } else if (escapeChar = "t") {
                 result .= "`t"
+            } else if (escapeChar = "u") {
+                hex := SubStr(text, pos + 1, 4)
+                if (StrLen(hex) < 4)
+                    throw Error("Invalid unicode escape sequence")
+                result .= Chr("0x" . hex)
+                pos += 4
+            } else {
+                throw Error("Invalid escape sequence")
+            }
             pos += 1
             start := pos
         } else {
@@ -217,22 +253,30 @@ Jxon_SkipWhitespace(text, &pos) {
 
 JsonEscape(text) {
     result := ""
+    quote := Chr(34)
     backslash := Chr(92)
     Loop Parse text {
         char := A_LoopField
         code := Ord(char)
-        if (code = 9)
+        if (code = 8) {
+            result .= backslash . "b"
+        } else if (code = 9) {
             result .= backslash . "t"
-        else if (code = 10)
+        } else if (code = 10) {
             result .= backslash . "n"
-        else if (code = 13)
+        } else if (code = 12) {
+            result .= backslash . "f"
+        } else if (code = 13) {
             result .= backslash . "r"
-        else if (code = 34)
-            result .= backslash . Chr(34)
-        else if (code = 92)
+        } else if (code = 34) {
+            result .= backslash . quote
+        } else if (code = 92) {
             result .= backslash . backslash
-        else
+        } else if (code < 0x20) {
+            result .= Format("\u{:04X}", code)
+        } else {
             result .= char
+        }
     }
     return result
 }
@@ -244,3 +288,4 @@ StrJoin(array, sep) {
     }
     return result
 }
+

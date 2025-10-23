@@ -24,60 +24,28 @@ global liveStatsLastUpdate := 0
 
 ; ===== PERFORMANCE OPTIMIZATION =====
 global hbitmapCache := Map()  ; Cache for HBITMAP visualizations
-global pngFileCache := Map()  ; Track PNG files for cleanup
+global buttonDisplayedHBITMAPs := Map()  ; Track which HBITMAP is currently displayed on each button
 
 ClearHBitmapCacheForMacro(macroName) {
-    global hbitmapCache
-    ; Remove cache entries that contain the macro name
+    global hbitmapCache, buttonDisplayedHBITMAPs
+    ; Clear cache entries for this macro
+    ; The displayed HBITMAP will be replaced when UpdateButtonAppearance runs
+
     keysToDelete := []
     for cacheKey, hbitmap in hbitmapCache {
         if (InStr(cacheKey, macroName)) {
             keysToDelete.Push(cacheKey)
-            ; Clean up the HBITMAP
-            if (hbitmap) {
-                DllCall("DeleteObject", "Ptr", hbitmap)
-            }
         }
     }
     for key in keysToDelete {
         hbitmapCache.Delete(key)
     }
-}
 
-; ===== PNG FILE CLEANUP SYSTEM =====
-CleanupOldPNGFiles() {
-    global pngFileCache
-
-    ; Delete old PNG files that are no longer in use
-    filesToDelete := []
-    for buttonKey, pngPath in pngFileCache {
-        if (FileExist(pngPath)) {
-            try {
-                FileDelete(pngPath)
-            } catch {
-                ; File in use, skip
-            }
-        }
+    ; Mark that this button needs its HBITMAP cleaned up
+    ; It will be replaced with a new one in UpdateButtonAppearance
+    if (buttonDisplayedHBITMAPs.Has(macroName)) {
+        buttonDisplayedHBITMAPs[macroName] := 0  ; Mark for cleanup
     }
-
-    ; Clear cache
-    pngFileCache := Map()
-}
-
-RegisterPNGFile(buttonKey, pngPath) {
-    global pngFileCache
-
-    ; Delete old PNG for this button if exists
-    if (pngFileCache.Has(buttonKey) && FileExist(pngFileCache[buttonKey])) {
-        try {
-            FileDelete(pngFileCache[buttonKey])
-        } catch {
-            ; File in use, will be cleaned up later
-        }
-    }
-
-    ; Register new PNG
-    pngFileCache[buttonKey] := pngPath
 }
 
 ; ===== HOTKEY CONFIGURATION =====
@@ -97,13 +65,12 @@ global wasdLabelsEnabled := false  ; Track if WASD labels should be shown
 global wasdToggleBtn := 0  ; Reference to the WASD toggle button
 
 ; ===== FILE SYSTEM PATHS =====
-; Store config in Documents\MacroMaster\data to match user requirement
 global workDir := A_MyDocuments . "\MacroMaster\data"
 global configFile := workDir . "\config.ini"
-global documentsDir := A_MyDocuments . "\MacroMaster"  ; For thumbnails
+global documentsDir := A_MyDocuments . "\MacroMaster"
 global thumbnailDir := documentsDir . "\thumbnails"
 global masterStatsCSV := workDir . "\master_stats.csv"
-global permanentStatsFile := workDir . "\master_stats_permanent.csv"  ; NEVER gets reset
+global permanentStatsFile := workDir . "\master_stats_permanent.csv"
 
 ; ===== THUMBNAIL SUPPORT =====
 global buttonThumbnails := Map()
@@ -142,12 +109,11 @@ global isNarrowCanvasCalibrated := false
 global lastCanvasDetection := ""
 
 ; ===== STREAMLINED STATS SYSTEM =====
-; Legacy macroExecutionLog removed - using CSV-only approach
+global macroExecutionLog := []  ; In-memory execution data
 global macroStats := Map()
 global severityBreakdown := Map()
 global executionTimeLog := []
 global totalExecutionTime := 0
-global persistentStatsFile := documentsDir . "\persistent_stats.json"
 
 ; ===== DEGRADATION TRACKING =====
 global pendingBoxForTagging := ""
@@ -169,44 +135,9 @@ global dailyResetActive := false
 global sessionStartTime := 0
 global clearDegradationCount := 0
 
-; ===== CANVAS CALIBRATION FUNCTIONS =====
-; Legacy wrappers for backwards compatibility
-CalibrateCanvasArea() {
-    Canvas_Calibrate("user")
-}
 
-ResetCanvasCalibration() {
-    Canvas_Reset("user")
-}
-
-; Legacy wrappers for canvas calibration
-CalibrateWideCanvasArea() {
-    Canvas_Calibrate("wide")
-}
-
-ResetWideCanvasCalibration() {
-    Canvas_Reset("wide")
-}
-
-ResetNarrowCanvasCalibration() {
-    Canvas_Reset("narrow")
-}
-
-CalibrateNarrowCanvasArea() {
-    Canvas_Calibrate("narrow")
-}
-
-; ===== REAL-TIME DASHBOARD INTEGRATION =====
-global ingestionServiceUrl := "http://localhost:5001"  ; Data ingestion service URL
+; ===== SESSION TRACKING =====
 global currentSessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
-global realtimeEnabled := true  ; Enable real-time data sending
-
-; ===== PRODUCTION STATS SYSTEM GLOBALS =====
-global statsQueue := []
-global statsWorkerActive := false
-global statsErrorCount := 0
-global lastHealthCheck := 0
-global systemHealthStatus := "healthy"
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -279,24 +210,6 @@ global wasdHotkeyMap := Map()
 
 
 
-; ===== MACRO COUNTING =====
-CountLoadedMacros() {
-    global macroEvents, buttonNames
-
-    macroCount := 0
-    for buttonName in buttonNames {
-        if (macroEvents.Has(buttonName) && macroEvents[buttonName].Length > 0) {
-            macroCount++
-        }
-    }
-    return macroCount
-}
-
-; ===== CANVAS VARIABLE INITIALIZATION =====
-InitializeCanvasVariables() {
-    Canvas_Initialize()
-}
-
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
@@ -308,12 +221,7 @@ Main() {
             throw e
         }
 
-        try {
-            InitializeConfigSystem()  ; Initialize config system and clean up locks
-        } catch Error as e {
-            UpdateStatus("❌ Config system initialization failed: " . e.Message)
-            throw e
-        }
+        ; Config system is now simple - no initialization needed
 
         try {
             InitializeVariables()
@@ -323,8 +231,9 @@ Main() {
         }
 
         try {
-            InitializeCanvasVariables()
-            InitializeStatsSystem()  ; Handles CSV initialization internally
+            Canvas_Initialize()
+            InitializeStatsSystem()
+            LoadStatsFromJson()  ; Load persisted stats
             InitializeJsonAnnotations()
             InitializeVisualizationSystem()
             InitializeWASDHotkeys()
@@ -333,20 +242,23 @@ Main() {
             throw e
         }
 
-        ; Initialize real-time session
-        ; InitializeRealtimeSession() removed - was unused placeholder
-
         ; Setup UI and interactions
         InitializeGui()
         SetupHotkeys()
 
-        ; Load configuration (after GUI is created so mode toggle button can be updated)
+        ; Load configuration
         LoadConfig()
 
-        ; Apply loaded settings to GUI now that it's fully initialized
+        ; Count loaded macros
+        loadedCount := LoadMacroState()
+        if (loadedCount > 0) {
+            UpdateStatus("✅ Loaded " . loadedCount . " macros")
+        }
+
+        ; Apply loaded settings to GUI
         ApplyLoadedSettingsToGUI()
 
-        ; Switch active canvas based on loaded annotation mode
+        ; Sync canvas based on annotation mode
         global annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom
         global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
         global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
@@ -363,24 +275,13 @@ Main() {
             userCanvasBottom := wideCanvasBottom
         }
 
-        ; Setup WASD hotkeys if profile is active (now enabled by default)
+        ; Setup WASD hotkeys if enabled
         if (hotkeyProfileActive) {
             SetupWASDHotkeys()
-            ; Reminder: WASD hotkeys use CapsLock modifier (CapsLock + key)
         }
 
-        ; Check for canvas configuration and prompt new users
-        CheckCanvasConfiguration()
-
-        ; Count loaded macros
-        loadedMacros := CountLoadedMacros()
-
-        ; Status update
-        if (loadedMacros > 0) {
-            UpdateStatus("📄 Loaded " . loadedMacros . " macros")
-        } else {
-            UpdateStatus("📄 No saved macros")
-        }
+        ; Check canvas configuration
+        Canvas_CheckConfiguration()
 
         ; Refresh all button appearances after loading config
         RefreshAllButtonAppearances()
@@ -388,12 +289,8 @@ Main() {
         ; Show GUI now that everything is loaded and configured
         ShowGui()
 
-        ; Setup time tracking, auto-save, and state monitoring
+        ; Setup time tracking only
         SetTimer(UpdateActiveTime, 30000)
-        SetTimer(AutoSave, 30000)  ; Auto-save every 30 seconds for better persistence
-        SetTimer(MonitorExecutionState, 15000)  ; Check for stuck states every 15 seconds
-        SetTimer(ValidateConfigIntegrity, 120000)  ; Validate config integrity every 2 minutes
-        SetTimer(CleanupOldPNGFiles, 60000)  ; CRITICAL: Cleanup PNG files every 60 seconds to prevent accumulation
 
         ; Setup cleanup - use proper function reference for reliable exit handling
         OnExit((exitReason, exitCode) => CleanupAndExit())
@@ -408,9 +305,6 @@ Main() {
     }
 }
 
-CheckCanvasConfiguration() {
-    Canvas_CheckConfiguration()
-}
 
 ; ===== VARIABLE INITIALIZATION =====
 InitializeVariables() {
@@ -435,9 +329,6 @@ InitializeVariables() {
     sessionId := "sess_" . now
     sessionStartTime := A_TickCount
     clearDegradationCount := 0
-
-    ; Debug: Verify sessionId is set
-    ; MsgBox("SessionId initialized: " . sessionId)
 }
 
 InitializeDirectories() {
@@ -548,81 +439,16 @@ BuildJsonAnnotation(mode, categoryId, severity) {
     return '{"is3DObject":false,"segmentsAnnotation":{"attributes":{"severity":"' . severity . '"},"track_id":1,"type":"bbox","category_id":' . categoryId . ',"points":[[' . x1 . ',' . y1 . '],[' . x2 . ',' . y2 . ']]}}'
 }
 
-; ===== ASSIGN JSON PROFILES TO LAYER 6 =====
-AssignJsonProfilesToLayer6() {
-    global macroEvents, jsonAnnotations, degradationTypes
-
-    ; Assign high severity JSON profiles to layer 6 buttons
-    assignments := Map(
-        "L6_Num7", "Smudge (high)",
-        "L6_Num8", "Glare (high)",
-        "L6_Num9", "Splashes (high)",
-        "L6_Num4", "Partial_blockage (high)",
-        "L6_Num5", "Full_blockage (high)",
-        "L6_Num6", "Light_flare (high)",
-        "L6_Num1", "Rain (high)",
-        "L6_Num2", "Haze (high)",
-        "L6_Num3", "Snow (high)",
-        "L6_Num0", "Smudge (medium)",
-        "L6_NumDot", "Glare (medium)",
-        "L6_NumMult", "Splashes (medium)"
-    )
-
-    for layerButton, presetName in assignments {
-        if (jsonAnnotations.Has(presetName)) {
-            ; Parse categoryId and severity from presetName
-            if (RegExMatch(presetName, "^(.+) \((.+)\)$", &match)) {
-                typeName := StrLower(match[1])
-                severity := StrLower(match[2])
-
-                ; Find categoryId from typeName
-                categoryId := 0
-                for id, name in degradationTypes {
-                    if (name = typeName) {
-                        categoryId := id
-                        break
-                    }
-                }
-
-                if (categoryId > 0) {
-                    macroEvents[layerButton] := [{
-                        type: "jsonAnnotation",
-                        annotation: jsonAnnotations[presetName],
-                        mode: "Wide",
-                        categoryId: categoryId,
-                        severity: severity
-                    }]
-                }
-            }
-        }
-    }
-}
 
 ; ===== CLEANUP AND EXIT FUNCTIONS =====
 CleanupAndExit() {
-    global mouseHook, keyboardHook, liveStatsTimer
+    global mouseHook, keyboardHook, liveStatsTimer, gdiPlusInitialized, gdiPlusToken
 
     try {
-        ; Stop all timers
+        ; Stop timers
         SetTimer(UpdateActiveTime, 0)
-        SetTimer(AutoSave, 0)
-        SetTimer(MonitorExecutionState, 0)
         if (liveStatsTimer) {
             SetTimer(liveStatsTimer, 0)
-        }
-
-        ; CRITICAL: Flush any pending stats before exit
-        try {
-            FlushStatsQueue()
-        } catch {
-            ; Continue even if flush fails
-        }
-
-        ; CRITICAL: Cleanup PNG files to prevent accumulation
-        try {
-            CleanupOldPNGFiles()
-        } catch {
-            ; Continue even if cleanup fails
         }
 
         ; Uninstall hooks
@@ -636,24 +462,29 @@ CleanupAndExit() {
             ; Silently continue if HBITMAP cleanup fails
         }
 
-        ; Save final state - CRITICAL: Ensure config saves before exit
-        try {
-            SaveConfig()
-            UpdateStatus("✅ Configuration saved successfully on exit")
-        } catch Error as saveError {
-            ; CRITICAL: Show save errors instead of silent failure
-            MsgBox("❌ CRITICAL: Failed to save configuration on exit: " . saveError.Message . "`n`nYour macros and settings may not persist.", "Save Error", "Icon!")
-            ; Try one more time with minimal error handling
+        ; CRITICAL FIX: Shutdown GDI+ to prevent memory leak
+        if (gdiPlusInitialized && gdiPlusToken) {
             try {
-                SaveConfig()
+                DllCall("gdiplus\GdiplusShutdown", "Ptr", gdiPlusToken)
+                gdiPlusInitialized := false
+                gdiPlusToken := 0
             } catch {
-                ; Final fallback - at least show the error
+                ; Continue if GDI+ shutdown fails
             }
         }
 
-        ; Final stats update
+        ; Save final state - CRITICAL: Ensure config saves before exit
+        try {
+            SaveConfig()
+            SaveStatsToJson()  ; Save stats on exit
+            UpdateStatus("✅ Configuration saved on exit")
+        } catch Error as saveError {
+            ; CRITICAL: Show save errors instead of silent failure
+            MsgBox("❌ CRITICAL: Failed to save configuration on exit: " . saveError.Message . "`n`nYour macros and settings may not persist.", "Save Error", "Icon!")
+        }
+
+        ; Final active time update
         UpdateActiveTime()
-        ReadStatsFromCSV(false)  ; Direct call instead of AggregateMetrics() wrapper
 
     } catch Error as e {
         ; Silently continue on cleanup errors
@@ -665,126 +496,20 @@ SafeExit() {
     ExitApp
 }
 
-; ===== AUTO SAVE FUNCTION =====
-AutoSave() {
-    global breakMode, recording
-
-    if (!recording && !breakMode) {
-        try {
-            SaveConfig()
-        } catch {
-            ; Silently continue if auto-save fails
-        }
-    }
-}
-
-; ===== EXECUTION STATE MONITORING =====
-MonitorExecutionState() {
-    global playback, recording, lastExecutionTime, playbackStartTime
-
-    currentTime := A_TickCount
-
-    ; Check for stuck playback state (longer than 30 seconds)
-    if (playback) {
-        if (!playbackStartTime) {
-            playbackStartTime := currentTime
-        } else if ((currentTime - playbackStartTime) > 30000) {
-            UpdateStatus("⚠️ Detected stuck playback state - forcing reset")
-            ForceStateReset()
-            return
-        }
-    } else {
-        playbackStartTime := 0
-    }
-
-    ; Check for stuck recording state (longer than 5 minutes)
-    if (recording && lastExecutionTime && (currentTime - lastExecutionTime) > 300000) {
-        UpdateStatus("⚠️ Detected stuck recording state - forcing reset")
-        ForceStateReset()
-        return
-    }
-}
-
-; ===== STATE RESET FUNCTION =====
-ForceStateReset() {
-    global recording, playback, awaitingAssignment, lastExecutionTime, playbackStartTime
-
-    ; Force reset all execution states
-    recording := false
-    playback := false
-    awaitingAssignment := false
-    lastExecutionTime := 0
-    playbackStartTime := 0
-
-    ; Clean up all hooks and timers
-    try {
-        SafeUninstallMouseHook()
-        SafeUninstallKeyboardHook()
-        SetTimer(CheckForAssignment, 0)
-    } catch {
-    }
-
-    ; Reset any stuck mouse/key states
-    try {
-        Send("{LButton Up}{RButton Up}{MButton Up}")
-        Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
-    } catch {
-    }
-
-    UpdateStatus("🔄 State reset completed")
-}
-
-; ===== CONFIGURATION INTEGRITY VALIDATION =====
-ValidateConfigIntegrity() {
-    global configFile, workDir
-
-    try {
-        ; Only validate if config file exists
-        if (!FileExist(configFile)) {
-            return
-        }
-
-        ; Read config content
-        content := FileRead(configFile, "UTF-8")
-
-        ; Basic validation
-        if (content = "") {
-            return
-        }
-
-        ; Check for basic structure
-        if (!InStr(content, "[Settings]") && !InStr(content, "[Macros]")) {
-            return
-        }
-
-        ; Check file size (too small or too large might indicate corruption)
-        fileSize := FileGetSize(configFile)
-        if (fileSize < 100) {
-            return
-        }
-
-        if (fileSize > 10485760) { ; 10MB limit
-            return
-        }
-
-    } catch {
-        ; Silently continue if integrity check fails
-    }
-}
-
 ; ===== EMERGENCY STOP =====
 EmergencyStop() {
     global recording, playback, awaitingAssignment, mainGui
 
     UpdateStatus("🚨 EMERGENCY STOP")
 
-    ; Use the comprehensive state reset
-    ForceStateReset()
+    ; Force reset all execution states
+    recording := false
+    playback := false
+    awaitingAssignment := false
 
-    try {
-        SetTimer(UpdateActiveTime, 0)
-    } catch {
-    }
+    ; Clean up hooks
+    SafeUninstallMouseHook()
+    SafeUninstallKeyboardHook()
 
     if (mainGui && mainGui.HasProp("btnRecord")) {
         try {
@@ -797,7 +522,6 @@ EmergencyStop() {
     try {
         Send("{LButton Up}{RButton Up}{MButton Up}")
         Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
-        ; REMOVED: Send("{Esc}") - was blocking normal Esc key usage during labeling
     } catch {
     }
 
@@ -807,98 +531,65 @@ EmergencyStop() {
     UpdateStatus("🚨 Emergency Stop complete")
 }
 
-; ===== SUBMIT CURRENT IMAGE =====
+; ===== UNIFIED BROWSER FOCUS & SUBMIT =====
+FocusBrowserAndSubmit(buttonName := "NumpadEnter", statusLabel := "Submitted") {
+    startTime := A_TickCount
+
+    ; Try browsers in priority order
+    browsers := ["chrome.exe", "firefox.exe", "msedge.exe"]
+    browserFocused := false
+
+    for browser in browsers {
+        if (WinExist("ahk_exe " . browser)) {
+            WinActivate("ahk_exe " . browser)
+            browserFocused := true
+            break
+        }
+    }
+
+    if (browserFocused) {
+        Send("+{Enter}")
+        UpdateStatus("📤 " . statusLabel)
+        RecordExecutionStats(buttonName, startTime, "clear", [], "")
+        return true
+    } else {
+        UpdateStatus("⚠️ No browser: " . buttonName)
+        return false
+    }
+}
+
+; ===== WRAPPER FUNCTIONS (maintain API compatibility) =====
 SubmitCurrentImage() {
-    global focusDelay
-    browserFocused := false
-
-    if (WinExist("ahk_exe chrome.exe")) {
-        WinActivate("ahk_exe chrome.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe firefox.exe")) {
-        WinActivate("ahk_exe firefox.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe msedge.exe")) {
-        WinActivate("ahk_exe msedge.exe")
-        browserFocused := true
-    }
-
-    if (browserFocused) {
-        ; Track execution start time
-        startTime := A_TickCount
-
-        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
-        Send("+{Enter}")
-        UpdateStatus("📤 Submitted")
-
-        ; Record clear execution in CSV stats
-        RecordExecutionStats("NumpadEnter", startTime, "clear", [], "")
-    } else {
-        UpdateStatus("⚠️ No browser")
-    }
+    FocusBrowserAndSubmit("NumpadEnter", "Submitted")
 }
 
-; ===== SHIFT NUMPAD CLEAR EXECUTION =====
 ShiftNumpadClearExecution(buttonName) {
-    global focusDelay
-    browserFocused := false
-
-    ; Track execution start time
-    startTime := A_TickCount
-
-    if (WinExist("ahk_exe chrome.exe")) {
-        WinActivate("ahk_exe chrome.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe firefox.exe")) {
-        WinActivate("ahk_exe firefox.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe msedge.exe")) {
-        WinActivate("ahk_exe msedge.exe")
-        browserFocused := true
-    }
-
-    if (browserFocused) {
-        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
-        Send("+{Enter}")
-        UpdateStatus("📤 Clear: Shift+" . buttonName)
-
-        ; Record clear execution in CSV stats with button name
-        RecordExecutionStats("Shift" . buttonName, startTime, "clear", [], "")
-    } else {
-        UpdateStatus("⚠️ No browser for Shift+" . buttonName . " clear")
-    }
+    FocusBrowserAndSubmit("Shift" . buttonName, "Clear: Shift+" . buttonName)
 }
 
-; ===== DIRECT CLEAR EXECUTION =====
 DirectClearExecution() {
-    global focusDelay
-    browserFocused := false
+    FocusBrowserAndSubmit("ShiftEnter", "Direct Clear Submitted")
+}
 
-    ; Track execution start time
-    startTime := A_TickCount
 
-    if (WinExist("ahk_exe chrome.exe")) {
-        WinActivate("ahk_exe chrome.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe firefox.exe")) {
-        WinActivate("ahk_exe firefox.exe")
-        browserFocused := true
-    } else if (WinExist("ahk_exe msedge.exe")) {
-        WinActivate("ahk_exe msedge.exe")
-        browserFocused := true
+UpdateStatus(text) {
+    global statusBar
+    if (!statusBar) {
+        return
     }
-
-    if (browserFocused) {
-        ; Sleep(focusDelay) - REMOVED for rapid labeling performance
-        Send("+{Enter}")
-        UpdateStatus("📤 Direct Clear Submitted")
-
-        ; Record clear execution in CSV stats
-        RecordExecutionStats("ShiftEnter", startTime, "clear", [], "")
-    } else {
-        UpdateStatus("⚠️ No browser for direct clear")
+    try {
+        statusBar.Text := text
+        ; No need for Redraw() - text updates automatically in AHK v2
+    } catch {
+        ; ignore UI update failures
     }
 }
 
-; ===== PERSISTENCE SYSTEM TEST FUNCTION =====
-; TestPersistenceSystem() removed - was debug function, never used in production
+UpdateEmergencyButtonText() {
+    global mainGui, hotkeyEmergency
+    if (mainGui.HasProp("btnEmergency") && mainGui.btnEmergency) {
+        mainGui.btnEmergency.Text := "Emergency: " . hotkeyEmergency
+    }
+}
+
+

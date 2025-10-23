@@ -42,29 +42,6 @@ ShowSettings() {
     btnConfigureNarrow := settingsGui.Add("Button", "x240 y118 w180 h28", "📐 Calibrate Narrow")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
 
-    ; Visualization save path section
-    settingsGui.Add("Text", "x30 y165 w480 h18", "💾 Visualization Save Location (for corporate environments)")
-    settingsGui.SetFont("s8")
-    settingsGui.Add("Text", "x40 y185 w480 h15 c0x666666", "Choose where preview images are saved (if auto fails at work)")
-    settingsGui.SetFont("s9")
-
-    global visualizationSavePath
-    pathOptions := ["Auto (try all)", "Data folder", "Documents folder", "User Profile", "Temp folder"]
-    pathValues := ["auto", "data", "documents", "profile", "temp"]
-
-    ; Find current selection index
-    currentIndex := 1
-    for i, val in pathValues {
-        if (val = visualizationSavePath) {
-            currentIndex := i
-            break
-        }
-    }
-
-    ddlVizPath := settingsGui.Add("DropDownList", "x40 y203 w380", pathOptions)
-    ddlVizPath.Choose(currentIndex)
-    ddlVizPath.OnEvent("Change", (*) => ApplyVisualizationPath(ddlVizPath, pathValues))
-    settingsGui.ddlVizPath := ddlVizPath
 
     ; System maintenance section
     settingsGui.Add("Text", "x30 y245 w480 h18", "🔧 System Maintenance")
@@ -224,10 +201,6 @@ ShowSettings() {
 
     ; Show settings window
     settingsGui.Show("w580 h580")
-}
-
-ShowConfigMenu() {
-    ShowSettings()
 }
 
 ; ===== SETTINGS APPLY FUNCTIONS =====
@@ -402,7 +375,7 @@ ShowClearDialog() {
 
         ; Update UI
         RefreshAllButtonAppearances()
-        SaveMacroState()
+        SaveConfig()
 
         UpdateStatus("🗑️ Macros cleared (" . clearedCount . ")")
     }
@@ -433,41 +406,41 @@ ApplyTimingPreset(preset, settingsGui, *) {
 
     switch preset {
         case "fast":
-            boxDrawDelay := 50
-            mouseClickDelay := 60
-            menuClickDelay := 100
-            mouseDragDelay := 65
+            boxDrawDelay := 48
+            mouseClickDelay := 52
+            menuClickDelay := 90
+            mouseDragDelay := 58
+            mouseReleaseDelay := 58
+            betweenBoxDelay := 130
+            keyPressDelay := 10
+            focusDelay := 45
+            mouseHoverDelay := 18
+            smartBoxClickDelay := 20  ; Ultra-fast for intelligent system
+            smartMenuClickDelay := 70  ; Fast but reliable for menus
+        case "default":
+            boxDrawDelay := 60
+            mouseClickDelay := 58
+            menuClickDelay := 120
+            mouseDragDelay := 70
             mouseReleaseDelay := 65
             betweenBoxDelay := 150
-            keyPressDelay := 15
-            focusDelay := 60
-            mouseHoverDelay := 25
-            smartBoxClickDelay := 25  ; Ultra-fast for intelligent system
-            smartMenuClickDelay := 80  ; Fast but reliable for menus
-        case "default":
-            boxDrawDelay := 75
-            mouseClickDelay := 85
-            menuClickDelay := 150
-            mouseDragDelay := 90
-            mouseReleaseDelay := 90
-            betweenBoxDelay := 200
-            keyPressDelay := 20
-            focusDelay := 80
-            mouseHoverDelay := 35
-            smartBoxClickDelay := 35  ; Optimized for smooth box drawing
-            smartMenuClickDelay := 120  ; Balanced for menu reliability
+            keyPressDelay := 12
+            focusDelay := 55
+            mouseHoverDelay := 22
+            smartBoxClickDelay := 24  ; Optimized for smooth box drawing
+            smartMenuClickDelay := 90  ; Balanced for menu reliability
         case "safe":
-            boxDrawDelay := 100
-            mouseClickDelay := 110
-            menuClickDelay := 200
-            mouseDragDelay := 115
-            mouseReleaseDelay := 115
-            betweenBoxDelay := 250
-            keyPressDelay := 25
-            focusDelay := 100
-            mouseHoverDelay := 45
-            smartBoxClickDelay := 50  ; Slower but very smooth
-            smartMenuClickDelay := 180  ; Conservative for maximum reliability
+            boxDrawDelay := 85
+            mouseClickDelay := 92
+            menuClickDelay := 170
+            mouseDragDelay := 95
+            mouseReleaseDelay := 95
+            betweenBoxDelay := 210
+            keyPressDelay := 20
+            focusDelay := 85
+            mouseHoverDelay := 34
+            smartBoxClickDelay := 40  ; Slower but very smooth
+            smartMenuClickDelay := 140  ; Conservative for maximum reliability
         case "slow":
             boxDrawDelay := 150
             mouseClickDelay := 160
@@ -583,41 +556,20 @@ BrowseMacroPacks(*) {
     }
 }
 
-; ===== VISUALIZATION PATH SELECTION =====
-ApplyVisualizationPath(ddlVizPath, pathValues) {
-    global visualizationSavePath
-
-    selectedIndex := ddlVizPath.Value
-    visualizationSavePath := pathValues[selectedIndex]
-
-    ; Save immediately
-    SaveConfig()
-
-    ; Show user-friendly status
-    pathNames := Map(
-        "auto", "Auto (trying all paths)",
-        "data", "Data folder",
-        "documents", "Documents folder",
-        "profile", "User Profile",
-        "temp", "Temp folder"
-    )
-
-    UpdateStatus("💾 Visualization path: " . pathNames[visualizationSavePath])
-}
 
 ; ===== CANVAS CONFIGURATION =====
 ConfigureWideCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
-    CalibrateWideCanvasArea()
+    Canvas_Calibrate("wide")
     settingsGui.Destroy()
-    ShowSettings()  ; Refresh the settings dialog
+    ShowSettings()
 }
 
 ConfigureNarrowCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
-    CalibrateNarrowCanvasArea()
+    Canvas_Calibrate("narrow")
     settingsGui.Destroy()
-    ShowSettings()  ; Refresh the settings dialog
+    ShowSettings()
 }
 
 ; ===== SYSTEM MAINTENANCE =====
@@ -637,7 +589,7 @@ ClearAllMacros(settingsGui, *) {
 
         ; Update UI
         RefreshAllButtonAppearances()
-        SaveMacroState()
+        SaveConfig()
 
         settingsGui.Destroy()
         UpdateStatus("🗑️ All macros cleared (" . clearedCount . ")")
@@ -696,3 +648,6 @@ ResetStatsFromSettings(settingsGui, *) {
         settingsGui.Destroy()
     }
 }
+
+
+
