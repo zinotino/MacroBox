@@ -2,12 +2,7 @@
 #SingleInstance Force
 SendMode "Input"
 Persistent
-#Include "../src/Stats.ahk"
-#Include "../src/StatsData.ahk"
-; Visualization system now integrated directly in this file (lines 424-889)
-; #Include "../src/VisualizationCore.ahk"
-; #Include "../src/VisualizationUtils.ahk"
-; #Include "../src/VisualizationCanvas.ahk"
+#Include "../src/ObjPersistence.ahk"
 
 /*
 ===============================================================================
@@ -36,16 +31,15 @@ global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
 ; ===== STATS SYSTEM GLOBALS =====
-global masterStatsCSV := A_MyDocuments "\MacroMaster_Stats.csv"
+global masterStatsCSV := ""
 global permanentStatsFile := ""
 global sessionId := "session_" . A_TickCount
 global currentSessionId := sessionId
 global currentUsername := A_UserName
-global documentsDir := A_MyDocuments
+global documentsDir := ""
 global workDir := A_ScriptDir "\data"
 
 ; ===== FILE SYSTEM PATHS =====
-global workDir := A_ScriptDir "\data"
 global configFile := A_ScriptDir "\config.ini"
 global thumbnailDir := A_ScriptDir "\thumbnails"
 
@@ -53,8 +47,6 @@ global thumbnailDir := A_ScriptDir "\thumbnails"
 global buttonThumbnails := Map()
 
 ; ===== ENHANCED STATS SYSTEM =====
-global macroExecutionLog := []
-global macroStats := Map()
 global severityBreakdown := Map()
 
 ; ===== DEGRADATION TRACKING =====
@@ -66,6 +58,7 @@ global totalActiveTime := 0
 global lastActiveTime := A_TickCount
 global breakMode := false
 global breakStartTime := 0
+global currentDay := FormatTime(A_Now, "yyyy-MM-dd")  ; Track current day for daily reset
 
 ; ===== UI CONFIGURATION =====
 global windowWidth := 1200
@@ -120,33 +113,6 @@ global degradationColors := Map(
 
 global severityLevels := ["high", "medium", "low"]
 
-; ===== DEGRADATION TRACKING =====
-global pendingBoxForTagging := ""
-
-; ===== TIME TRACKING & BREAK MODE =====
-global applicationStartTime := A_TickCount
-global totalActiveTime := 0
-global lastActiveTime := A_TickCount
-global breakMode := false
-global breakStartTime := 0
-
-; ===== UI CONFIGURATION =====
-global windowWidth := 1200
-global windowHeight := 800
-global scaleFactor := 1.0
-global minWindowWidth := 900
-global minWindowHeight := 600
-global darkMode := true  ; NIGHT MODE ENABLED
-
-; ===== TIMING CONFIGURATION (CONTINUED) =====
-global boxDrawDelay := 50
-global mouseClickDelay := 60
-global mouseDragDelay := 65
-global mouseReleaseDelay := 65
-global betweenBoxDelay := 150
-global keyPressDelay := 12
-global focusDelay := 80
-
 ; ===== INTELLIGENT TIMING SYSTEM - UNIQUE DELAYS =====
 global smartBoxClickDelay := 35    ; Optimized for fast box drawing in intelligent system
 global smartMenuClickDelay := 120  ; Optimized for accurate menu selections in intelligent system
@@ -189,238 +155,6 @@ HBITMAPToPictureValue(hbitmap) {
     return "HBITMAP:" . PtrToUInt(hbitmap)
 }
 
-ExpandAndClampCanvas(&left, &top, &right, &bottom, minX, minY, maxX, maxY, pad, clampLeft, clampTop, clampRight, clampBottom, enforceAspect := 0) {
-    if (maxX <= minX || maxY <= minY) {
-        left := clampLeft
-        top := clampTop
-        right := clampRight
-        bottom := clampBottom
-        return
-    }
-
-    desiredLeft := Floor(minX - pad)
-    desiredTop := Floor(minY - pad)
-    desiredRight := Ceil(maxX + pad)
-    desiredBottom := Ceil(maxY + pad)
-
-    if (enforceAspect > 0) {
-        desiredWidth := desiredRight - desiredLeft
-        desiredHeight := desiredBottom - desiredTop
-        currentAspect := desiredWidth / desiredHeight
-        targetAspect := enforceAspect
-
-        if (currentAspect > targetAspect) {
-            targetHeight := desiredWidth / targetAspect
-            extra := (targetHeight - desiredHeight) / 2
-            desiredTop := Floor(desiredTop - extra)
-            desiredBottom := Ceil(desiredBottom + extra)
-        } else if (currentAspect < targetAspect) {
-            targetWidth := desiredHeight * targetAspect
-            extra := (targetWidth - desiredWidth) / 2
-            desiredLeft := Floor(desiredLeft - extra)
-            desiredRight := Ceil(desiredRight + extra)
-        }
-    }
-
-    if (desiredLeft < clampLeft)
-        desiredLeft := clampLeft
-    if (desiredTop < clampTop)
-        desiredTop := clampTop
-    if (desiredRight > clampRight)
-        desiredRight := clampRight
-    if (desiredBottom > clampBottom)
-        desiredBottom := clampBottom
-
-    if (desiredRight <= desiredLeft)
-        desiredRight := desiredLeft + 100
-    if (desiredBottom <= desiredTop)
-        desiredBottom := desiredTop + 100
-
-    left := desiredLeft
-    top := desiredTop
-    right := desiredRight
-    bottom := desiredBottom
-}
-
-NormalizeCanvasCalibration() {
-    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    global macroEvents
-
-    GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-    vsWidth := vsRight - vsLeft
-    vsHeight := vsBottom - vsTop
-
-    if (vsWidth <= 0 || vsHeight <= 0) {
-        vsLeft := 0
-        vsTop := 0
-        vsWidth := A_ScreenWidth
-        vsHeight := A_ScreenHeight
-        vsRight := vsLeft + vsWidth
-        vsBottom := vsTop + vsHeight
-    }
-
-    ; Gather bounding box statistics (overall, wide-mode, narrow-mode)
-    overallMinX := 2147483647, overallMinY := 2147483647
-    overallMaxX := -2147483647, overallMaxY := -2147483647
-    narrowMinX := 2147483647, narrowMinY := 2147483647
-    narrowMaxX := -2147483647, narrowMaxY := -2147483647
-    wideMinX := 2147483647, wideMinY := 2147483647
-    wideMaxX := -2147483647, wideMaxY := -2147483647
-    overallCount := 0, narrowCount := 0, wideCount := 0
-
-    for macroName, events in macroEvents {
-        if (!IsObject(events))
-            continue
-
-        recordedMode := ""
-        if (events.HasOwnProp("recordedMode")) {
-            recordedMode := events.recordedMode
-        }
-
-        for event in events {
-            if (IsObject(event) && event.HasOwnProp("type") && event.type = "boundingBox") {
-                left := event.left
-                top := event.top
-                right := event.right
-                bottom := event.bottom
-
-                if (left < overallMinX) overallMinX := left
-                if (top < overallMinY) overallMinY := top
-                if (right > overallMaxX) overallMaxX := right
-                if (bottom > overallMaxY) overallMaxY := bottom
-                overallCount++
-
-                if (recordedMode = "Narrow") {
-                    if (left < narrowMinX) narrowMinX := left
-                    if (top < narrowMinY) narrowMinY := top
-                    if (right > narrowMaxX) narrowMaxX := right
-                    if (bottom > narrowMaxY) narrowMaxY := bottom
-                    narrowCount++
-                } else if (recordedMode = "Wide") {
-                    if (left < wideMinX) wideMinX := left
-                    if (top < wideMinY) wideMinY := top
-                    if (right > wideMaxX) wideMaxX := right
-                    if (bottom > wideMaxY) wideMaxY := bottom
-                    wideCount++
-                }
-            }
-        }
-    }
-
-    padding := 20
-    if (overallCount > 0) {
-        contentWidth := overallMaxX - overallMinX
-        contentHeight := overallMaxY - overallMinY
-        maxSpan := Max(contentWidth, contentHeight)
-        dynamicPad := Max(20, Round(maxSpan * 0.02))
-        padding := dynamicPad
-    }
-
-    if (overallCount > 0) {
-        tempLeft := userCanvasLeft
-        tempTop := userCanvasTop
-        tempRight := userCanvasRight
-        tempBottom := userCanvasBottom
-
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , overallMinX, overallMinY, overallMaxX, overallMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom)
-
-        if (!isCanvasCalibrated
-            || tempLeft < userCanvasLeft
-            || tempTop < userCanvasTop
-            || tempRight > userCanvasRight
-            || tempBottom > userCanvasBottom) {
-            userCanvasLeft := tempLeft
-            userCanvasTop := tempTop
-            userCanvasRight := tempRight
-            userCanvasBottom := tempBottom
-            isCanvasCalibrated := true
-        }
-    } else if (!isCanvasCalibrated) {
-        userCanvasLeft := vsLeft
-        userCanvasTop := vsTop
-        userCanvasRight := vsRight
-        userCanvasBottom := vsBottom
-        isCanvasCalibrated := true
-    }
-
-    ; Update wide canvas if we have wide-mode data, otherwise mirror overall
-    if (wideCount > 0) {
-        tempLeft := wideCanvasLeft
-        tempTop := wideCanvasTop
-        tempRight := wideCanvasRight
-        tempBottom := wideCanvasBottom
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , wideMinX, wideMinY, wideMaxX, wideMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom)
-        wideCanvasLeft := tempLeft
-        wideCanvasTop := tempTop
-        wideCanvasRight := tempRight
-        wideCanvasBottom := tempBottom
-        isWideCanvasCalibrated := true
-    } else if (!isWideCanvasCalibrated) {
-        wideCanvasLeft := userCanvasLeft
-        wideCanvasTop := userCanvasTop
-        wideCanvasRight := userCanvasRight
-        wideCanvasBottom := userCanvasBottom
-        isWideCanvasCalibrated := true
-    }
-
-    ; Update narrow canvas if we have narrow-mode data (maintain 4:3)
-    if (narrowCount > 0) {
-        tempLeft := narrowCanvasLeft
-        tempTop := narrowCanvasTop
-        tempRight := narrowCanvasRight
-        tempBottom := narrowCanvasBottom
-        ExpandAndClampCanvas(&tempLeft, &tempTop, &tempRight, &tempBottom
-            , narrowMinX, narrowMinY, narrowMaxX, narrowMaxY
-            , padding, vsLeft, vsTop, vsRight, vsBottom, 4.0 / 3.0)
-        narrowCanvasLeft := tempLeft
-        narrowCanvasTop := tempTop
-        narrowCanvasRight := tempRight
-        narrowCanvasBottom := tempBottom
-        isNarrowCanvasCalibrated := true
-    } else if (!isNarrowCanvasCalibrated) {
-        ; Derive a centered 4:3 region from user canvas
-        userWidth := userCanvasRight - userCanvasLeft
-        userHeight := userCanvasBottom - userCanvasTop
-        if (userWidth > 0 && userHeight > 0) {
-            aspect := userWidth / userHeight
-            targetAspect := 4.0 / 3.0
-            if (aspect > targetAspect) {
-                targetHeight := userWidth / targetAspect
-                extra := (targetHeight - userHeight) / 2
-                narrowCanvasLeft := userCanvasLeft
-                narrowCanvasRight := userCanvasRight
-                narrowCanvasTop := Floor(userCanvasTop - extra)
-                narrowCanvasBottom := Ceil(userCanvasBottom + extra)
-            } else {
-                targetWidth := userHeight * targetAspect
-                extra := (targetWidth - userWidth) / 2
-                narrowCanvasTop := userCanvasTop
-                narrowCanvasBottom := userCanvasBottom
-                narrowCanvasLeft := Floor(userCanvasLeft - extra)
-                narrowCanvasRight := Ceil(userCanvasRight + extra)
-            }
-            narrowCanvasLeft := Max(narrowCanvasLeft, vsLeft)
-            narrowCanvasTop := Max(narrowCanvasTop, vsTop)
-            narrowCanvasRight := Min(narrowCanvasRight, vsRight)
-            narrowCanvasBottom := Min(narrowCanvasBottom, vsBottom)
-            isNarrowCanvasCalibrated := true
-        } else {
-            narrowCanvasLeft := vsLeft
-            narrowCanvasTop := vsTop
-            narrowCanvasRight := vsRight
-            narrowCanvasBottom := vsBottom
-            isNarrowCanvasCalibrated := true
-        }
-    }
-}
-
-
 ; ===== CANVAS CALIBRATION RESET FUNCTIONS =====
 ResetWideCanvasCalibration(settingsGui) {
 global isWideCanvasCalibrated, wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
@@ -436,8 +170,10 @@ if (result = "Yes") {
     SaveConfig()
     UpdateStatus("🔄 Wide canvas reset")
     RefreshAllButtonAppearances()
-    settingsGui.Destroy()
-    ShowSettings()
+    if (IsObject(settingsGui))
+        UpdateCanvasStatusControls(settingsGui)
+    if (IsObject(settingsGui))
+        settingsGui.Show()
 }
 }
 
@@ -484,8 +220,10 @@ if (result = "Yes") {
     SaveConfig()
     UpdateStatus("🔄 Narrow canvas reset")
     RefreshAllButtonAppearances()
-    settingsGui.Destroy()
-    ShowSettings()
+    if (IsObject(settingsGui))
+        UpdateCanvasStatusControls(settingsGui)
+    if (IsObject(settingsGui))
+        settingsGui.Show()
 }
 }
 
@@ -566,9 +304,28 @@ ConfigureWideCanvasFromSettings(settingsGui) {
     wideCanvasBottom := bottom
     isWideCanvasCalibrated := true
 
+    ; Debug: Show values before save
+    MsgBox("DEBUG: About to save Wide canvas`n`nLeft: " . wideCanvasLeft . "`nTop: " . wideCanvasTop . "`nRight: " . wideCanvasRight . "`nBottom: " . wideCanvasBottom . "`nCalibrated flag: " . isWideCanvasCalibrated, "Pre-Save Debug")
+
     SaveConfig()
+
+    ; Debug: Verify the config file was written
+    global configFile
+    if FileExist(configFile) {
+        configContent := FileRead(configFile)
+        if InStr(configContent, "[Canvas]") {
+            MsgBox("✅ Config file saved successfully!`n`nCanvas section found in config file.", "Save Success")
+        } else {
+            MsgBox("❌ ERROR: Canvas section NOT found in config file!`n`nFile exists but Canvas section is missing.", "Save Error")
+        }
+    } else {
+        MsgBox("❌ ERROR: Config file does not exist!`n`nPath: " . configFile, "Save Error")
+    }
+
     UpdateStatus("✅ Wide canvas calibrated")
     RefreshAllButtonAppearances()
+    if (IsObject(settingsGui))
+        UpdateCanvasStatusControls(settingsGui)
     settingsGui.Show()
 }
 
@@ -648,9 +405,26 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
     narrowCanvasBottom := bottom
     isNarrowCanvasCalibrated := true
 
+    ; Debug: Show values before save
+    MsgBox("DEBUG: About to save Narrow canvas`n`nLeft: " . narrowCanvasLeft . "`nTop: " . narrowCanvasTop . "`nRight: " . narrowCanvasRight . "`nBottom: " . narrowCanvasBottom . "`nCalibrated flag: " . isNarrowCanvasCalibrated, "Pre-Save Debug")
+
     SaveConfig()
+
+    ; Debug: Verify the config file was written
+    global configFile
+    if FileExist(configFile) {
+        configContent := FileRead(configFile)
+        if InStr(configContent, "[Canvas]") && InStr(configContent, "isNarrowCanvasCalibrated=1") {
+            MsgBox("✅ Config file saved successfully!`n`nNarrow canvas flag = 1 in config file.", "Save Success")
+        } else {
+            MsgBox("❌ ERROR: Narrow canvas NOT properly saved!`n`nCheck config file manually.", "Save Error")
+        }
+    }
+
     UpdateStatus("✅ Narrow canvas calibrated")
     RefreshAllButtonAppearances()
+    if (IsObject(settingsGui))
+        UpdateCanvasStatusControls(settingsGui)
     settingsGui.Show()
 }
 
@@ -749,37 +523,6 @@ ExecuteWASDMacro(buttonName, *) {
     SafeExecuteMacroByKey(buttonName)
 }
 
-; ===== RECORDING SETTINGS =====
-global mouseMoveThreshold := 3
-global mouseMoveInterval := 12
-global boxDragMinDistance := 5
-
-; ===== BUTTON LAYOUT =====
-global buttonNames := ["Num7", "Num8", "Num9", "Num4", "Num5", "Num6", "Num1", "Num2", "Num3", "Num0", "NumDot", "NumMult"]
-global gridOutline := 0
-
-; ===== JSON ANNOTATION SYSTEM =====
-global jsonAnnotations := Map()
-global annotationMode := "Wide"
-
-; ===== DEGRADATION TYPES WITH COLORS =====
-global degradationTypes := Map(
-    1, "smudge", 2, "glare", 3, "splashes", 4, "partial_blockage", 5, "full_blockage",
-    6, "light_flare", 7, "rain", 8, "haze", 9, "snow"
-)
-
-global degradationColors := Map(
-    1, "0xFF8C00",    ; smudge - orange
-    2, "0xFFFF00",    ; glare - yellow
-    3, "0x9932CC",    ; splashes - purple
-    4, "0x32CD32",    ; partial_blockage - green
-    5, "0x8B0000",    ; full_blockage - dark red
-    6, "0xFF6B6B",    ; light_flare - light red
-    7, "0xFF4500",    ; rain - dark orange
-    8, "0xBDB76B",    ; haze - dirty yellow
-    9, "0x00FF00"     ; snow - neon green
-)
-
 ; ===== VISUALIZATION SYSTEM GLOBALS =====
 global gdiPlusInitialized := false
 global gdiPlusToken := 0
@@ -789,24 +532,26 @@ global canvasType := "custom"
 global canvasAspectRatio := canvasWidth / canvasHeight
 
 ; ===== CANVAS CALIBRATION GLOBALS =====
+; Canvas values loaded from config file - no hardcoded defaults
+; User must calibrate canvas areas on first run
 global userCanvasLeft := 0
 global userCanvasTop := 0
-global userCanvasRight := 1920
-global userCanvasBottom := 1080
+global userCanvasRight := 0
+global userCanvasBottom := 0
 global isCanvasCalibrated := false
 
 ; ===== WIDE CANVAS CALIBRATION =====
 global wideCanvasLeft := 0
 global wideCanvasTop := 0
-global wideCanvasRight := 1920
-global wideCanvasBottom := 1080
+global wideCanvasRight := 0
+global wideCanvasBottom := 0
 global isWideCanvasCalibrated := false
 
 ; ===== NARROW CANVAS CALIBRATION =====
 global narrowCanvasLeft := 0
 global narrowCanvasTop := 0
-global narrowCanvasRight := 1920
-global narrowCanvasBottom := 1080
+global narrowCanvasRight := 0
+global narrowCanvasBottom := 0
 global isNarrowCanvasCalibrated := false
 
 ; ===== CANVAS CALIBRATION INITIALIZATION =====
@@ -857,7 +602,6 @@ if (!isCanvasCalibrated) {
     userCanvasTop := virtualTop
     userCanvasRight := virtualRight
     userCanvasBottom := virtualBottom
-    isCanvasCalibrated := true
 }
 
 if (!isWideCanvasCalibrated) {
@@ -865,7 +609,6 @@ if (!isWideCanvasCalibrated) {
     wideCanvasTop := virtualTop
     wideCanvasRight := virtualRight
     wideCanvasBottom := virtualBottom
-    isWideCanvasCalibrated := true
 }
 
 if (!isNarrowCanvasCalibrated) {
@@ -890,7 +633,6 @@ if (!isNarrowCanvasCalibrated) {
         narrowCanvasRight := virtualLeft + contentWidth
         narrowCanvasBottom := narrowCanvasTop + contentHeight
     }
-    isNarrowCanvasCalibrated := true
 }
 
 ; ===== VISUALIZATION SETTINGS =====
@@ -906,6 +648,7 @@ global buttonDisplayedHBITMAPs := Map()
 
 ; ===== LETTERBOXING PREFERENCES =====
 global buttonLetterboxingStates := Map()
+global hbitmapRefCounts := Map()
 
 global severityLevels := ["high", "medium", "low"]
 
@@ -931,6 +674,7 @@ InitializeVisualizationSystem() {
             gdiPlusInitialized := false
         }
     }
+
 
     ; Detect initial canvas type
     DetectCanvasType()
@@ -1014,340 +758,417 @@ ExtractBoxEvents(macroEvents) {
     return boxes
 }
 
-; DUAL CANVAS CONFIGURATION SYSTEM:
-; Analyzes recorded macro aspect ratio to choose appropriate canvas configuration
-; - Wide recorded macros (aspect ratio > 1.5) → Use WIDE canvas config → STRETCH to fill thumbnail (no black bars)
-; - Narrow recorded macros (aspect ratio <= 1.5) → Use NARROW canvas config → Black bars based on configured narrow aspect ratio
-; - Canvas choice based on RECORDED CONTENT characteristics, not button size
-; - Clean visualization without indicators for maximum aesthetic appeal
+; ===== VISUALIZATION CANVAS MODULE =====
+; Handles canvas detection and scaling logic for drawing boxes on buttons
+
 DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsArray := "") {
     global degradationColors, annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global buttonLetterboxingStates
 
-    ; DEBUG: Log function entry and parameters
-
     if (boxes.Length = 0) {
         return
     }
 
-    ; Analyze the recorded macro to determine which canvas configuration to use
-    ; Calculate bounding box of all recorded content
-    minX := 999999, minY := 999999, maxX := 0, maxY := 0
-    for box in boxes {
-        minX := Min(minX, box.left)
-        minY := Min(minY, box.top)
-        maxX := Max(maxX, box.right)
-        maxY := Max(maxY, box.bottom)
-    }
-
-    recordedWidth := maxX - minX
-    recordedHeight := maxY - minY
-    recordedAspectRatio := recordedWidth / recordedHeight
-
-    ; DEBUG: Log recorded content analysis
-
-    ; INTELLIGENT CANVAS DETECTION: Check both aspect ratio and coordinate boundaries
-    ; to determine the most appropriate canvas configuration
-
-    ; PRECISION CANVAS DETECTION: Enhanced boundary checking with improved tolerance
-    wideCanvasW := wideCanvasRight - wideCanvasLeft
-    wideCanvasH := wideCanvasBottom - wideCanvasTop
-    narrowCanvasW := narrowCanvasRight - narrowCanvasLeft
-    narrowCanvasH := narrowCanvasBottom - narrowCanvasTop
-
-    ; Use more generous tolerance for real-world recording variations (5 pixel tolerance)
-    edgeTolerance := 5
-
-    ; More robust boundary checking that accounts for recording variations
-    fitsInWideCanvas := (minX >= (wideCanvasLeft - edgeTolerance) &&
-                           maxX <= (wideCanvasRight + edgeTolerance) &&
-                           minY >= (wideCanvasTop - edgeTolerance) &&
-                           maxY <= (wideCanvasBottom + edgeTolerance))
-
-    fitsInNarrowCanvas := (minX >= (narrowCanvasLeft - edgeTolerance) &&
-                             maxX <= (narrowCanvasRight + edgeTolerance) &&
-                             minY >= (narrowCanvasTop - edgeTolerance) &&
-                             maxY <= (narrowCanvasBottom + edgeTolerance))
-
-    ; DEBUG: Log canvas calibration data and fit checks
-
-    ; Calculate coverage percentages for better canvas selection
-    wideCoverage := 0
-    narrowCoverage := 0
-
-    if (fitsInWideCanvas) {
-        ; Calculate what percentage of the wide canvas is actually used
-        usedWideW := maxX - minX
-        usedWideH := maxY - minY
-        wideCoverage := (usedWideW * usedWideH) / (wideCanvasW * wideCanvasH)
-    }
-
-    if (fitsInNarrowCanvas) {
-        ; Calculate what percentage of the narrow canvas is actually used
-        usedNarrowW := maxX - minX
-        usedNarrowH := maxY - minY
-        narrowCoverage := (usedNarrowW * usedNarrowH) / (narrowCanvasW * narrowCanvasH)
-    }
-
-    ; Check if macro has a stored recording mode (takes priority)
+    ; Get stored recording mode from macro events - SIMPLIFIED
     storedMode := ""
-    if (macroEventsArray != "" && IsObject(macroEventsArray)) {
-        ; Handle both Map and Object types
-        if (Type(macroEventsArray) = "Map") {
-            storedMode := macroEventsArray.Has("recordedMode") ? macroEventsArray["recordedMode"] : ""
-        } else if (macroEventsArray.HasOwnProp("recordedMode")) {
+    try {
+        if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map") {
             storedMode := macroEventsArray.recordedMode
         }
+    } catch {
+        storedMode := ""
     }
 
-    ; PRIORITIZE RECORDED MODE: Use stored mode if available, otherwise current mode
-    effectiveMode := storedMode != "" ? storedMode : annotationMode
+    ; Use stored mode if available, otherwise use current annotation mode
+    effectiveMode := (storedMode != "" && storedMode != "unknown") ? storedMode : annotationMode
 
-    if (effectiveMode = "Wide") {
-        ; Wide mode - always use wide canvas (stretch to fill, no letterboxing)
-        useWideCanvas := true
-        useNarrowCanvas := false
-        useLegacyCanvas := false
-    } else if (effectiveMode = "Narrow") {
-        ; Narrow mode - always use narrow canvas (letterboxed 4:3)
-        useWideCanvas := false
-        useNarrowCanvas := true
-        useLegacyCanvas := false
-    } else {
-        ; No annotation mode set - use intelligent detection
-        if (fitsInWideCanvas && fitsInNarrowCanvas) {
-            ; Both canvases can accommodate the content - choose based on efficiency and aspect ratio
-            if (recordedAspectRatio > 1.3) {
-                ; Wide aspect ratio content - prefer wide canvas
-                useWideCanvas := true
-                useNarrowCanvas := false
-            } else if (narrowCoverage > wideCoverage * 1.5) {
-                ; Narrow canvas provides significantly better space utilization
-                useWideCanvas := false
-                useNarrowCanvas := true
-            } else {
-                ; Default to wide canvas for flexibility
-                useWideCanvas := true
-                useNarrowCanvas := false
+    recordedCanvas := ""
+    recordedCanvasMode := ""
+    hasRecordedCanvas := false
+    try {
+        if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map" && macroEventsArray.HasOwnProp("recordedCanvas")) {
+            recordedCanvas := macroEventsArray.recordedCanvas
+            if (IsObject(recordedCanvas) && recordedCanvas.HasOwnProp("left") && recordedCanvas.HasOwnProp("right")) {
+                hasRecordedCanvas := true
+                if (recordedCanvas.HasOwnProp("mode")) {
+                    recordedCanvasMode := recordedCanvas.mode
+                }
             }
-            useLegacyCanvas := false
-        } else if (fitsInWideCanvas) {
-            ; Only wide canvas fits
-            useWideCanvas := true
-            useNarrowCanvas := false
-            useLegacyCanvas := false
-        } else if (fitsInNarrowCanvas) {
-            ; Only narrow canvas fits
-            useWideCanvas := false
-            useNarrowCanvas := true
-            useLegacyCanvas := false
-        } else {
-            ; Neither canvas fits - use legacy fallback
-            useWideCanvas := false
-            useNarrowCanvas := false
-            useLegacyCanvas := true
         }
+    } catch {
+        hasRecordedCanvas := false
     }
 
-    ; Store diagnostic info globally for testing
-    debugInfo := "Canvas: " . effectiveMode
-    if (useWideCanvas) {
-        debugInfo .= " (Wide)"
-    } else if (useNarrowCanvas) {
-        debugInfo .= " (Narrow)"
-    } else {
-        debugInfo .= " (Legacy)"
-    }
-    global lastCanvasDetection := debugInfo
+    wideConfigured := (wideCanvasRight > wideCanvasLeft && wideCanvasBottom > wideCanvasTop)
+    narrowConfigured := (narrowCanvasRight > narrowCanvasLeft && narrowCanvasBottom > narrowCanvasTop)
+    userConfigured := (isCanvasCalibrated && userCanvasRight > userCanvasLeft && userCanvasBottom > userCanvasTop)
 
-    ; DEBUG: Log canvas selection decision
+    offsetX := 0
+    offsetY := 0
+    scaleX := 1
+    scaleY := 1
+    canvasSource := ""
+    canvasChosen := false
+    useFallbackBoxes := false
 
-    ; Choose appropriate canvas configuration based on recorded macro characteristics
-    if (useWideCanvas) {
-        ; Use WIDE canvas configuration for wide-aspect recorded macros
-        canvasLeft := wideCanvasLeft
-        canvasTop := wideCanvasTop
-        canvasRight := wideCanvasRight
-        canvasBottom := wideCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-    } else if (useNarrowCanvas) {
-        ; Use NARROW canvas configuration for narrow-aspect recorded macros
+    if (!canvasChosen && effectiveMode = "Narrow" && narrowConfigured) {
         canvasLeft := narrowCanvasLeft
         canvasTop := narrowCanvasTop
         canvasRight := narrowCanvasRight
         canvasBottom := narrowCanvasBottom
         canvasW := canvasRight - canvasLeft
         canvasH := canvasBottom - canvasTop
-    } else if (isCanvasCalibrated) {
-        ; Fall back to legacy single canvas configuration
+
+        narrowAspect := 4.0 / 3.0
+        buttonAspect := buttonWidth / buttonHeight
+
+        if (buttonAspect > narrowAspect) {
+            contentHeight := buttonHeight
+            contentWidth := contentHeight * narrowAspect
+        } else {
+            contentWidth := buttonWidth
+            contentHeight := contentWidth / narrowAspect
+        }
+
+        offsetX := (buttonWidth - contentWidth) / 2
+        offsetY := (buttonHeight - contentHeight) / 2
+
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := contentWidth / safeCanvasW
+        scaleY := contentHeight / safeCanvasH
+        canvasSource := "narrow_calibrated"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && effectiveMode = "Narrow" && hasRecordedCanvas && (recordedCanvasMode = "" || recordedCanvasMode = "Narrow")) {
+        canvasLeft := recordedCanvas.left + 0.0
+        canvasTop := recordedCanvas.top + 0.0
+        canvasRight := recordedCanvas.right + 0.0
+        canvasBottom := recordedCanvas.bottom + 0.0
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
+        narrowAspect := 4.0 / 3.0
+        buttonAspect := buttonWidth / buttonHeight
+
+        if (buttonAspect > narrowAspect) {
+            contentHeight := buttonHeight
+            contentWidth := contentHeight * narrowAspect
+        } else {
+            contentWidth := buttonWidth
+            contentHeight := contentWidth / narrowAspect
+        }
+
+        offsetX := (buttonWidth - contentWidth) / 2
+        offsetY := (buttonHeight - contentHeight) / 2
+
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := contentWidth / safeCanvasW
+        scaleY := contentHeight / safeCanvasH
+        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && effectiveMode = "Wide" && wideConfigured) {
+        canvasLeft := wideCanvasLeft
+        canvasTop := wideCanvasTop
+        canvasRight := wideCanvasRight
+        canvasBottom := wideCanvasBottom
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := buttonWidth / safeCanvasW
+        scaleY := buttonHeight / safeCanvasH
+        canvasSource := "wide_calibrated"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && effectiveMode = "Wide" && hasRecordedCanvas && (recordedCanvasMode = "" || recordedCanvasMode = "Wide")) {
+        canvasLeft := recordedCanvas.left + 0.0
+        canvasTop := recordedCanvas.top + 0.0
+        canvasRight := recordedCanvas.right + 0.0
+        canvasBottom := recordedCanvas.bottom + 0.0
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := buttonWidth / safeCanvasW
+        scaleY := buttonHeight / safeCanvasH
+        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && userConfigured) {
         canvasLeft := userCanvasLeft
         canvasTop := userCanvasTop
         canvasRight := userCanvasRight
         canvasBottom := userCanvasBottom
         canvasW := canvasRight - canvasLeft
         canvasH := canvasBottom - canvasTop
-    } else {
-        ; Fallback: Use recorded macro bounds with padding (reuse calculated values)
-        padding := Min(recordedWidth, recordedHeight) * 0.02
-        canvasLeft := minX - padding
-        canvasTop := minY - padding
-        canvasRight := maxX + padding
-        canvasBottom := maxY + padding
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-    }
 
-    if (canvasW <= 0 || canvasH <= 0) {
-        fallbackPad := Max(20, Round(Max(recordedWidth, recordedHeight) * 0.02))
-        canvasLeft := minX - fallbackPad
-        canvasTop := minY - fallbackPad
-        canvasRight := maxX + fallbackPad
-        canvasBottom := maxY + fallbackPad
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-    }
-
-    if (recordedWidth > 0 && recordedHeight > 0) {
-        needsExpansion := (minX < canvasLeft) || (maxX > canvasRight) || (minY < canvasTop) || (maxY > canvasBottom)
-        if (needsExpansion) {
-            expandPad := Max(15, Round(Max(recordedWidth, recordedHeight) * 0.015))
-            desiredLeft := Floor(minX - expandPad)
-            desiredTop := Floor(minY - expandPad)
-            desiredRight := Ceil(maxX + expandPad)
-            desiredBottom := Ceil(maxY + expandPad)
-
-            GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
-
-            if (useNarrowCanvas) {
-                targetAspect := 4.0 / 3.0
-                desiredWidth := desiredRight - desiredLeft
-                desiredHeight := desiredBottom - desiredTop
-                currentAspect := desiredWidth / desiredHeight
-                if (currentAspect > targetAspect) {
-                    targetHeight := desiredWidth / targetAspect
-                    extra := (targetHeight - desiredHeight) / 2
-                    desiredTop := Floor(desiredTop - extra)
-                    desiredBottom := Ceil(desiredBottom + extra)
-                } else if (currentAspect < targetAspect) {
-                    targetWidth := desiredHeight * targetAspect
-                    extra := (targetWidth - desiredWidth) / 2
-                    desiredLeft := Floor(desiredLeft - extra)
-                    desiredRight := Ceil(desiredRight + extra)
-                }
-            }
-
-            if (desiredLeft < vsLeft) desiredLeft := vsLeft
-            if (desiredTop < vsTop) desiredTop := vsTop
-            if (desiredRight > vsRight) desiredRight := vsRight
-            if (desiredBottom > vsBottom) desiredBottom := vsBottom
-
-            if (desiredRight > desiredLeft && desiredBottom > desiredTop) {
-                canvasLeft := desiredLeft
-                canvasTop := desiredTop
-                canvasRight := desiredRight
-                canvasBottom := desiredBottom
-                canvasW := canvasRight - canvasLeft
-                canvasH := canvasBottom - canvasTop
-            }
-        }
-    }
-
-    ; DEBUG: Log selected canvas configuration
-
-    ; VISUAL DIFFERENTIATION: Wide = stretch to fill, Narrow = letterboxing
-    ; Background is already set by caller - we draw a colored overlay for the content area
-
-    if (canvasW <= 0)
-        canvasW := 1
-    if (canvasH <= 0)
-        canvasH := 1
-
-    ; Apply different scaling strategies based on canvas type
-    if (useWideCanvas) {
-        ; WIDE CANVAS: Stretch to fill entire button (non-uniform scaling)
-        ; Fill entire area with dark gray background (no letterboxing)
         darkGrayBrush := 0
         DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
 
-        scaleX := buttonWidth / canvasW
-        scaleY := buttonHeight / canvasH
-        offsetX := 0
-        offsetY := 0
-    } else if (useNarrowCanvas) {
-        ; NARROW CANVAS: Letterboxing to preserve 4:3 aspect ratio
-        ; Calculate 4:3 content area centered in button
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := buttonWidth / safeCanvasW
+        scaleY := buttonHeight / safeCanvasH
+        canvasSource := "user_calibrated"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && hasRecordedCanvas) {
+        canvasLeft := recordedCanvas.left + 0.0
+        canvasTop := recordedCanvas.top + 0.0
+        canvasRight := recordedCanvas.right + 0.0
+        canvasBottom := recordedCanvas.bottom + 0.0
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
+        narrowAspect := 4.0 / 3.0
+        recordedAspect := (canvasH != 0) ? (canvasW / canvasH) : 0
+        buttonAspect := buttonWidth / buttonHeight
+
+        if (recordedAspect > narrowAspect + 0.05) {
+            offsetX := 0
+            offsetY := 0
+            darkGrayBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+            safeCanvasW := canvasW != 0 ? canvasW : 1
+            safeCanvasH := canvasH != 0 ? canvasH : 1
+            scaleX := buttonWidth / safeCanvasW
+            scaleY := buttonHeight / safeCanvasH
+        } else {
+            if (buttonAspect > narrowAspect) {
+                contentHeight := buttonHeight
+                contentWidth := contentHeight * narrowAspect
+            } else {
+                contentWidth := buttonWidth
+                contentHeight := contentWidth / narrowAspect
+            }
+
+            offsetX := (buttonWidth - contentWidth) / 2
+            offsetY := (buttonHeight - contentHeight) / 2
+
+            darkGrayBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+            safeCanvasW := canvasW != 0 ? canvasW : 1
+            safeCanvasH := canvasH != 0 ? canvasH : 1
+            scaleX := contentWidth / safeCanvasW
+            scaleY := contentHeight / safeCanvasH
+        }
+
+        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && narrowConfigured) {
+        canvasLeft := narrowCanvasLeft
+        canvasTop := narrowCanvasTop
+        canvasRight := narrowCanvasRight
+        canvasBottom := narrowCanvasBottom
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
         narrowAspect := 4.0 / 3.0
         buttonAspect := buttonWidth / buttonHeight
 
         if (buttonAspect > narrowAspect) {
-            ; Button is wider than 4:3 - add horizontal letterboxing
             contentHeight := buttonHeight
             contentWidth := contentHeight * narrowAspect
         } else {
-            ; Button is taller than 4:3 - add vertical letterboxing
             contentWidth := buttonWidth
             contentHeight := contentWidth / narrowAspect
         }
 
-        ; Center the 4:3 content area
         offsetX := (buttonWidth - contentWidth) / 2
         offsetY := (buttonHeight - contentHeight) / 2
 
-        ; Fill 4:3 content area with dark gray, leaving black letterbox bars
         darkGrayBrush := 0
         DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
 
-        ; STRETCH canvas to fill the entire 4:3 content area (like wide mode)
-        ; This ensures boxes in corners reach the edges of the letterboxed area
-        scaleX := contentWidth / canvasW
-        scaleY := contentHeight / canvasH
-        ; No need to adjust offset - canvas fills the entire 4:3 area
-    } else {
-        ; LEGACY/FALLBACK: Stretch to fill
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := contentWidth / safeCanvasW
+        scaleY := contentHeight / safeCanvasH
+        canvasSource := "narrow_default"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen && wideConfigured) {
+        canvasLeft := wideCanvasLeft
+        canvasTop := wideCanvasTop
+        canvasRight := wideCanvasRight
+        canvasBottom := wideCanvasBottom
+        canvasW := canvasRight - canvasLeft
+        canvasH := canvasBottom - canvasTop
+
         darkGrayBrush := 0
         DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
 
-        scaleX := buttonWidth / canvasW
-        scaleY := buttonHeight / canvasH
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := buttonWidth / safeCanvasW
+        scaleY := buttonHeight / safeCanvasH
+        canvasSource := "wide_default"
+        canvasChosen := true
+    }
+
+    if (!canvasChosen) {
+        useFallbackBoxes := true
+    }
+
+    if (useFallbackBoxes) {
+        ; No manual calibration - derive canvas from recorded boxes (FALLBACK)
+        minX := 999999
+        minY := 999999
+        maxX := -999999
+        maxY := -999999
+        hasValidBox := false
+
+        for box in boxes {
+            hasValidBox := true
+
+            if (box.left < minX) {
+                minX := box.left
+            }
+            if (box.top < minY) {
+                minY := box.top
+            }
+            if (box.right > maxX) {
+                maxX := box.right
+            }
+            if (box.bottom > maxY) {
+                maxY := box.bottom
+            }
+        }
+
+        if (!hasValidBox) {
+            return
+        }
+
+        canvasLeft := minX
+        canvasTop := minY
+        canvasRight := maxX
+        canvasBottom := maxY
+        canvasW := maxX - minX
+        canvasH := maxY - minY
+
+        ; Fill background
+        darkGrayBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
+
+        safeCanvasW := canvasW != 0 ? canvasW : 1
+        safeCanvasH := canvasH != 0 ? canvasH : 1
+        scaleX := buttonWidth / safeCanvasW
+        scaleY := buttonHeight / safeCanvasH
         offsetX := 0
         offsetY := 0
+        canvasSource := hasRecordedCanvas ? "recorded_bounds" : "derived_bounds"
+        canvasChosen := true
     }
 
-    ; DEBUG: Log scaling and offset calculations
-    if (useNarrowCanvas) {
+    if (canvasSource = "")
+        canvasSource := "auto"
+
+    if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map") {
+        macroEventsArray.recordedMode := effectiveMode
+        macroEventsArray.recordedCanvas := {
+            mode: effectiveMode,
+            left: canvasLeft,
+            top: canvasTop,
+            right: canvasRight,
+            bottom: canvasBottom,
+            canvasWidth: canvasW,
+            canvasHeight: canvasH,
+            offsetX: offsetX,
+            offsetY: offsetY,
+            scaleX: scaleX,
+            scaleY: scaleY,
+            source: canvasSource
+        }
     }
 
-    ; Draw the boxes with enhanced precision and accuracy
+    ; Validate canvas dimensions
+    if (canvasW <= 0 || canvasH <= 0) {
+        return
+    }
+
+    ; Draw boxes with consistent percentage-based scaling
     for box in boxes {
-        ; DEBUG: Log original box coordinates
+        ; Clamp box coordinates into the active canvas before scaling
+        boxLeft := Max(canvasLeft, Min(box.left, canvasRight))
+        boxTop := Max(canvasTop, Min(box.top, canvasBottom))
+        boxRight := Max(canvasLeft, Min(box.right, canvasRight))
+        boxBottom := Max(canvasTop, Min(box.bottom, canvasBottom))
 
-        ; Map box coordinates from canvas to button space
-        rawX1 := ((box.left - canvasLeft) * scaleX) + offsetX
-        rawY1 := ((box.top - canvasTop) * scaleY) + offsetY
-        rawX2 := ((box.right - canvasLeft) * scaleX) + offsetX
-        rawY2 := ((box.bottom - canvasTop) * scaleY) + offsetY
+        if (boxRight <= boxLeft || boxBottom <= boxTop) {
+            continue
+        }
 
-        ; Calculate raw dimensions with floating-point precision
+        ; Map box coordinates from canvas to button space using percentage scaling
+        rawX1 := ((boxLeft - canvasLeft) * scaleX) + offsetX
+        rawY1 := ((boxTop - canvasTop) * scaleY) + offsetY
+        rawX2 := ((boxRight - canvasLeft) * scaleX) + offsetX
+        rawY2 := ((boxBottom - canvasTop) * scaleY) + offsetY
+
+        ; Calculate dimensions with floating-point precision
         rawW := rawX2 - rawX1
         rawH := rawY2 - rawY1
 
-        ; DEBUG: Log transformed coordinates
+        if (rawW <= 0 || rawH <= 0) {
+            continue
+        }
 
         ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
-        minSize := 2.5  ; Slightly smaller minimum for better area utilization
+        minSize := 2.5
+        originalWidth := boxRight - boxLeft
+        originalHeight := boxBottom - boxTop
+        originalAspect := originalWidth / originalHeight
 
         if (rawW < minSize || rawH < minSize) {
             ; Calculate original aspect ratio
-            originalAspect := (box.right - box.left) / (box.bottom - box.top)
 
             if (rawW < minSize && rawH < minSize) {
                 ; Both dimensions too small - scale proportionally
@@ -1378,7 +1199,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
             x2 := x1 + w
             y2 := y1 + h
         } else {
-            ; Dimensions are adequate - use precise floating-point coordinates
+            ; Use precise floating-point coordinates
             x1 := rawX1
             y1 := rawY1
             x2 := rawX2
@@ -1387,7 +1208,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
             h := rawH
         }
 
-        ; BOUNDS VALIDATION: Ensure coordinates are within thumbnail area
+        ; BOUNDS VALIDATION: Ensure coordinates are within button area
         x1 := Max(0, Min(x1, buttonWidth))
         y1 := Max(0, Min(y1, buttonHeight))
         x2 := Max(0, Min(x2, buttonWidth))
@@ -1395,14 +1216,12 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         w := x2 - x1
         h := y2 - y1
 
-        ; DEBUG: Log bounds validation and final coordinates
-
-        ; Skip boxes that are completely outside the thumbnail area or too small to see
+        ; Skip boxes that are too small to see
         if (w < 1.5 || h < 1.5) {
             continue
         }
 
-        ; Ensure minimum visible size for better display while allowing smaller valid boxes
+        ; Ensure minimum visible size
         if (w < 2) {
             w := 2
             x2 := x1 + w
@@ -1419,36 +1238,28 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
             color := degradationColors[1]
         }
 
-        ; ENHANCED RENDERING: Pure color with sub-pixel precision
-        fillColor := 0xFF000000 | color  ; Full opacity (FF = 255)
+        ; Draw with sub-pixel precision
+        fillColor := 0xFF000000 | color
 
-        ; DEBUG: Log drawing parameters
+        ; Enable high-quality rendering
+        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)
+        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 4)
 
-        ; Enable high-quality rendering for fractional coordinates
-        ; Set graphics to use high-quality smoothing mode for precise rendering
-        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)  ; HighQuality
-        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 4) ; HighQuality
-
-        ; Draw with sub-pixel precision using floating-point coordinates
+        ; Draw the box
         brush := 0
         result := DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
-        if (result != 0) {
-        } else {
-            result := DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
-            if (result != 0) {
-            } else {
-            }
+        if (result = 0) {
+            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
             DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
         }
 
-        ; Reset to default rendering for other elements
-        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)  ; Default
-        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0) ; Default
+        ; Reset rendering mode
+        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)
+        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0)
     }
-
-
 }
 
+; ===== CANVAS TYPE DETECTION =====
 DetectCanvasType() {
     global canvasWidth, canvasHeight, canvasAspectRatio, canvasType
 
@@ -1479,8 +1290,13 @@ DetectCanvasType() {
 global vizLogBuffer := ""
 global vizLogPath := ""
 VizLog(msg) {
+    ; Simplified - just buffer, don't write to file unless debugging
     global vizLogBuffer
-    vizLogBuffer .= msg . "`n"
+    try {
+        vizLogBuffer .= msg . "`n"
+    } catch {
+        ; Silent fail
+    }
 }
 
 EnsureVizLogPath() {
@@ -1509,32 +1325,8 @@ EnsureVizLogPath() {
 
 FlushVizLog() {
     global vizLogBuffer
-    if (vizLogBuffer != "") {
-        logPath := EnsureVizLogPath()
-        writeSucceeded := false
-
-        try {
-            FileAppend(vizLogBuffer, logPath)
-            writeSucceeded := true
-        } catch {
-            fallbackPath := A_ScriptDir . "\viz_debug.log"
-            if (fallbackPath != logPath) {
-                try {
-                    FileAppend(vizLogBuffer, fallbackPath)
-                    writeSucceeded := true
-                } catch {
-                }
-            }
-        }
-
-        if (writeSucceeded) {
-            vizLogBuffer := ""
-        } else {
-            if (StrLen(vizLogBuffer) > 20000) {
-                vizLogBuffer := SubStr(vizLogBuffer, -20000)
-            }
-        }
-    }
+    ; SIMPLIFIED: Just clear buffer without file I/O
+    vizLogBuffer := ""
 }
 
 CreateHBITMAPVisualization(macroEvents, buttonDims) {
@@ -1582,16 +1374,28 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
             cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
         }
     }
-    recordedMode := macroEvents.HasOwnProp("recordedMode") ? macroEvents.recordedMode : "unknown"
+    recordedMode := ""
+    try {
+        recordedMode := macroEvents.recordedMode
+    } catch {
+        recordedMode := "unknown"
+    }
     cacheKey .= buttonWidth . "x" . buttonHeight . "_" . recordedMode
 
     VizLog("Cache key: " . cacheKey)
 
     ; Check cache first
     if (hbitmapCache.Has(cacheKey)) {
-        VizLog("CACHE HIT - returning cached HBITMAP: " . hbitmapCache[cacheKey])
-        FlushVizLog()
-        return hbitmapCache[cacheKey]
+        cachedHBITMAP := hbitmapCache[cacheKey]
+        if (IsHBITMAPValid(cachedHBITMAP)) {
+            VizLog("CACHE HIT - returning cached HBITMAP: " . cachedHBITMAP)
+            FlushVizLog()
+            return cachedHBITMAP
+        } else {
+            VizLog("CACHE HIT INVALID - removing cached HBITMAP for key: " . cacheKey)
+            RemoveHBITMAPReference(cachedHBITMAP)
+            hbitmapCache.Delete(cacheKey)
+        }
     }
 
     VizLog("Cache miss - creating new HBITMAP")
@@ -1661,8 +1465,9 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
 
         if (result = 0 && hbitmap) {
             VizLog("SUCCESS! Caching and returning HBITMAP: " . hbitmap)
-            ; PERFORMANCE: Cache the HBITMAP for future use
+            ; PERFORMANCE: Cache the HBITMAP for future use and add reference
             hbitmapCache[cacheKey] := hbitmap
+            AddHBITMAPReference(hbitmap)
             FlushVizLog()
             return hbitmap
         } else {
@@ -1680,6 +1485,9 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
         if (bitmap) {
             DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
         }
+        if (hbitmap) {
+            DllCall("DeleteObject", "Ptr", hbitmap)
+        }
         FlushVizLog()
         return 0
     }
@@ -1691,7 +1499,7 @@ CleanupHBITMAPCache() {
     ; Delete all HBITMAP handles
     for cacheKey, hbitmap in hbitmapCache {
         if (hbitmap) {
-            DllCall("DeleteObject", "Ptr", hbitmap)
+            RemoveHBITMAPReference(hbitmap)
         }
     }
 
@@ -1705,12 +1513,61 @@ CleanupButtonDisplayedHBITMAPs() {
     ; Delete all HBITMAP handles currently displayed by buttons
     for buttonName, hbitmap in buttonDisplayedHBITMAPs {
         if (hbitmap) {
-            DllCall("DeleteObject", "Ptr", hbitmap)
+            RemoveHBITMAPReference(hbitmap)
         }
     }
 
     ; Clear the tracking Map
     buttonDisplayedHBITMAPs := Map()
+}
+
+AddHBITMAPReference(hbitmap) {
+    global hbitmapRefCounts
+
+    if (!hbitmap || hbitmap = 0) {
+        return
+    }
+
+    if (hbitmapRefCounts.Has(hbitmap)) {
+        hbitmapRefCounts[hbitmap] += 1
+    } else {
+        hbitmapRefCounts[hbitmap] := 1
+    }
+}
+
+RemoveHBITMAPReference(hbitmap) {
+    global hbitmapRefCounts
+
+    if (!hbitmap || hbitmap = 0) {
+        return
+    }
+
+    if (!hbitmapRefCounts.Has(hbitmap)) {
+        return
+    }
+
+    hbitmapRefCounts[hbitmap] -= 1
+
+    if (hbitmapRefCounts[hbitmap] <= 0) {
+        hbitmapRefCounts.Delete(hbitmap)
+        try {
+            DllCall("DeleteObject", "Ptr", hbitmap)
+        } catch {
+        }
+    }
+}
+
+IsHBITMAPValid(hbitmap) {
+    if (!hbitmap || hbitmap = 0) {
+        return false
+    }
+
+    try {
+        result := DllCall("GetObject", "Ptr", hbitmap, "Int", 0, "Ptr", 0)
+        return (result != 0)
+    } catch {
+        return false
+    }
 }
 
 CreateDirectVisualizationBypass(events, buttonDims) {
@@ -1725,13 +1582,1130 @@ RenderBoxesOnButton(button, bypassData) {
     return
 }
 
+; ===============================================================================
+; ===== STATS DATA MODULE =====
+; ===============================================================================
+; Handles statistics persistence, aggregation, and CSV writing
+; Tracks degradations for both macro executions and JSON profile executions
+
+; Suppress warnings for ObjSave and ObjLoad (defined in ObjPersistence.ahk)
+#Warn VarUnset, Off
+
+Stats_GetCsvHeader() {
+    return "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
+}
+
+Stats_EnsureStatsFile(filePath, encoding := "") {
+    if (!FileExist(filePath)) {
+        header := Stats_GetCsvHeader()
+        if (encoding != "")
+            FileAppend(header, filePath, encoding)
+        else
+            FileAppend(header, filePath)
+    }
+}
+
+Stats_BuildCsvRow(executionData) {
+    global currentSessionId, currentUsername
+    row := executionData["timestamp"] . "," . currentSessionId . "," . currentUsername . "," . executionData["execution_type"] . ","
+    row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . "," . executionData["layer"] . "," . executionData["execution_time_ms"] . "," . executionData["total_boxes"] . ","
+    row .= (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
+    row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
+    row .= (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0) . "," . (executionData.Has("glare_count") ? executionData["glare_count"] : 0) . ","
+    row .= (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0) . "," . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0) . ","
+    row .= (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0) . "," . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0) . ","
+    row .= (executionData.Has("rain_count") ? executionData["rain_count"] : 0) . "," . (executionData.Has("haze_count") ? executionData["haze_count"] : 0) . ","
+    row .= (executionData.Has("snow_count") ? executionData["snow_count"] : 0) . "," . (executionData.Has("clear_count") ? executionData["clear_count"] : 0) . ","
+    row .= (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . "," . (executionData.Has("execution_success") ? executionData["execution_success"] : "true") . ","
+    row .= (executionData.Has("error_details") ? executionData["error_details"] : "") . "`n"
+    return row
+}
+
+InitializeStatsSystem() {
+    global masterStatsCSV, documentsDir, workDir, sessionId, permanentStatsFile, currentSessionId
+    defaultDocumentsDir := A_MyDocuments . "\MacroMaster"
+    if (!IsSet(documentsDir) || documentsDir = "") {
+        documentsDir := defaultDocumentsDir
+    }
+    if (!IsSet(workDir) || workDir = "") {
+        workDir := documentsDir . "\data"
+    }
+    try {
+        if (!DirExist(documentsDir)) {
+            DirCreate(documentsDir)
+        }
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+    } catch {
+    }
+    masterStatsCSV := workDir . "\macro_execution_stats.csv"
+    InitializeCSVFile()
+    sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
+    currentSessionId := sessionId
+    InitializePermanentStatsFile()
+    LoadStatsFromJson()
+    try {
+        UpdateStatus("📊 Stats system initialized")
+    } catch {
+    }
+}
+
+InitializeCSVFile() {
+    global masterStatsCSV, documentsDir, workDir, sessionId
+    try {
+        if (!DirExist(documentsDir)) {
+            DirCreate(documentsDir)
+        }
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+        Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
+    } catch as e {
+        UpdateStatus("CSV setup failed")
+    }
+}
+
+InitializePermanentStatsFile() {
+    global workDir, permanentStatsFile
+    try {
+        permanentStatsFile := workDir . "\\master_stats_permanent.csv"
+        Stats_EnsureStatsFile(permanentStatsFile, "UTF-8")
+    } catch as e {
+    }
+}
+
+FormatMilliseconds(ms) {
+    if (ms < 1000) {
+        return ms . " ms"
+    } else if (ms < 60000) {
+        return Round(ms / 1000, 1) . " sec"
+    } else if (ms < 3600000) {
+        minutes := Floor(ms / 60000)
+        seconds := Round(Mod(ms, 60000) / 1000)
+        return minutes . " min " . seconds . " sec"
+    } else {
+        hours := Floor(ms / 3600000)
+        minutes := Round(Mod(ms, 3600000) / 60000)
+        return hours . " hr " . minutes . " min"
+    }
+}
+
+Stats_CreateEmptyStatsMap() {
+    global currentUsername, totalActiveTime
+    stats := Map()
+    stats["current_username"] := currentUsername
+    stats["total_executions"] := 0
+    stats["macro_executions_count"] := 0
+    stats["json_profile_executions_count"] := 0
+    stats["clear_executions_count"] := 0
+    stats["total_boxes"] := 0
+    stats["total_execution_time"] := 0
+    stats["average_execution_time"] := 0
+    stats["session_active_time"] := totalActiveTime
+    stats["boxes_per_hour"] := 0
+    stats["user_summary"] := Map()
+    stats["distinct_user_count"] := 0
+    stats["executions_per_hour"] := 0
+    stats["most_used_button"] := ""
+    stats["most_active_layer"] := ""
+    stats["degradation_totals"] := Map()
+    stats["smudge_total"] := 0
+    stats["glare_total"] := 0
+    stats["splashes_total"] := 0
+    stats["partial_blockage_total"] := 0
+    stats["full_blockage_total"] := 0
+    stats["light_flare_total"] := 0
+    stats["rain_total"] := 0
+    stats["haze_total"] := 0
+    stats["snow_total"] := 0
+    stats["clear_total"] := 0
+    stats["macro_smudge"] := 0
+    stats["macro_glare"] := 0
+    stats["macro_splashes"] := 0
+    stats["macro_partial"] := 0
+    stats["macro_full"] := 0
+    stats["macro_flare"] := 0
+    stats["macro_rain"] := 0
+    stats["macro_haze"] := 0
+    stats["macro_snow"] := 0
+    stats["macro_clear"] := 0
+    stats["json_smudge"] := 0
+    stats["json_glare"] := 0
+    stats["json_splashes"] := 0
+    stats["json_partial"] := 0
+    stats["json_full"] := 0
+    stats["json_flare"] := 0
+    stats["json_rain"] := 0
+    stats["json_haze"] := 0
+    stats["json_snow"] := 0
+    stats["json_clear"] := 0
+    stats["severity_low"] := 0
+    stats["severity_medium"] := 0
+    stats["severity_high"] := 0
+    return stats
+}
+
+Stats_IncrementDegradationCount(stats, degradation_name, prefix := "json_") {
+    switch StrLower(degradation_name) {
+        case "smudge", "1":
+            stats[prefix . "smudge"]++
+        case "glare", "2":
+            stats[prefix . "glare"]++
+        case "splashes", "3":
+            stats[prefix . "splashes"]++
+        case "partial_blockage", "4":
+            stats[prefix . "partial"]++
+        case "full_blockage", "5":
+            stats[prefix . "full"]++
+        case "light_flare", "6":
+            stats[prefix . "flare"]++
+        case "rain", "7":
+            stats[prefix . "rain"]++
+        case "haze", "8":
+            stats[prefix . "haze"]++
+        case "snow", "9":
+            stats[prefix . "snow"]++
+        case "clear", "none":
+            stats[prefix . "clear"]++
+    }
+}
+
+Stats_IncrementDegradationCountDirect(executionData, degradation_name) {
+    switch StrLower(degradation_name) {
+        case "smudge", "1":
+            executionData["smudge_count"]++
+        case "glare", "2":
+            executionData["glare_count"]++
+        case "splashes", "3":
+            executionData["splashes_count"]++
+        case "partial_blockage", "4":
+            executionData["partial_blockage_count"]++
+        case "full_blockage", "5":
+            executionData["full_blockage_count"]++
+        case "light_flare", "6":
+            executionData["light_flare_count"]++
+        case "rain", "7":
+            executionData["rain_count"]++
+        case "haze", "8":
+            executionData["haze_count"]++
+        case "snow", "9":
+            executionData["snow_count"]++
+        case "clear", "none":
+            executionData["clear_count"]++
+    }
+}
+
+ReadStatsFromMemory(filterBySession := false) {
+    global macroExecutionLog, sessionId, totalActiveTime, currentUsername
+    stats := Stats_CreateEmptyStatsMap()
+    sessionActiveMap := Map()
+    executionTimes := []
+    buttonCount := Map()
+    layerCount := Map()
+    for executionData in macroExecutionLog {
+        try {
+            ; Use stored session_id from execution data, fall back to global if not present
+            sessionKey := executionData.Has("session_id") ? executionData["session_id"] : sessionId
+            if (!filterBySession || sessionKey = sessionId) {
+                execution_type := executionData["execution_type"]
+                macro_name := executionData.Has("button_key") ? executionData["button_key"] : ""
+                layer := executionData.Has("layer") ? executionData["layer"] : 1
+                execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
+                total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
+                severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
+                session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
+                ; Track maximum active time per session (represents cumulative time at that execution)
+                if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
+                    sessionActiveMap[sessionKey] := session_active_time
+                }
+                ; Use stored username from execution data, fall back to current
+                username := executionData.Has("username") ? executionData["username"] : currentUsername
+                UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
+                stats["total_executions"]++
+                stats["total_boxes"] += total_boxes
+                stats["total_execution_time"] += execution_time
+                executionTimes.Push(execution_time)
+                if (execution_type = "clear") {
+                    stats["clear_executions_count"]++
+                } else if (execution_type = "json_profile") {
+                    stats["json_profile_executions_count"]++
+                } else {
+                    stats["macro_executions_count"]++
+                }
+                if (macro_name != "") {
+                    if (!buttonCount.Has(macro_name)) {
+                        buttonCount[macro_name] := 0
+                    }
+                    buttonCount[macro_name]++
+                }
+                if (!layerCount.Has(layer)) {
+                    layerCount[layer] := 0
+                }
+                layerCount[layer]++
+                if (execution_type = "json_profile" && severity_level != "") {
+                    switch StrLower(severity_level) {
+                        case "low":
+                            stats["severity_low"]++
+                        case "medium":
+                            stats["severity_medium"]++
+                        case "high":
+                            stats["severity_high"]++
+                    }
+                }
+                smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
+                glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
+                splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
+                partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
+                full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
+                flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
+                rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
+                haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
+                snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
+                clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
+                stats["smudge_total"] += smudge
+                stats["glare_total"] += glare
+                stats["splashes_total"] += splashes
+                stats["partial_blockage_total"] += partial
+                stats["full_blockage_total"] += full
+                stats["light_flare_total"] += flare
+                stats["rain_total"] += rain
+                stats["haze_total"] += haze
+                stats["snow_total"] += snow
+                stats["clear_total"] += clear
+                ; Aggregate degradation counts by execution type
+                if (execution_type = "json_profile") {
+                    ; For JSON profiles, use the individual count fields (already populated)
+                    stats["json_smudge"] += smudge
+                    stats["json_glare"] += glare
+                    stats["json_splashes"] += splashes
+                    stats["json_partial"] += partial
+                    stats["json_full"] += full
+                    stats["json_flare"] += flare
+                    stats["json_rain"] += rain
+                    stats["json_haze"] += haze
+                    stats["json_snow"] += snow
+                    stats["json_clear"] += clear
+                } else if (execution_type = "macro") {
+                    stats["macro_smudge"] += smudge
+                    stats["macro_glare"] += glare
+                    stats["macro_splashes"] += splashes
+                    stats["macro_partial"] += partial
+                    stats["macro_full"] += full
+                    stats["macro_flare"] += flare
+                    stats["macro_rain"] += rain
+                    stats["macro_haze"] += haze
+                    stats["macro_snow"] += snow
+                    stats["macro_clear"] += clear
+                }
+            }
+        } catch {
+            continue
+        }
+    }
+    totalSessionActive := 0
+    for _, activeMs in sessionActiveMap {
+        if (activeMs > 0) {
+            totalSessionActive += activeMs
+        }
+    }
+    if (sessionActiveMap.Has(sessionId)) {
+        stats["current_session_active_time"] := sessionActiveMap[sessionId]
+    } else {
+        stats["current_session_active_time"] := 0
+    }
+    if (totalSessionActive > 0) {
+        stats["session_active_time"] := totalSessionActive
+    }
+    stats["session_active_time_map"] := sessionActiveMap
+    stats["distinct_user_count"] := stats["user_summary"].Count
+    for username, userData in stats["user_summary"] {
+        if (userData.Has("sessions")) {
+            userData["session_count"] := userData["sessions"].Count
+        } else {
+            userData["session_count"] := 0
+        }
+    }
+    if (stats["total_executions"] > 0) {
+        stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
+    }
+    if (stats["session_active_time"] > 5000) {
+        activeTimeHours := stats["session_active_time"] / 3600000
+        stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
+        stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
+    }
+    maxButtonCount := 0
+    maxLayerCount := 0
+    for button, count in buttonCount {
+        if (count > maxButtonCount) {
+            maxButtonCount := count
+            stats["most_used_button"] := button
+        }
+    }
+    for layer, count in layerCount {
+        if (count > maxLayerCount) {
+            maxLayerCount := count
+            stats["most_active_layer"] := layer
+        }
+    }
+    return stats
+}
+
+GetTodayStatsFromMemory() {
+    global macroExecutionLog, sessionId, currentUsername
+    stats := Stats_CreateEmptyStatsMap()
+    sessionActiveMap := Map()
+    today := FormatTime(A_Now, "yyyy-MM-dd")
+    for executionData in macroExecutionLog {
+        try {
+            timestamp := executionData.Has("timestamp") ? executionData["timestamp"] : ""
+            if (SubStr(timestamp, 1, 10) = today) {
+                execution_type := executionData["execution_type"]
+                execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
+                total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
+                severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
+                session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
+                stats["total_executions"]++
+                stats["total_boxes"] += total_boxes
+                stats["total_execution_time"] += execution_time
+                if (execution_type = "json_profile") {
+                    stats["json_profile_executions_count"]++
+                } else if (execution_type = "macro") {
+                    stats["macro_executions_count"]++
+                }
+                ; Use stored session_id from execution data, fall back to global if not present
+                sessionKey := executionData.Has("session_id") ? executionData["session_id"] : sessionId
+                if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
+                    sessionActiveMap[sessionKey] := session_active_time
+                }
+                ; Use stored username from execution data, fall back to current
+                username := executionData.Has("username") ? executionData["username"] : currentUsername
+                UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
+                if (execution_type = "json_profile" && severity_level != "") {
+                    switch StrLower(severity_level) {
+                        case "low":
+                            stats["severity_low"]++
+                        case "medium":
+                            stats["severity_medium"]++
+                        case "high":
+                            stats["severity_high"]++
+                    }
+                }
+                smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
+                glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
+                splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
+                partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
+                full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
+                flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
+                rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
+                haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
+                snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
+                clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
+                stats["smudge_total"] += smudge
+                stats["glare_total"] += glare
+                stats["splashes_total"] += splashes
+                stats["partial_blockage_total"] += partial
+                stats["full_blockage_total"] += full
+                stats["light_flare_total"] += flare
+                stats["rain_total"] += rain
+                stats["haze_total"] += haze
+                stats["snow_total"] += snow
+                stats["clear_total"] += clear
+                ; Aggregate degradation counts by execution type
+                if (execution_type = "json_profile") {
+                    ; For JSON profiles, use the individual count fields (already populated)
+                    stats["json_smudge"] += smudge
+                    stats["json_glare"] += glare
+                    stats["json_splashes"] += splashes
+                    stats["json_partial"] += partial
+                    stats["json_full"] += full
+                    stats["json_flare"] += flare
+                    stats["json_rain"] += rain
+                    stats["json_haze"] += haze
+                    stats["json_snow"] += snow
+                    stats["json_clear"] += clear
+                } else if (execution_type = "macro") {
+                    stats["macro_smudge"] += smudge
+                    stats["macro_glare"] += glare
+                    stats["macro_splashes"] += splashes
+                    stats["macro_partial"] += partial
+                    stats["macro_full"] += full
+                    stats["macro_flare"] += flare
+                    stats["macro_rain"] += rain
+                    stats["macro_haze"] += haze
+                    stats["macro_snow"] += snow
+                    stats["macro_clear"] += clear
+                }
+            }
+        } catch {
+            continue
+        }
+    }
+    totalSessionActive := 0
+    for _, activeMs in sessionActiveMap {
+        if (activeMs > 0) {
+            totalSessionActive += activeMs
+        }
+    }
+    if (sessionActiveMap.Has(sessionId)) {
+        stats["current_session_active_time"] := sessionActiveMap[sessionId]
+    } else {
+        stats["current_session_active_time"] := 0
+    }
+    if (totalSessionActive > 0) {
+        stats["session_active_time"] := totalSessionActive
+    }
+    stats["session_active_time_map"] := sessionActiveMap
+    stats["distinct_user_count"] := stats["user_summary"].Count
+    for username, userData in stats["user_summary"] {
+        if (userData.Has("sessions")) {
+            userData["session_count"] := userData["sessions"].Count
+        } else {
+            userData["session_count"] := 0
+        }
+    }
+    if (stats["total_executions"] > 0) {
+        stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
+    }
+    if (stats["session_active_time"] > 5000) {
+        activeTimeHours := stats["session_active_time"] / 3600000
+        stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
+        stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
+    }
+    return stats
+}
+
+ProcessDegradationCounts(executionData, degradationString) {
+    if (degradationString = "" || degradationString = "none") {
+        return
+    }
+    degradationTypes := StrSplit(degradationString, ",")
+    for degradationType in degradationTypes {
+        degradationType := Trim(StrReplace(StrReplace(degradationType, Chr(34), ""), Chr(39), ""))
+        Stats_IncrementDegradationCountDirect(executionData, degradationType)
+    }
+}
+
+UpdateUserSummary(userSummaryMap, username, totalBoxes, sessionId) {
+    if (username = "") {
+        username := "unknown"
+    }
+    if (!userSummaryMap.Has(username)) {
+        userSummaryMap[username] := Map("total_executions", 0, "total_boxes", 0, "sessions", Map())
+    }
+    userData := userSummaryMap[username]
+    userData["total_executions"] := userData["total_executions"] + 1
+    userData["total_boxes"] := userData["total_boxes"] + totalBoxes
+    if (sessionId != "") {
+        sessions := userData["sessions"]
+        if (!sessions.Has(sessionId)) {
+            sessions[sessionId] := true
+        }
+    }
+}
+
+RecordExecutionStats(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
+    global breakMode, recording, annotationMode, totalActiveTime, lastActiveTime, sessionId, currentUsername
+    eventCount := (IsObject(events) ? events.Length : 0)
+    if (breakMode || recording) {
+        return
+    }
+    execution_time_ms := A_TickCount - executionStartTime
+    timestamp := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    UpdateActiveTime()
+    current_session_active_time_ms := GetCurrentSessionActiveTime()
+    executionData := Map()
+    executionData["timestamp"] := timestamp
+    executionData["session_id"] := sessionId
+    executionData["username"] := currentUsername
+    executionData["execution_type"] := executionType
+    executionData["button_key"] := macroKey
+    executionData["layer"] := 1
+    executionData["execution_time_ms"] := execution_time_ms
+    executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
+    executionData["session_active_time_ms"] := current_session_active_time_ms
+    executionData["break_mode_active"] := false
+    executionData["smudge_count"] := 0
+    executionData["glare_count"] := 0
+    executionData["splashes_count"] := 0
+    executionData["partial_blockage_count"] := 0
+    executionData["full_blockage_count"] := 0
+    executionData["light_flare_count"] := 0
+    executionData["rain_count"] := 0
+    executionData["haze_count"] := 0
+    executionData["snow_count"] := 0
+    executionData["clear_count"] := 0
+    executionData["total_boxes"] := 0
+    executionData["degradation_assignments"] := ""
+    executionData["severity_level"] := "medium"
+    executionData["annotation_details"] := ""
+    executionData["execution_success"] := "true"
+    executionData["error_details"] := ""
+    if (executionType = "macro") {
+        bbox_count := 0
+        degradation_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
+        for event in events {
+            eventType := ""
+            if (Type(event) = "Map") {
+                eventType := event.Has("type") ? event["type"] : ""
+            } else if (IsObject(event)) {
+                eventType := event.HasOwnProp("type") ? event.type : ""
+            }
+            if (eventType = "boundingBox") {
+                bbox_count++
+                degType := 0
+                if (Type(event) = "Map") {
+                    degType := event.Has("degradationType") ? event["degradationType"] : 0
+                } else if (event.HasOwnProp("degradationType")) {
+                    degType := event.degradationType
+                }
+                ; Count all degradation types including 0 (clear)
+                if (degradation_counts_map.Has(degType)) {
+                    degradation_counts_map[degType]++
+                }
+            }
+        }
+        executionData["total_boxes"] := bbox_count
+        executionData["smudge_count"] := degradation_counts_map[1]
+        executionData["glare_count"] := degradation_counts_map[2]
+        executionData["splashes_count"] := degradation_counts_map[3]
+        executionData["partial_blockage_count"] := degradation_counts_map[4]
+        executionData["full_blockage_count"] := degradation_counts_map[5]
+        executionData["light_flare_count"] := degradation_counts_map[6]
+        executionData["rain_count"] := degradation_counts_map[7]
+        executionData["haze_count"] := degradation_counts_map[8]
+        executionData["snow_count"] := degradation_counts_map[9]
+        executionData["clear_count"] := degradation_counts_map[0]
+        degradation_names := []
+        if (degradation_counts_map[1] > 0) degradation_names.Push("smudge")
+        if (degradation_counts_map[2] > 0) degradation_names.Push("glare")
+        if (degradation_counts_map[3] > 0) degradation_names.Push("splashes")
+        if (degradation_counts_map[4] > 0) degradation_names.Push("partial_blockage")
+        if (degradation_counts_map[5] > 0) degradation_names.Push("full_blockage")
+        if (degradation_counts_map[6] > 0) degradation_names.Push("light_flare")
+        if (degradation_counts_map[7] > 0) degradation_names.Push("rain")
+        if (degradation_counts_map[8] > 0) degradation_names.Push("haze")
+        if (degradation_counts_map[9] > 0) degradation_names.Push("snow")
+        if (degradation_counts_map[0] > 0) degradation_names.Push("clear")
+        if (degradation_names.Length > 0) {
+            degradation_string := ""
+            for i, name in degradation_names {
+                degradation_string .= (i > 1 ? "," : "") . name
+            }
+            executionData["degradation_assignments"] := degradation_string
+        } else {
+            executionData["degradation_assignments"] := "clear"
+            executionData["clear_count"] := bbox_count > 0 ? bbox_count : 1
+        }
+    } else if (executionType = "json_profile") {
+        executionData["total_boxes"] := 1
+        if (IsObject(analysisRecord)) {
+            if (analysisRecord.HasOwnProp("jsonDegradationName") && analysisRecord.jsonDegradationName != "") {
+                executionData["degradation_assignments"] := analysisRecord.jsonDegradationName
+                ProcessDegradationCounts(executionData, analysisRecord.jsonDegradationName)
+            } else {
+                executionData["degradation_assignments"] := "clear"
+                executionData["clear_count"] := 1
+            }
+            if (analysisRecord.HasOwnProp("severity")) {
+                executionData["severity_level"] := analysisRecord.severity
+            }
+            if (analysisRecord.HasOwnProp("annotationDetails")) {
+                executionData["annotation_details"] := analysisRecord.annotationDetails
+            }
+        } else {
+            executionData["degradation_assignments"] := "clear"
+            executionData["clear_count"] := 1
+        }
+    } else if (executionType = "clear") {
+        executionData["total_boxes"] := 1
+        executionData["clear_count"] := 1
+        executionData["degradation_assignments"] := "clear"
+    }
+    result := AppendToCSV(executionData)
+    if (result) {
+        SaveStatsToJson()
+    }
+    return result
+}
+
+global macroExecutionLog := []
+
+AppendToCSV(executionData) {
+    global macroExecutionLog
+    try {
+        macroExecutionLog.Push(executionData)
+        return true
+    } catch Error as e {
+        UpdateStatus("⚠ Stats record error: " . e.Message)
+        return false
+    }
+}
+
+UpdateActiveTime() {
+    global breakMode, totalActiveTime, lastActiveTime, currentDay, sessionId
+
+    ; Check for day change and handle daily reset
+    today := FormatTime(A_Now, "yyyy-MM-dd")
+    if (today != currentDay) {
+        HandleDayChange(today)
+    }
+
+    ; Only accumulate time if not in break mode
+    if (!breakMode && lastActiveTime > 0) {
+        elapsed := A_TickCount - lastActiveTime
+        totalActiveTime += elapsed
+    }
+    ; Always update lastActiveTime to current tick for next interval
+    lastActiveTime := A_TickCount
+}
+
+HandleDayChange(newDay) {
+    global currentDay, totalActiveTime, lastActiveTime, sessionId, applicationStartTime
+    ; Day has changed - reset daily tracking while preserving lifetime stats
+    ; Note: Lifetime stats are preserved in macroExecutionLog (never reset unless manual)
+    ; Daily stats are calculated by filtering GetTodayStatsFromMemory() by date
+
+    ; Reset session time tracking for new day
+    totalActiveTime := 0
+    lastActiveTime := A_TickCount
+    applicationStartTime := A_TickCount
+
+    ; Generate new session ID for the new day
+    sessionId := "session_" . A_TickCount
+
+    ; Update the current day tracker
+    currentDay := newDay
+
+    ; Optional: Log the day change
+    UpdateStatus("📅 New day started: " . newDay)
+}
+
+GetCurrentSessionActiveTime() {
+    global totalActiveTime, lastActiveTime, breakMode
+    ; Return just totalActiveTime - UpdateActiveTime() handles accumulation
+    ; Don't add extra time here to avoid double-counting
+    if (breakMode) {
+        return totalActiveTime
+    } else {
+        ; Add only the time since last update (smooth live display)
+        return totalActiveTime + (A_TickCount - lastActiveTime)
+    }
+}
+
+SaveStatsToJson() {
+    global macroExecutionLog, workDir
+    statsJsonFile := workDir . "\stats_log.json"
+    backupFile := workDir . "\stats_log.backup.json"
+
+    try {
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+
+        ; Validate data before saving
+        if (!IsObject(macroExecutionLog)) {
+            UpdateStatus("⚠️ Stats data invalid, skipping save")
+            return false
+        }
+
+        ; Create backup of existing file before overwriting
+        if (FileExist(statsJsonFile)) {
+            try {
+                FileCopy(statsJsonFile, backupFile, 1)  ; Overwrite backup
+            } catch {
+                ; Backup failed, but continue with save
+            }
+        }
+
+        ; Build validated JSON structure
+        jsonData := Map()
+        jsonData["version"] := "1.0"
+        jsonData["last_updated"] := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+        jsonData["execution_count"] := macroExecutionLog.Length
+        jsonData["executions"] := macroExecutionLog
+
+        ; Save to file
+        ObjSave(jsonData, statsJsonFile)
+        return true
+    } catch Error as e {
+        UpdateStatus("⚠️ Stats save failed: " . e.Message)
+        return false
+    }
+}
+
+LoadStatsFromJson() {
+    global macroExecutionLog, workDir
+    statsJsonFile := workDir . "\stats_log.json"
+    backupFile := workDir . "\stats_log.backup.json"
+
+    try {
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+
+        if (!FileExist(statsJsonFile)) {
+            macroExecutionLog := []
+            return 0
+        }
+
+        ; Attempt to load main file
+        jsonData := ""
+        try {
+            jsonData := ObjLoad(statsJsonFile)
+        } catch Error as e {
+            ; Main file corrupted, try backup
+            UpdateStatus("⚠️ Stats file corrupted, attempting backup recovery...")
+            if (FileExist(backupFile)) {
+                try {
+                    jsonData := ObjLoad(backupFile)
+                    UpdateStatus("✅ Stats recovered from backup")
+                } catch {
+                    UpdateStatus("❌ Backup also corrupted, starting fresh")
+                    macroExecutionLog := []
+                    return 0
+                }
+            } else {
+                UpdateStatus("❌ No backup available, starting fresh")
+                macroExecutionLog := []
+                return 0
+            }
+        }
+
+        ; Validate loaded data structure
+        if (!IsObject(jsonData)) {
+            UpdateStatus("⚠️ Invalid stats data format")
+            macroExecutionLog := []
+            return 0
+        }
+
+        if (!jsonData.Has("executions")) {
+            UpdateStatus("⚠️ Stats file missing executions data")
+            macroExecutionLog := []
+            return 0
+        }
+
+        executions := jsonData["executions"]
+        if (!IsObject(executions)) {
+            UpdateStatus("⚠️ Executions data is not an array")
+            macroExecutionLog := []
+            return 0
+        }
+
+        ; Validate individual execution records
+        validatedExecutions := []
+        invalidCount := 0
+        for execution in executions {
+            if (IsObject(execution) && execution.Has("timestamp") && execution.Has("execution_type")) {
+                validatedExecutions.Push(execution)
+            } else {
+                invalidCount++
+            }
+        }
+
+        macroExecutionLog := validatedExecutions
+
+        if (invalidCount > 0) {
+            UpdateStatus("⚠️ Loaded " . validatedExecutions.Length . " stats, " . invalidCount . " invalid entries skipped")
+        }
+
+        return macroExecutionLog.Length
+    } catch Error as e {
+        UpdateStatus("❌ Stats load error: " . e.Message)
+        macroExecutionLog := []
+        return 0
+    }
+}
+
+; ===============================================================================
+; ===== STATS GUI MODULE =====
+; ===============================================================================
+
+global statsGui := ""
+global statsGuiOpen := false
+global statsControls := Map()
+
+ShowStatsMenu() {
+    global masterStatsCSV, darkMode, currentSessionId, permanentStatsFile, statsGui, statsGuiOpen, statsControls
+    if (statsGuiOpen) {
+        CloseStatsMenu()
+        return
+    }
+    statsGui := Gui("+AlwaysOnTop", "📊 MacroMaster Statistics")
+    statsGui.BackColor := darkMode ? "0x1E1E1E" : "0xF5F5F5"
+    statsGui.SetFont("s9", "Consolas")
+    statsGui.OnEvent("Close", (*) => CloseStatsMenu())
+    statsControls := Map()
+    leftCol := 20
+    midCol := 250
+    rightCol := 480
+    y := 15
+    todayDate := FormatTime(A_Now, "MMMM d, yyyy (dddd)")
+    titleText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660 Center", todayDate)
+    titleText.SetFont("s10 bold")
+    titleText.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+    y += 20
+    AddStatsHeader(statsGui, y, "ALL-TIME (Since Reset)", leftCol, 210)
+    AddStatsHeader(statsGui, y, "TODAY", rightCol, 210)
+    y += 15
+    AddSectionDivider(statsGui, y, "GENERAL STATISTICS", 660)
+    y += 15
+    AddHorizontalStatRowLive(statsGui, y, "Executions:", "all_exec", "today_exec")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Boxes:", "all_boxes", "today_boxes")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Active Time:", "all_active_time", "today_active_time")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Avg Time:", "all_avg_time", "today_avg_time")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
+    y += 12
+    AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
+    y += 15
+    AddSectionDivider(statsGui, y, "MACRO DEGRADATION BREAKDOWN", 660)
+    y += 15
+    degradationTypes := [["Smudge", "smudge"], ["Glare", "glare"], ["Splashes", "splashes"], ["Partial Block", "partial"], ["Full Block", "full"], ["Light Flare", "flare"], ["Rain", "rain"], ["Haze", "haze"], ["Snow", "snow"]]
+    for degInfo in degradationTypes {
+        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_macro_" . degInfo[2], "today_macro_" . degInfo[2])
+        y += 12
+    }
+    y += 10
+    AddSectionDivider(statsGui, y, "JSON DEGRADATION SELECTION COUNT", 660)
+    y += 15
+    for degInfo in degradationTypes {
+        AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_json_" . degInfo[2], "today_json_" . degInfo[2])
+        y += 12
+    }
+    y += 10
+    AddSectionDivider(statsGui, y, "EXECUTION TYPE BREAKDOWN", 660)
+    y += 15
+    AddHorizontalStatRowLive(statsGui, y, "Macro Executions:", "all_macro_exec", "today_macro_exec")
+    y += 12
+    AddHorizontalStatRowLive(statsGui, y, "JSON Executions:", "all_json_exec", "today_json_exec")
+    y += 15
+    AddSectionDivider(statsGui, y, "JSON SEVERITY BREAKDOWN", 660)
+    y += 15
+    severityTypes := [["Low Severity", "severity_low"], ["Medium Severity", "severity_medium"], ["High Severity", "severity_high"]]
+    for sevInfo in severityTypes {
+        AddHorizontalStatRowLive(statsGui, y, sevInfo[1] . ":", "all_" . sevInfo[2], "today_" . sevInfo[2])
+        y += 12
+    }
+    y += 15
+    AddSectionDivider(statsGui, y, "MACRO DETAILS", 660)
+    y += 15
+    AddHorizontalStatRowLive(statsGui, y, "Most Used Button:", "most_used_btn", "")
+    y += 12
+    AddHorizontalStatRowLive(statsGui, y, "Most Active Layer:", "most_active_layer", "")
+    y += 15
+    AddSectionDivider(statsGui, y, "DATA FILES", 660)
+    y += 15
+    infoText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Display Stats: " . masterStatsCSV)
+    infoText.SetFont("s8")
+    infoText.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
+    y += 18
+    infoText2 := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Permanent Master: " . permanentStatsFile)
+    infoText2.SetFont("s8")
+    infoText2.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
+    y += 20
+    btnExport := statsGui.Add("Button", "x" . leftCol . " y" . y . " w120 h30", "💾 Export")
+    btnExport.SetFont("s9")
+    btnExport.OnEvent("Click", (*) => ExportStatsData(statsGui))
+    btnReset := statsGui.Add("Button", "x" . (leftCol + 130) . " y" . y . " w120 h30", "🗑️ Reset")
+    btnReset.SetFont("s9")
+    btnReset.OnEvent("Click", (*) => ResetAllStats())
+    btnClose := statsGui.Add("Button", "x" . (leftCol + 260) . " y" . y . " w120 h30", "❌ Close")
+    btnClose.SetFont("s9")
+    btnClose.OnEvent("Click", (*) => CloseStatsMenu())
+    statsGui.Show("w700 h" . (y + 40))
+    statsGuiOpen := true
+    UpdateStatsDisplay()
+    SetTimer(UpdateStatsDisplay, 1000)
+}
+
+AddHorizontalStatRowLive(gui, y, label, allKey, todayKey) {
+    global darkMode, statsControls
+    labelCtrl := gui.Add("Text", "x20 y" . y . " w140", label)
+    labelCtrl.SetFont("s9", "Consolas")
+    labelCtrl.Opt("c" . (darkMode ? "0xCCCCCC" : "0x555555"))
+    allCtrl := gui.Add("Text", "x170 y" . y . " w70 Right", "0")
+    allCtrl.SetFont("s9 bold", "Consolas")
+    allCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+    statsControls[allKey] := allCtrl
+    if (todayKey != "") {
+        todayCtrl := gui.Add("Text", "x480 y" . y . " w70 Right", "0")
+        todayCtrl.SetFont("s9 bold", "Consolas")
+        todayCtrl.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+        statsControls[todayKey] := todayCtrl
+    }
+}
+
+AddSectionDivider(gui, y, text, width) {
+    global darkMode
+    divider := gui.Add("Text", "x20 y" . y . " w" . width, "═══ " . text . " ═══")
+    divider.SetFont("s9 bold", "Consolas")
+    divider.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
+
+AddStatsHeader(gui, y, text, x, width) {
+    global darkMode
+    header := gui.Add("Text", "x" . x . " y" . y . " w" . width . " Center", text)
+    header.SetFont("s9 bold", "Consolas")
+    header.Opt("c" . (darkMode ? "0xFFFFFF" : "0x000000"))
+}
+
+UpdateStatsDisplay() {
+    global statsGuiOpen, statsControls
+    if (!statsGuiOpen) {
+        SetTimer(UpdateStatsDisplay, 0)
+        return
+    }
+    try {
+        allStats := ReadStatsFromMemory(false)
+        todayStats := GetTodayStatsFromMemory()
+        currentSessionStats := ReadStatsFromMemory(true)
+        recordedSessionActive := (currentSessionStats.Has("session_active_time") ? currentSessionStats["session_active_time"] : 0)
+        currentActiveTime := GetCurrentSessionActiveTime()
+        effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
+        effectiveAllActiveTime += currentActiveTime - recordedSessionActive
+        if (effectiveAllActiveTime > 5000) {
+            activeTimeHours := effectiveAllActiveTime / 3600000
+            allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
+            allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
+        }
+        allStats["session_active_time"] := effectiveAllActiveTime
+        effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
+        effectiveTodayActiveTime += currentActiveTime - recordedSessionActive
+        if (effectiveTodayActiveTime > 5000) {
+            activeTimeHours := effectiveTodayActiveTime / 3600000
+            todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
+            todayStats["executions_per_hour"] := Round(todayStats["total_executions"] / activeTimeHours, 1)
+        }
+        todayStats["session_active_time"] := effectiveTodayActiveTime
+        if (statsControls.Has("all_exec"))
+            statsControls["all_exec"].Value := allStats["total_executions"]
+        if (statsControls.Has("today_exec"))
+            statsControls["today_exec"].Value := todayStats["total_executions"]
+        if (statsControls.Has("all_boxes"))
+            statsControls["all_boxes"].Value := allStats["total_boxes"]
+        if (statsControls.Has("today_boxes"))
+            statsControls["today_boxes"].Value := todayStats["total_boxes"]
+        if (statsControls.Has("all_active_time"))
+            statsControls["all_active_time"].Value := FormatMilliseconds(allStats["session_active_time"])
+        if (statsControls.Has("today_active_time"))
+            statsControls["today_active_time"].Value := FormatMilliseconds(todayStats["session_active_time"])
+        if (statsControls.Has("all_avg_time"))
+            statsControls["all_avg_time"].Value := allStats["average_execution_time"] . " ms"
+        if (statsControls.Has("today_avg_time"))
+            statsControls["today_avg_time"].Value := todayStats["average_execution_time"] . " ms"
+        if (statsControls.Has("all_box_rate"))
+            statsControls["all_box_rate"].Value := allStats["boxes_per_hour"]
+        if (statsControls.Has("today_box_rate"))
+            statsControls["today_box_rate"].Value := todayStats["boxes_per_hour"]
+        if (statsControls.Has("all_exec_rate"))
+            statsControls["all_exec_rate"].Value := allStats["executions_per_hour"]
+        if (statsControls.Has("today_exec_rate"))
+            statsControls["today_exec_rate"].Value := todayStats["executions_per_hour"]
+        degradationKeys := ["smudge", "glare", "splashes", "partial", "full", "flare", "rain", "haze", "snow"]
+        for key in degradationKeys {
+            if (statsControls.Has("all_macro_" . key))
+                statsControls["all_macro_" . key].Value := allStats["macro_" . key]
+            if (statsControls.Has("today_macro_" . key))
+                statsControls["today_macro_" . key].Value := todayStats["macro_" . key]
+            if (statsControls.Has("all_json_" . key))
+                statsControls["all_json_" . key].Value := allStats["json_" . key]
+            if (statsControls.Has("today_json_" . key))
+                statsControls["today_json_" . key].Value := todayStats["json_" . key]
+        }
+        if (statsControls.Has("all_macro_exec"))
+            statsControls["all_macro_exec"].Value := allStats["macro_executions_count"]
+        if (statsControls.Has("today_macro_exec")) {
+            todayMacroExec := todayStats.Has("macro_executions_count") ? todayStats["macro_executions_count"] : Max(0, allStats["macro_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"]))
+            statsControls["today_macro_exec"].Value := Max(0, todayMacroExec)
+        }
+        if (statsControls.Has("all_json_exec"))
+            statsControls["all_json_exec"].Value := allStats["json_profile_executions_count"]
+        if (statsControls.Has("today_json_exec")) {
+            todayJsonExec := todayStats.Has("json_profile_executions_count") ? todayStats["json_profile_executions_count"] : Max(0, allStats["json_profile_executions_count"] - (allStats["total_executions"] - todayStats["total_executions"]))
+            statsControls["today_json_exec"].Value := Max(0, todayJsonExec)
+        }
+        if (statsControls.Has("all_severity_low"))
+            statsControls["all_severity_low"].Value := allStats["severity_low"]
+        if (statsControls.Has("today_severity_low"))
+            statsControls["today_severity_low"].Value := todayStats["severity_low"]
+        if (statsControls.Has("all_severity_medium"))
+            statsControls["all_severity_medium"].Value := allStats["severity_medium"]
+        if (statsControls.Has("today_severity_medium"))
+            statsControls["today_severity_medium"].Value := todayStats["severity_medium"]
+        if (statsControls.Has("all_severity_high"))
+            statsControls["all_severity_high"].Value := allStats["severity_high"]
+        if (statsControls.Has("today_severity_high"))
+            statsControls["today_severity_high"].Value := todayStats["severity_high"]
+        if (statsControls.Has("most_used_btn"))
+            statsControls["most_used_btn"].Value := allStats["most_used_button"]
+        if (statsControls.Has("most_active_layer"))
+            statsControls["most_active_layer"].Value := allStats["most_active_layer"]
+    } catch as err {
+    }
+}
+
+CloseStatsMenu() {
+    global statsGui, statsGuiOpen
+    SetTimer(UpdateStatsDisplay, 0)
+    if (statsGui) {
+        try statsGui.Destroy()
+        statsGui := ""
+    }
+    statsGuiOpen := false
+}
+
+ExportStatsData(statsMenuGui := "") {
+    global macroExecutionLog, documentsDir
+    if (!macroExecutionLog || macroExecutionLog.Length = 0) {
+        MsgBox("📊 No data to export yet`n`nStart using macros to generate performance data!", "Info", "Icon!")
+        return
+    }
+    exportPath := documentsDir . "\MacroMaster_Stats_Export_" . FormatTime(A_Now, "yyyyMMdd_HHmmss") . ".csv"
+    try {
+        csvContent := Stats_GetCsvHeader()
+        for executionData in macroExecutionLog {
+            csvContent .= Stats_BuildCsvRow(executionData)
+        }
+        FileAppend(csvContent, exportPath, "UTF-8")
+        MsgBox("✅ Stats exported successfully!`n`nFile: " . exportPath . "`n`nExecutions: " . macroExecutionLog.Length . "`n`nYou can open this file in Excel or other tools.", "Export Complete", "Icon!")
+    } catch Error as e {
+        MsgBox("❌ Export failed: " . e.Message, "Error", "Icon!")
+    }
+}
+
+ResetAllStats() {
+    global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
+    result := MsgBox("This will reset ALL statistics (Today and All-Time).`n`nAll execution data will be permanently deleted.`n`n⚠️ Export your stats first if you want to keep them!`n`nReset all stats?", "Reset Statistics", "YesNo Icon!")
+    if (result = "Yes") {
+        try {
+            macroExecutionLog := []
+            statsJsonFile := workDir . "\stats_log.json"
+            if FileExist(statsJsonFile) {
+                FileDelete(statsJsonFile)
+            }
+            if FileExist(masterStatsCSV) {
+                FileDelete(masterStatsCSV)
+            }
+            UpdateStatus("🗑️ Stats reset complete")
+            MsgBox("Statistics reset complete!`n`n✅ All execution data cleared.`n`nStart using macros to build new stats!", "Reset Complete", "Icon!")
+        } catch Error as e {
+            UpdateStatus("⚠️ Failed to reset statistics")
+            MsgBox("Failed to reset statistics: " . e.Message, "Error", "Icon!")
+        }
+    }
+}
+
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
         ; Initialize core systems
+        InitializeStatsSystem()
         InitializeDirectories()
         InitializeVariables()
-        InitializeStatsSystem()
         InitializeJsonAnnotations()
         InitializeVisualizationSystem()
         
@@ -1759,7 +2733,7 @@ Main() {
         RefreshAllButtonAppearances()
 
         ; Setup time tracking and auto-save
-        SetTimer(UpdateActiveTime, 30000)
+        SetTimer(UpdateActiveTime, 5000)
         SetTimer(AutoSave, 60000)
 
         ; Setup cleanup
@@ -2029,7 +3003,6 @@ ExecuteMacro(buttonName) {
     }
 
     playback := true
-    FlashButton(buttonName, true)
     FocusBrowser()
 
     events := macroEvents[layerMacroName]
@@ -2093,7 +3066,6 @@ ExecuteMacro(buttonName) {
 
     ; PERFORMANCE: MacroExecutionAnalysis() removed - stats are in-memory only now
 
-    FlashButton(buttonName, false)
     playback := false
     UpdateStatus("✅ Completed: " . buttonName)
 }
@@ -2600,13 +3572,15 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, degradationTypes, degradationColors
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, degradationTypes, degradationColors, buttonDisplayedHBITMAPs
 
     if (!buttonGrid.Has(buttonName))
         return
 
     button := buttonGrid[buttonName]
     picture := buttonPictures[buttonName]
+    oldHbitmap := buttonDisplayedHBITMAPs.Has(buttonName) ? buttonDisplayedHBITMAPs[buttonName] : 0
+    oldHbitmapValid := (oldHbitmap && IsHBITMAPValid(oldHbitmap))
     layerMacroName := "L" . currentLayer . "_" . buttonName
 
     hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
@@ -2645,6 +3619,10 @@ UpdateButtonAppearance(buttonName) {
                 button.SetFont("s7 bold", "cWhite")
                 button.Text := "MACRO`n" . macroEvents[layerMacroName].Length . " events`n(thumb error)"
             }
+            if (oldHbitmap) {
+                RemoveHBITMAPReference(oldHbitmap)
+                buttonDisplayedHBITMAPs[buttonName] := 0
+            }
         } else if (isJsonAnnotation) {
             ; JSON annotation display
             picture.Visible := false
@@ -2652,6 +3630,10 @@ UpdateButtonAppearance(buttonName) {
             button.Opt("+Background" . jsonColor)
             button.SetFont("s7 bold", "cBlack")
             button.Text := jsonInfo
+            if (oldHbitmap) {
+                RemoveHBITMAPReference(oldHbitmap)
+                buttonDisplayedHBITMAPs[buttonName] := 0
+            }
         } else if (hasMacro) {
             ; DIRECT HBITMAP VISUALIZATION - Pure in-memory, zero file I/O
             events := macroEvents[layerMacroName]
@@ -2665,6 +3647,12 @@ UpdateButtonAppearance(buttonName) {
             hbitmap := CreateHBITMAPVisualization(events, buttonDims)
             VizLog(">>> UpdateButtonAppearance: Returned HBITMAP=" . hbitmap)
 
+            if (events.HasOwnProp("recordedCanvas")) {
+                buttonLetterboxingStates[layerMacroName] := events.recordedCanvas.Clone()
+            } else if (buttonLetterboxingStates.Has(layerMacroName)) {
+                buttonLetterboxingStates.Delete(layerMacroName)
+            }
+
             if (hbitmap && hbitmap != 0) {
                 ; HBITMAP creation succeeded - load directly into picture control
                 VizLog(">>> UpdateButtonAppearance: Assigning HBITMAP to picture control")
@@ -2672,27 +3660,68 @@ UpdateButtonAppearance(buttonName) {
                 picture.Visible := true
                 picture.Text := ""
 
-                ; Clean up old HBITMAP to prevent handle leaks
-                if (buttonDisplayedHBITMAPs.Has(buttonName) && buttonDisplayedHBITMAPs[buttonName]) {
-                    oldHbitmap := buttonDisplayedHBITMAPs[buttonName]
-                    DllCall("DeleteObject", "Ptr", oldHbitmap)
+                assignmentSuccess := false
+                assignErrorMsg := ""
+                try {
+                    ; Use unsigned string form so Picture control accepts high-bit handles
+                    picture.Value := HBITMAPToPictureValue(hbitmap)
+                    assignmentSuccess := true
+                } catch Error as assignError {
+                    assignErrorMsg := assignError.Message
                 }
 
-                ; Use unsigned string form so Picture control accepts high-bit handles
-                picture.Value := HBITMAPToPictureValue(hbitmap)
-                buttonDisplayedHBITMAPs[buttonName] := hbitmap
-                picture.Redraw()
-                VizLog(">>> UpdateButtonAppearance: SUCCESS - HBITMAP displayed")
-                FlushVizLog()
+                if (assignmentSuccess) {
+                    AddHBITMAPReference(hbitmap)
+                    buttonDisplayedHBITMAPs[buttonName] := hbitmap
+                    picture.Redraw()
+                    VizLog(">>> UpdateButtonAppearance: SUCCESS - HBITMAP displayed")
+                    FlushVizLog()
+
+                    if (oldHbitmap) {
+                        RemoveHBITMAPReference(oldHbitmap)
+                    }
+                } else {
+                    RemoveHBITMAPReference(hbitmap)
+                    if (oldHbitmapValid) {
+                        VizLog(">>> UpdateButtonAppearance: HBITMAP assignment failed - restoring previous visualization")
+                        picture.Visible := true
+                        button.Visible := false
+                        picture.Text := ""
+                        picture.Value := HBITMAPToPictureValue(oldHbitmap)
+                        picture.Redraw()
+                        buttonDisplayedHBITMAPs[buttonName] := oldHbitmap
+                    } else {
+                        picture.Visible := false
+                        button.Visible := true
+                        button.Opt("+Background0x3A3A3A")
+                        button.SetFont("s7 bold", "cWhite")
+                        button.Text := "MACRO`n" . events.Length . " events"
+                        buttonDisplayedHBITMAPs[buttonName] := 0
+                    }
+                    VizLog(">>> UpdateButtonAppearance: HBITMAP assignment failed - " . assignErrorMsg)
+                    FlushVizLog()
+                }
             } else {
                 ; HBITMAP creation failed - simple text fallback
                 VizLog(">>> UpdateButtonAppearance: HBITMAP FAILED - using text fallback")
                 FlushVizLog()
-                picture.Visible := false
-                button.Visible := true
-                button.Opt("+Background0x3A3A3A")
-                button.SetFont("s7 bold", "cWhite")
-                button.Text := "MACRO`n" . events.Length . " events"
+
+                if (oldHbitmapValid) {
+                    VizLog(">>> UpdateButtonAppearance: Restoring previous visualization after creation failure")
+                    picture.Visible := true
+                    button.Visible := false
+                    picture.Text := ""
+                    picture.Value := HBITMAPToPictureValue(oldHbitmap)
+                    picture.Redraw()
+                    buttonDisplayedHBITMAPs[buttonName] := oldHbitmap
+                } else {
+                    picture.Visible := false
+                    button.Visible := true
+                    button.Opt("+Background0x3A3A3A")
+                    button.SetFont("s7 bold", "cWhite")
+                    button.Text := "MACRO`n" . events.Length . " events"
+                    buttonDisplayedHBITMAPs[buttonName] := 0
+                }
             }
         } else {
             ; Empty button - no macro assigned
@@ -2701,6 +3730,10 @@ UpdateButtonAppearance(buttonName) {
             button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
             button.SetFont("s8", "cGray")
             button.Text := ""
+            if (oldHbitmap) {
+                RemoveHBITMAPReference(oldHbitmap)
+                buttonDisplayedHBITMAPs[buttonName] := 0
+            }
         }
 
         if (button.Visible)
@@ -2710,29 +3743,14 @@ UpdateButtonAppearance(buttonName) {
 
     } catch Error as e {
         ; Simple error handling
+        VizLog(">>> UpdateButtonAppearance: EXCEPTION - " . e.Message)
+        FlushVizLog()
         button.Visible := true
         picture.Visible := false
         button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
         button.SetFont("s8", "cGray")
         button.Text := "ERROR"
     }
-}
-
-FlashButton(buttonName, isFlashing) {
-    global buttonGrid
-    if (!buttonGrid.Has(buttonName))
-        return
-    
-    button := buttonGrid[buttonName]
-    if (isFlashing) {
-        button.Opt("+Background0xFFFFFF")
-        button.SetFont(, "cBlack")
-        SetTimer(UpdateButtonAppearanceDelayed.Bind(buttonName), -100)
-    }
-}
-
-UpdateButtonAppearanceDelayed(buttonName) {
-    UpdateButtonAppearance(buttonName)
 }
 
 UpdateStatus(text) {
@@ -2743,22 +3761,22 @@ UpdateStatus(text) {
 
 GuiResize(thisGui, minMax, width, height) {
     global statusBar, windowWidth, windowHeight, mainGui
-    
+
     if (minMax = -1)
         return
-    
+
     windowWidth := width
     windowHeight := height
-    
+
     if (statusBar) {
         statusY := height - 35
         statusBar.Move(8, statusY, width - 16, 25)
     }
-    
+
     if (mainGui.HasProp("tbBg") && mainGui.tbBg) {
         mainGui.tbBg.Move(0, 0, width, 40)
     }
-    
+
     CreateButtonGrid()
 }
 
@@ -2822,10 +3840,12 @@ ShowContextMenu(buttonName, *) {
 }
 
 ClearMacro(buttonName) {
-    global macroEvents, currentLayer
+    global macroEvents, currentLayer, buttonLetterboxingStates
     layerMacroName := "L" . currentLayer . "_" . buttonName
     if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?", "Confirm Clear", "YesNo Icon!") = "Yes") {
         macroEvents.Delete(layerMacroName)
+        if (buttonLetterboxingStates.Has(layerMacroName))
+            buttonLetterboxingStates.Delete(layerMacroName)
         UpdateButtonAppearance(buttonName)
         SaveConfig()
         UpdateStatus("🗑️ Cleared " . buttonName)
@@ -2849,33 +3869,32 @@ ShowClearDialog() {
 ; ===== BREAK MODE =====
 ToggleBreakMode() {
     global breakMode, breakStartTime, totalActiveTime, lastActiveTime, mainGui, buttonGrid, buttonNames
-    
+
     if (breakMode) {
+        ; Resuming from break
         breakMode := false
         lastActiveTime := A_TickCount
-        
+
         if (mainGui && mainGui.HasProp("btnBreakMode")) {
             mainGui.btnBreakMode.Text := "☕ Break"
             mainGui.btnBreakMode.Opt("+Background0x4CAF50")
         }
-        
+
         EnableAllControls(true)
         RestoreNormalUI()
         UpdateStatus("✅ Back from break")
-        
+
     } else {
+        ; Starting break - update accumulated time first
+        UpdateActiveTime()
         breakMode := true
         breakStartTime := A_TickCount
-        
-        if (lastActiveTime > 0) {
-            totalActiveTime += A_TickCount - lastActiveTime
-        }
-        
+
         if (mainGui && mainGui.HasProp("btnBreakMode")) {
             mainGui.btnBreakMode.Text := "🔴 Resume"
             mainGui.btnBreakMode.Opt("+Background0xFF5722")
         }
-        
+
         EnableAllControls(false)
         ApplyBreakModeUI()
         UpdateStatus("☕ Break mode active")
@@ -2963,33 +3982,36 @@ ShowSettings() {
     settingsGui.Add("Text", "x30 y75 w480 h18", "🖼️ Canvas Calibration")
     settingsGui.SetFont("s8")
 
-    ; Show canvas status based on calibration flags
-    global isWideCanvasCalibrated, isNarrowCanvasCalibrated
+    wideGroup := settingsGui.Add("GroupBox", "x30 y95 w220 h150", "Wide Canvas")
+    narrowGroup := settingsGui.Add("GroupBox", "x270 y95 w220 h150", "Narrow Canvas")
 
-    wideStatusText := isWideCanvasCalibrated ? "✅ Wide Configured" : "❌ Not Set"
-    narrowStatusText := isNarrowCanvasCalibrated ? "✅ Narrow Configured" : "❌ Not Set"
+    settingsGui.SetFont("s8 Bold")
+    settingsGui.wideStatusCtrl := settingsGui.Add("Text", "x45 y115 w190 h18", "")
+    settingsGui.narrowStatusCtrl := settingsGui.Add("Text", "x285 y115 w190 h18", "")
+    settingsGui.SetFont("s8")
+    settingsGui.wideDetailCtrl := settingsGui.Add("Text", "x45 y135 w190 h36 c0x666666", "")
+    settingsGui.narrowDetailCtrl := settingsGui.Add("Text", "x285 y135 w190 h36 c0x666666", "")
 
-    settingsGui.Add("Text", "x50 y98 w200 h16 " . (isWideCanvasCalibrated ? "cGreen" : "cRed"), wideStatusText)
-    settingsGui.Add("Text", "x280 y98 w200 h16 " . (isNarrowCanvasCalibrated ? "cGreen" : "cRed"), narrowStatusText)
-
-    ; Add reset buttons for canvas calibration
-    btnResetWide := settingsGui.Add("Button", "x50 y120 w100 h24", "🔄 Reset Wide")
-    btnResetWide.OnEvent("Click", (*) => ResetWideCanvasCalibration(settingsGui))
-
-    btnResetNarrow := settingsGui.Add("Button", "x280 y120 w100 h24", "🔄 Reset Narrow")
-    btnResetNarrow.OnEvent("Click", (*) => ResetNarrowCanvasCalibration(settingsGui))
     settingsGui.SetFont("s9")
-
-    btnConfigureWide := settingsGui.Add("Button", "x160 y118 w180 h28", "📐 Calibrate Wide")
+    btnConfigureWide := settingsGui.Add("Button", "x45 y175 w100 h26", "🧭 Calibrate")
     btnConfigureWide.OnEvent("Click", (*) => ConfigureWideCanvasFromSettings(settingsGui))
 
-    btnConfigureNarrow := settingsGui.Add("Button", "x390 y118 w180 h28", "📐 Calibrate Narrow")
+    btnResetWide := settingsGui.Add("Button", "x155 y175 w80 h26", "↻ Reset")
+    btnResetWide.OnEvent("Click", (*) => ResetWideCanvasCalibration(settingsGui))
+
+    btnConfigureNarrow := settingsGui.Add("Button", "x285 y175 w100 h26", "🧭 Calibrate")
     btnConfigureNarrow.OnEvent("Click", (*) => ConfigureNarrowCanvasFromSettings(settingsGui))
 
+    btnResetNarrow := settingsGui.Add("Button", "x395 y175 w80 h26", "↻ Reset")
+    btnResetNarrow.OnEvent("Click", (*) => ResetNarrowCanvasCalibration(settingsGui))
+
+    UpdateCanvasStatusControls(settingsGui)
+    settingsGui.SetFont("s9")
+
     ; Visualization save path section
-    settingsGui.Add("Text", "x30 y165 w480 h18", "💾 Visualization Save Location (for corporate environments)")
+    settingsGui.Add("Text", "x30 y260 w480 h18", "💾 Visualization Save Location (for corporate environments)")
     settingsGui.SetFont("s8")
-    settingsGui.Add("Text", "x40 y185 w480 h15 c0x666666", "Choose where preview images are saved (if auto fails at work)")
+    settingsGui.Add("Text", "x40 y280 w480 h15 c0x666666", "Choose where preview images are saved (if auto fails at work)")
     settingsGui.SetFont("s9")
 
     global visualizationSavePath
@@ -3005,26 +4027,26 @@ ShowSettings() {
         }
     }
 
-    ddlVizPath := settingsGui.Add("DropDownList", "x40 y203 w380", pathOptions)
+    ddlVizPath := settingsGui.Add("DropDownList", "x40 y298 w380", pathOptions)
     ddlVizPath.Choose(currentIndex)
     ddlVizPath.OnEvent("Change", (*) => ApplyVisualizationPath(ddlVizPath, pathValues))
     settingsGui.ddlVizPath := ddlVizPath
 
     ; System maintenance section
-    settingsGui.Add("Text", "x30 y245 w480 h18", "🔧 System Maintenance")
+    settingsGui.Add("Text", "x30 y330 w480 h18", "🔧 System Maintenance")
 
-    btnManualSave := settingsGui.Add("Button", "x40 y268 w120 h28", "💾 Save Now")
+    btnManualSave := settingsGui.Add("Button", "x40 y353 w120 h28", "💾 Save Now")
     btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
 
-    btnManualRestore := settingsGui.Add("Button", "x175 y268 w120 h28", "📤 Restore Backup")
+    btnManualRestore := settingsGui.Add("Button", "x175 y353 w120 h28", "📤 Restore Backup")
     btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
 
-    btnClearConfig := settingsGui.Add("Button", "x310 y268 w120 h28", "🗑️ Clear Macros")
+    btnClearConfig := settingsGui.Add("Button", "x310 y353 w120 h28", "🗑️ Clear Macros")
     btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
 
     ; Stats reset
-    settingsGui.Add("Text", "x30 y315 w480 h18", "📊 Statistics")
-    btnResetStats := settingsGui.Add("Button", "x40 y338 w180 h28", "📊 Reset All Stats")
+    settingsGui.Add("Text", "x30 y398 w480 h18", "📊 Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y421 w180 h28", "📊 Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings
@@ -3167,7 +4189,39 @@ ShowSettings() {
     settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Focus on utility functions - WASD mapping handled automatically.")
 
     ; Show settings window
-    settingsGui.Show("w580 h580")
+settingsGui.Show("w580 h580")
+}
+
+
+FormatCanvasCoord(value) {
+    return Round(value, 2)
+}
+
+CanvasDetailString(left, top, right, bottom) {
+    return "L " . FormatCanvasCoord(left) . "   T " . FormatCanvasCoord(top) . "`nR " . FormatCanvasCoord(right) . "   B " . FormatCanvasCoord(bottom)
+}
+
+UpdateCanvasStatusControls(settingsGui) {
+    global isWideCanvasCalibrated, isNarrowCanvasCalibrated
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
+
+    if (!IsObject(settingsGui))
+        return
+
+    if (settingsGui.HasProp("wideStatusCtrl")) {
+        settingsGui.wideStatusCtrl.Text := isWideCanvasCalibrated ? "✅ Status: Configured" : "❌ Status: Not Set"
+    }
+    if (settingsGui.HasProp("wideDetailCtrl")) {
+        settingsGui.wideDetailCtrl.Text := CanvasDetailString(wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom)
+    }
+
+    if (settingsGui.HasProp("narrowStatusCtrl")) {
+        settingsGui.narrowStatusCtrl.Text := isNarrowCanvasCalibrated ? "✅ Status: Configured" : "❌ Status: Not Set"
+    }
+    if (settingsGui.HasProp("narrowDetailCtrl")) {
+        settingsGui.narrowDetailCtrl.Text := CanvasDetailString(narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom)
+    }
 }
 
 
@@ -3191,8 +4245,11 @@ UpdateModeToggleButton() {
 
 ToggleAnnotationMode() {
     global annotationMode, modeToggleBtn
-    
-    if (annotationMode = "Wide") {
+
+    ; CRITICAL FIX: Read current state from button text to ensure sync
+    currentState := InStr(modeToggleBtn.Text, "Wide") ? "Wide" : "Narrow"
+
+    if (currentState = "Wide") {
         annotationMode := "Narrow"
         modeToggleBtn.Text := "📱 Narrow"
         modeToggleBtn.Opt("+Background0xFF8C00")
@@ -3203,12 +4260,17 @@ ToggleAnnotationMode() {
         modeToggleBtn.Opt("+Background0x4169E1")
         UpdateStatus("🔦 Wide mode selected")
     }
-    
+
     modeToggleBtn.SetFont(, "cWhite")
-    
+    modeToggleBtn.Redraw()
+
     ; Update existing JSON macros when mode changes
     UpdateExistingJSONMacros(annotationMode)
-    
+
+    ; CRITICAL: Refresh ALL button visualizations to use the new mode immediately
+    ; This ensures bounding boxes are drawn with the correct canvas (Wide/Narrow)
+    RefreshAllButtonAppearances()
+
     ; Save the mode change
     SaveConfig()
 }
@@ -3403,681 +4465,6 @@ FormatActiveTime(timeMs) {
     }
 }
 
-; ===== TAB CREATION FUNCTIONS =====
-CreateRecordedMacrosTab(statsGui, tabs, timeFilter) {
-    tabs.UseTab(1)
-    
-    filteredExecutions := FilterExecutionsByTime(timeFilter)
-    macroExecutions := []
-    
-    ; Filter only recorded macro executions
-    for execution in filteredExecutions {
-        if (execution.category = "macro" && execution.HasOwnProp("detailedBoxes")) {
-            macroExecutions.Push(execution)
-        }
-    }
-    
-    ; Build recorded macros content with better formatting
-    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                    📦 RECORDED MACRO DEGRADATION ANALYSIS                     ║`n"
-    content .= "║                              (" . timeFilter . ")                                    ║`n"
-    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
-    content .= "📊 EXECUTION SUMMARY: " . macroExecutions.Length . " macro runs`n`n"
-    
-    if (macroExecutions.Length > 0) {
-        ; Count degradations
-        degradationCounts := Map()
-        for id, typeName in degradationTypes {
-            degradationCounts[typeName] := 0
-        }
-        
-        totalBoxes := 0
-        for execution in macroExecutions {
-            totalBoxes += execution.boundingBoxCount
-            for box in execution.detailedBoxes {
-                if (degradationCounts.Has(box.degradationName)) {
-                    degradationCounts[box.degradationName]++
-                }
-            }
-        }
-        
-        content .= "┌──────────────────────────────────────────────────────────────────────────────┐`n"
-        content .= "│                        📦 DEGRADATION TYPE BREAKDOWN                        │`n"
-        content .= "│                         Total Boxes: " . totalBoxes . " boxes                            │`n"
-        content .= "└──────────────────────────────────────────────────────────────────────────────┘`n`n"
-        
-        ; Create visual bars for degradation types
-        for id, typeName in degradationTypes {
-            count := degradationCounts[typeName]
-            if (count > 0) {
-                percentage := Round((count / totalBoxes) * 100, 1)
-                ; Create visual bar (10 chars max)
-                barLength := Round((count / totalBoxes) * 20)
-                visualBar := ""
-                Loop barLength {
-                    visualBar .= "█"
-                }
-                Loop (20 - barLength) {
-                    visualBar .= "░"
-                }
-                
-                content .= id . ". " . StrTitle(typeName) . ": " . count . " (" . percentage . "%) [" . visualBar . "]`n"
-            }
-        }
-        
-        ; Show most frequently used macros
-        content .= "`n┌──────────────────────────────────────────────────────────────────────────────┐`n"
-        content .= "│                        🔥 MOST FREQUENTLY USED MACROS                       │`n"
-        content .= "└──────────────────────────────────────────────────────────────────────────────┘`n"
-        buttonCounts := Map()
-        buttonDetails := Map()
-        
-        ; Count executions per button and collect details
-        for execution in macroExecutions {
-            buttonKey := execution.button . " (L" . execution.layer . ")"
-            if (!buttonCounts.Has(buttonKey)) {
-                buttonCounts[buttonKey] := 0
-                buttonDetails[buttonKey] := {
-                    totalBoxes: 0,
-                    totalTime: 0,
-                    lastUsed: execution.timestamp,
-                    degradationSummary: ""
-                }
-            }
-            buttonCounts[buttonKey]++
-            buttonDetails[buttonKey].totalBoxes += execution.boundingBoxCount
-            buttonDetails[buttonKey].totalTime += execution.executionTime
-            if (execution.timestamp > buttonDetails[buttonKey].lastUsed) {
-                buttonDetails[buttonKey].lastUsed := execution.timestamp
-                buttonDetails[buttonKey].degradationSummary := execution.perBoxSummary
-            }
-        }
-        
-        ; Sort by frequency and show top 8
-        sortedButtons := []
-        for button, count in buttonCounts {
-            sortedButtons.Push({button: button, count: count})
-        }
-        
-        ; Simple bubble sort by count (descending)
-        if (sortedButtons.Length > 1) {
-            Loop (sortedButtons.Length - 1) {
-                i := A_Index
-                Loop (sortedButtons.Length - i) {
-                    j := A_Index
-                    if (sortedButtons[j].count < sortedButtons[j + 1].count) {
-                        temp := sortedButtons[j]
-                        sortedButtons[j] := sortedButtons[j + 1]
-                        sortedButtons[j + 1] := temp
-                    }
-                }
-            }
-        }
-        
-        maxShow := Min(sortedButtons.Length, 8)
-        Loop maxShow {
-            buttonInfo := sortedButtons[A_Index]
-            details := buttonDetails[buttonInfo.button]
-            avgTime := Round(details.totalTime / buttonInfo.count)
-            
-            content .= "`n" . A_Index . ". " . buttonInfo.button . " ➤ " . buttonInfo.count . " executions"
-            content .= " | " . details.totalBoxes . " boxes | ~" . avgTime . "ms avg"
-            content .= "`n   ├─ Last: " . FormatTime(details.lastUsed, "MM/dd HH:mm")
-            content .= "`n   └─ " . (details.degradationSummary != "" ? details.degradationSummary : "No degradations") . "`n"
-        }
-    } else {
-        content .= "No recorded macro executions in this time period."
-    }
-    
-    editRecorded := statsGui.Add("Edit", "x30 y120 w840 h400 ReadOnly VScroll", content)
-    statsGui.editRecorded := editRecorded
-}
-
-CreateJsonProfilesTab(statsGui, tabs, timeFilter) {
-    tabs.UseTab(2)
-    
-    filteredExecutions := FilterExecutionsByTime(timeFilter)
-    jsonExecutions := []
-    
-    ; Filter only JSON profile executions
-    for execution in filteredExecutions {
-        if (execution.category = "json_profile") {
-            jsonExecutions.Push(execution)
-        }
-    }
-    
-    ; Build JSON profiles content with better formatting
-    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                      📋 JSON PROFILE SEVERITY ANALYSIS                       ║`n"
-    content .= "║                              (" . timeFilter . ")                                    ║`n"
-    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
-    content .= "📊 PROFILE SUMMARY: " . jsonExecutions.Length . " JSON executions`n`n"
-    
-    if (jsonExecutions.Length > 0) {
-        ; Count severities and degradation types for JSON annotations
-        severityCounts := Map()
-        jsonDegradationCounts := Map()
-        
-        for execution in jsonExecutions {
-            ; Count severities
-            if (execution.severity != "unknown") {
-                if (!severityCounts.Has(execution.severity)) {
-                    severityCounts[execution.severity] := 0
-                }
-                severityCounts[execution.severity]++
-            }
-            
-            ; Count degradation types from JSON annotations
-            if (execution.HasOwnProp("jsonDegradationName")) {
-                degradationName := execution.jsonDegradationName
-                if (!jsonDegradationCounts.Has(degradationName)) {
-                    jsonDegradationCounts[degradationName] := 0
-                }
-                jsonDegradationCounts[degradationName]++
-            }
-        }
-        
-        content .= "┌──────────────────────────────────────────────────────────────────────────────┐`n"
-        content .= "│                          🎯 SEVERITY USAGE BREAKDOWN                         │`n"
-        content .= "└──────────────────────────────────────────────────────────────────────────────┘`n`n"
-        
-        ; Create visual bars for severity levels
-        for severity, count in severityCounts {
-            percentage := Round((count / jsonExecutions.Length) * 100, 1)
-            ; Create visual bar
-            barLength := Round((count / jsonExecutions.Length) * 20)
-            visualBar := ""
-            Loop barLength {
-                visualBar .= "█"
-            }
-            Loop (20 - barLength) {
-                visualBar .= "░"
-            }
-            
-            content .= StrTitle(severity) . " Severity: " . count . " (" . percentage . "%) [" . visualBar . "]`n"
-        }
-        
-        ; Show JSON degradation type breakdown
-        if (jsonDegradationCounts.Count > 0) {
-            content .= "`n┌──────────────────────────────────────────────────────────────────────────────┐`n"
-            content .= "│                      🎨 JSON DEGRADATION TYPE BREAKDOWN                      │`n"
-            content .= "└──────────────────────────────────────────────────────────────────────────────┘`n`n"
-            
-            for degradationName, count in jsonDegradationCounts {
-                percentage := Round((count / jsonExecutions.Length) * 100, 1)
-                ; Create visual bar
-                barLength := Round((count / jsonExecutions.Length) * 20)
-                visualBar := ""
-                Loop barLength {
-                    visualBar .= "█"
-                }
-                Loop (20 - barLength) {
-                    visualBar .= "░"
-                }
-                
-                content .= StrTitle(degradationName) . ": " . count . " (" . percentage . "%) [" . visualBar . "]`n"
-            }
-        }
-    } else {
-        content .= "No JSON profile executions in this time period."
-    }
-    
-    editJson := statsGui.Add("Edit", "x30 y120 w840 h400 ReadOnly VScroll", content)
-    statsGui.editJson := editJson
-}
-
-CreateCombinedOverviewTab(statsGui, tabs, timeFilter) {
-    tabs.UseTab(3)
-    
-    filteredExecutions := FilterExecutionsByTime(timeFilter)
-    
-    ; Build combined overview with better formatting
-    content := "╔═══════════════════════════════════════════════════════════════════════════════╗`n"
-    content .= "║                          📊 COMBINED USAGE OVERVIEW                          ║`n"
-    content .= "║                              (" . timeFilter . ")                                    ║`n"
-    content .= "╚═══════════════════════════════════════════════════════════════════════════════╝`n`n"
-    content .= "📄 TOTAL EXECUTIONS: " . filteredExecutions.Length . " operations`n`n"
-    
-    ; Separate counts
-    macroCount := 0
-    jsonCount := 0
-    totalBoxes := 0
-    
-    for execution in filteredExecutions {
-        if (execution.category = "macro") {
-            macroCount++
-            totalBoxes += execution.boundingBoxCount
-        } else if (execution.category = "json_profile") {
-            jsonCount++
-        }
-    }
-    
-    content .= "┌──────────────────────────────────────────────────────────────────────────────┐`n"
-    content .= "│                        📊 EXECUTION TYPE BREAKDOWN                          │`n"
-    content .= "└──────────────────────────────────────────────────────────────────────────────┘`n"
-    content .= "🎬 Recorded Macros: " . macroCount . " executions (" . totalBoxes . " total boxes)`n"
-    content .= "📋 JSON Profiles: " . jsonCount . " executions`n`n"
-    
-    if (filteredExecutions.Length > 0) {
-        ; Calculate average execution time
-        totalTime := 0
-        for execution in filteredExecutions {
-            totalTime += execution.executionTime
-        }
-        avgTime := Round(totalTime / filteredExecutions.Length)
-        content .= "⚡ Average Execution Time: " . avgTime . "ms`n"
-        
-        ; Most used button
-        buttonCounts := Map()
-        layerCounts := Map()
-        for execution in filteredExecutions {
-            if (!buttonCounts.Has(execution.button)) {
-                buttonCounts[execution.button] := 0
-            }
-            buttonCounts[execution.button]++
-            
-            if (!layerCounts.Has(execution.layer)) {
-                layerCounts[execution.layer] := 0
-            }
-            layerCounts[execution.layer]++
-        }
-        
-        maxCount := 0
-        mostUsedButton := ""
-        for button, count in buttonCounts {
-            if (count > maxCount) {
-                maxCount := count
-                mostUsedButton := button
-            }
-        }
-        
-        maxLayerCount := 0
-        mostUsedLayer := 0
-        for layer, count in layerCounts {
-            if (count > maxLayerCount) {
-                maxLayerCount := count
-                mostUsedLayer := layer
-            }
-        }
-        
-        content .= "🏆 Most Used Button: " . mostUsedButton . " (" . maxCount . " executions)`n"
-        content .= "📊 Most Active Layer: Layer " . mostUsedLayer . " (" . maxLayerCount . " executions)`n"
-        
-        ; Efficiency metrics
-        if (macroCount > 0) {
-            avgBoxesPerMacro := Round(totalBoxes / macroCount, 1)
-            content .= "📦 Average Boxes per Macro: " . avgBoxesPerMacro . " boxes`n"
-        }
-    }
-    
-    editCombined := statsGui.Add("Edit", "x30 y120 w840 h400 ReadOnly VScroll", content)
-    statsGui.editCombined := editCombined
-}
-
-RefreshAllTabs(statsGui, timeFilter) {
-    ; Clear existing content
-    if (statsGui.HasProp("editRecorded")) {
-        statsGui.editRecorded.Destroy()
-    }
-    if (statsGui.HasProp("editJson")) {
-        statsGui.editJson.Destroy()
-    }
-    if (statsGui.HasProp("editCombined")) {
-        statsGui.editCombined.Destroy()
-    }
-    
-    ; Recreate all tabs
-    CreateRecordedMacrosTab(statsGui, statsGui.tabs, timeFilter)
-    CreateJsonProfilesTab(statsGui, statsGui.tabs, timeFilter)
-    CreateCombinedOverviewTab(statsGui, statsGui.tabs, timeFilter)
-}
-
-FilterExecutionsByTime(timeFilter) {
-    global macroExecutionLog
-    
-    if (timeFilter = "All Time") {
-        return macroExecutionLog
-    }
-    
-    ; Calculate time threshold
-    currentTime := A_Now
-    timeThreshold := 0
-    
-    switch timeFilter {
-        case "Last 1 Hour":
-            timeThreshold := DateAdd(currentTime, -1, "Hours")
-        case "Last 4 Hours":
-            timeThreshold := DateAdd(currentTime, -4, "Hours")
-        case "Last 1 Day":
-            timeThreshold := DateAdd(currentTime, -1, "Days")
-        case "Last 1 Week":
-            timeThreshold := DateAdd(currentTime, -7, "Days")
-    }
-    
-    ; Filter executions
-    filteredExecutions := []
-    for execution in macroExecutionLog {
-        if (execution.timestamp >= timeThreshold) {
-            filteredExecutions.Push(execution)
-        }
-    }
-    
-    return filteredExecutions
-}
-
-ResetStatsData(statsGui, timeFilter) {
-    global macroExecutionLog
-    
-    ; Export current data before clearing
-    ExportAllHistoricalData()
-    
-    if (MsgBox("Reset all statistics data? This will clear current session data but preserve historical logs.", "Confirm Reset", "YesNo Icon!") = "Yes") {
-        macroExecutionLog := []
-        SaveExecutionData()
-        RefreshAllTabs(statsGui, timeFilter)
-        UpdateStatus("📊 Statistics reset - Historical data preserved")
-    }
-}
-
-; ===== DATA EXPORT FUNCTIONS =====
-ExportDegradationData() {
-    global macroExecutionLog, workDir, degradationTypes
-    
-    if (macroExecutionLog.Length = 0) {
-        UpdateStatus("⚠️ No execution data to export")
-        return
-    }
-    
-    try {
-        timestamp := FormatTime(A_Now, "yyyyMMdd_HHmmss")
-        filename := workDir . "\degradation_analysis_" . timestamp . ".csv"
-        
-        ; Create simplified CSV focused on degradation counts
-        csvContent := "Timestamp,Button,Layer,Mode,TotalBoxes,DegradationSummary,ExecutionTime_ms`n"
-        
-        for execution in macroExecutionLog {
-            csvContent .= FormatTime(execution.timestamp, "yyyy-MM-dd HH:mm:ss") . ","
-            csvContent .= execution.button . ","
-            csvContent .= execution.layer . ","
-            csvContent .= execution.mode . ","
-            csvContent .= execution.boundingBoxCount . ","
-            csvContent .= (execution.HasOwnProp("perBoxSummary") ? execution.perBoxSummary : "No degradation data") . ","
-            csvContent .= execution.executionTime . "`n"
-        }
-        
-        FileDelete(filename)
-        FileAppend(csvContent, filename)
-        
-        Run("notepad.exe " . filename)
-        UpdateStatus("📊 Exported degradation analysis for " . macroExecutionLog.Length . " executions")
-    } catch Error as e {
-        UpdateStatus("⚠️ Export failed: " . e.Message)
-    }
-}
-
-ExportAllHistoricalData() {
-    global macroExecutionLog, workDir, totalActiveTime, lastActiveTime, breakMode, applicationStartTime
-    
-    try {
-        timestamp := FormatTime(A_Now, "yyyyMMdd_HHmmss")
-        filename := workDir . "\historical_session_data_" . timestamp . ".json"
-        
-        ; Calculate current active time
-        currentActiveTime := breakMode ? totalActiveTime : (totalActiveTime + (A_TickCount - lastActiveTime))
-        
-        ; Create comprehensive session data
-        sessionData := {
-            sessionStartTime: FormatTime(applicationStartTime, "yyyy-MM-dd HH:mm:ss"),
-            sessionEndTime: FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss"),
-            totalActiveTimeMs: currentActiveTime,
-            totalActiveTimeHours: Round(currentActiveTime / 3600000, 2),
-            totalExecutions: macroExecutionLog.Length,
-            exportTimestamp: A_Now,
-            executions: macroExecutionLog
-        }
-        
-        FileDelete(filename)
-        FileAppend(JSON.stringify(sessionData, , 2), filename)
-        
-        UpdateStatus("📄 Historical data exported to " . filename)
-        return filename
-    } catch Error as e {
-        UpdateStatus("⚠️ Historical export failed: " . e.Message)
-        return ""
-    }
-}
-
-MacroExecutionAnalysis(buttonName, events, executionTime) {
-    global macroExecutionLog, currentLayer, annotationMode, macroEvents
-    
-    ; Extract bounding boxes and degradation information
-    boundingBoxes := []
-    detailedBoxes := []
-    
-    ; Process each bounding box and look for keypress AFTER it
-    for eventIndex, event in events {
-        if (event.type = "boundingBox") {
-            ; Basic box count for compatibility
-            boundingBoxes.Push({
-                left: event.left,
-                top: event.top,
-                right: event.right,
-                bottom: event.bottom
-            })
-            
-            ; Default to smudge if no keypress found
-            boxDegradationType := 1
-            boxDegradationName := "smudge"
-            isTagged := false
-            
-            ; Look for the NEXT keypress event after this bounding box
-            Loop events.Length - eventIndex {
-                nextIndex := eventIndex + A_Index
-                if (nextIndex > events.Length)
-                    break
-                    
-                nextEvent := events[nextIndex]
-                
-                ; Stop at next bounding box - keypress should be immediately after current box
-                if (nextEvent.type = "boundingBox")
-                    break
-                
-                ; Found a keypress after this box - this assigns the degradation type
-                if (nextEvent.type = "keyDown" && RegExMatch(nextEvent.key, "^\d$")) {
-                    keyNumber := Integer(nextEvent.key)
-                    if (keyNumber >= 1 && keyNumber <= 9 && degradationTypes.Has(keyNumber)) {
-                        boxDegradationType := keyNumber
-                        boxDegradationName := degradationTypes[keyNumber]
-                        isTagged := true
-                        break  ; Found the assignment keypress, stop looking
-                    }
-                }
-            }
-            
-            ; Create detailed box info
-            detailedBox := {
-                boxId: event.HasOwnProp("boxId") ? event.boxId : ("box_" . A_TickCount . "_" . eventIndex),
-                degradationType: boxDegradationType,
-                degradationName: boxDegradationName,
-                recordingContext: isTagged ? "post_box_keypress" : "untagged_default",
-                isTagged: isTagged
-            }
-            detailedBoxes.Push(detailedBox)
-        }
-    }
-    
-    ; Create simplified execution record
-    executionRecord := {
-        id: A_TickCount,
-        timestamp: A_Now,
-        button: buttonName,
-        layer: currentLayer,
-        mode: annotationMode,
-        boundingBoxCount: boundingBoxes.Length,
-        boundingBoxes: boundingBoxes,
-        detailedBoxes: detailedBoxes,
-        executionTime: executionTime,
-        category: "macro",
-        severity: "unknown",
-        perBoxSummary: "",
-        taggedBoxCount: 0,
-        untaggedBoxCount: 0
-    }
-    
-    ; Generate per-box summary and count tagged/untagged
-    if (detailedBoxes.Length > 0) {
-        boxSummary := Map()
-        taggedCount := 0
-        untaggedCount := 0
-        
-        for box in detailedBoxes {
-            if (box.isTagged && box.degradationName != "untagged") {
-                key := box.degradationName
-                if (!boxSummary.Has(key)) {
-                    boxSummary[key] := 0
-                }
-                boxSummary[key]++
-                taggedCount++
-            } else {
-                untaggedCount++
-            }
-        }
-        
-        executionRecord.taggedBoxCount := taggedCount
-        executionRecord.untaggedBoxCount := untaggedCount
-        
-        summaryParts := []
-        for key, count in boxSummary {
-            summaryParts.Push(count . "x" . key)
-        }
-        
-        if (summaryParts.Length > 0) {
-            executionRecord.perBoxSummary := Join(summaryParts, ", ")
-            if (untaggedCount > 0) {
-                executionRecord.perBoxSummary .= " | " . untaggedCount . " untagged"
-            }
-        } else if (untaggedCount > 0) {
-            executionRecord.perBoxSummary := untaggedCount . " untagged boxes"
-        }
-    }
-    
-    ; Check if it's a JSON annotation to get degradation type and severity
-    layerMacroName := "L" . currentLayer . "_" . buttonName
-    if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length = 1 && macroEvents[layerMacroName][1].type = "jsonAnnotation") {
-        jsonEvent := macroEvents[layerMacroName][1]
-        executionRecord.category := "json_profile"
-        executionRecord.severity := jsonEvent.severity
-        
-        ; Add JSON annotation degradation type info
-        if (jsonEvent.HasOwnProp("categoryId") && degradationTypes.Has(jsonEvent.categoryId)) {
-            degradationName := degradationTypes[jsonEvent.categoryId]
-            executionRecord.jsonDegradationType := jsonEvent.categoryId
-            executionRecord.jsonDegradationName := degradationName
-            executionRecord.perBoxSummary := "JSON: " . StrTitle(degradationName) . " (" . StrTitle(jsonEvent.severity) . ")"
-        }
-    }
-    
-    ; Add to execution log
-    macroExecutionLog.Push(executionRecord)
-    
-    ; Save data
-    SaveExecutionData()
-    
-    ; Simple status update focused on degradation counts
-    if (boundingBoxes.Length > 0) {
-        if (executionRecord.perBoxSummary != "") {
-            UpdateStatus("📊 Executed: " . executionRecord.perBoxSummary . " | " . executionTime . "ms")
-        } else {
-            UpdateStatus("📊 Executed " . boundingBoxes.Length . " boxes | " . executionTime . "ms")
-        }
-    } else {
-        UpdateStatus("📊 Executed " . buttonName . " (no boxes)")
-    }
-}
-
-; Helper function for joining arrays
-Join(array, delimiter) {
-    result := ""
-    for index, item in array {
-        if (index > 1)
-            result .= delimiter
-        result .= item
-    }
-    return result
-}
-
-SaveExecutionData() {
-    global workDir, macroExecutionLog
-    
-    try {
-        ; Ensure directory exists
-        if !DirExist(workDir) {
-            DirCreate(workDir)
-        }
-        
-        logFile := workDir . "\macro_execution_log.json"
-        
-        ; Simple JSON-like format since we have a placeholder JSON class
-        jsonContent := "[\n"
-        for i, execution in macroExecutionLog {
-            if (i > 1) {
-                jsonContent .= ",\n"
-            }
-            jsonContent .= "  {\n"
-            jsonContent .= '    "id": ' . execution.id . ",\n"
-            jsonContent .= '    "timestamp": "' . execution.timestamp . '",\n'
-            jsonContent .= '    "button": "' . execution.button . '",\n'
-            jsonContent .= '    "layer": ' . execution.layer . ",\n"
-            jsonContent .= '    "mode": "' . execution.mode . '",\n'
-            jsonContent .= '    "boundingBoxCount": ' . execution.boundingBoxCount . ",\n"
-            jsonContent .= '    "executionTime": ' . execution.executionTime . ",\n"
-            jsonContent .= '    "category": "' . execution.category . '",\n'
-            jsonContent .= '    "severity": "' . execution.severity . '",\n'
-            jsonContent .= '    "perBoxSummary": "' . (execution.HasOwnProp("perBoxSummary") ? execution.perBoxSummary : "") . '"\n'
-            jsonContent .= "  }"
-        }
-        jsonContent .= "\n]"
-        
-        ; Delete existing file if it exists
-        if FileExist(logFile) {
-            FileDelete(logFile)
-        }
-        
-        FileAppend(jsonContent, logFile)
-        
-    } catch Error as e {
-        UpdateStatus("⚠️ Failed to save execution data: " . e.Message . " (Path: " . workDir . ")")
-    }
-}
-
-LoadStatsData() {
-    global workDir, macroExecutionLog
-    
-    try {
-        ; Ensure directory exists
-        if !DirExist(workDir) {
-            DirCreate(workDir)
-        }
-        
-        logFile := workDir . "\macro_execution_log.json"
-        if FileExist(logFile) {
-            content := FileRead(logFile)
-            if (content != "" && content != "{}") {
-                ; For now, just initialize empty array and let new executions populate
-                ; This preserves file but doesn't break on parsing
-                macroExecutionLog := []
-                UpdateStatus("📊 Stats system initialized")
-            } else {
-                macroExecutionLog := []
-            }
-        } else {
-            macroExecutionLog := []
-        }
-    } catch Error as e {
-        macroExecutionLog := []
-        UpdateStatus("⚠️ Failed to load stats data: " . e.Message . " (Path: " . workDir . ")")
-    }
-}
 SaveMacroState() {
     global macroEvents, buttonThumbnails, configFile
 
@@ -4095,6 +4482,18 @@ SaveMacroState() {
                 VizLog("Saving recordedMode for " . macroName . ": " . events.recordedMode)
                 if (events.recordedMode != "") {
                     stateContent .= macroName . "=recordedMode," . events.recordedMode . "`n"
+                }
+            }
+
+            if (events.HasOwnProp("recordedCanvas")) {
+                rc := events.recordedCanvas
+                if (IsObject(rc) && rc.HasOwnProp("left") && rc.HasOwnProp("right")) {
+                    canvasLine := macroName . "=recordedCanvas," . FormatCanvasCoord(rc.left) . "," . FormatCanvasCoord(rc.top) . "," . FormatCanvasCoord(rc.right) . "," . FormatCanvasCoord(rc.bottom)
+                    if (rc.HasOwnProp("mode") && rc.mode != "")
+                        canvasLine .= ",mode=" . rc.mode
+                    if (rc.HasOwnProp("source") && rc.source != "")
+                        canvasLine .= ",source=" . rc.source
+                    stateContent .= canvasLine . "`n"
                 }
             } else {
                 VizLog("NO recordedMode property for " . macroName)
@@ -4224,6 +4623,33 @@ LoadMacroState() {
                     macroEvents[macroName].recordedMode := parts[2]
                     continue
                 }
+                else if (parts[1] = "recordedCanvas" && parts.Length >= 5) {
+                    if (!macroEvents.Has(macroName)) {
+                        macroEvents[macroName] := []
+                        macroCount++
+                    }
+                    rc := {
+                        left: parts[2] != "" ? parts[2] + 0.0 : 0.0,
+                        top: parts[3] != "" ? parts[3] + 0.0 : 0.0,
+                        right: parts[4] != "" ? parts[4] + 0.0 : 0.0,
+                        bottom: parts[5] != "" ? parts[5] + 0.0 : 0.0
+                    }
+                    if (parts.Length > 5) {
+                        Loop parts.Length - 5 {
+                            idxExtra := A_Index + 5
+                            if (idxExtra <= parts.Length) {
+                                extra := parts[idxExtra]
+                                if (InStr(extra, "mode=")) {
+                                    rc.mode := StrReplace(extra, "mode=", "")
+                                } else if (InStr(extra, "source=")) {
+                                    rc.source := StrReplace(extra, "source=", "")
+                                }
+                            }
+                        }
+                    }
+                    macroEvents[macroName].recordedCanvas := rc
+                    continue
+                }
                 else if (parts[1] = "thumbnail" && parts.Length >= 2) {
                     thumbnailPath := parts[2]
                     if (FileExist(thumbnailPath)) {
@@ -4242,8 +4668,6 @@ LoadMacroState() {
             }
         }
     }
-
-    NormalizeCanvasCalibration()
 
     return macroCount
 }
@@ -4337,13 +4761,14 @@ ApplyTimingPreset(preset, settingsGui) {
 }
 
 ClearAllMacros(parentGui := 0) {
-    global macroEvents, buttonNames, totalLayers
+    global macroEvents, buttonNames, totalLayers, buttonLetterboxingStates
     
     result := MsgBox("Clear ALL macros from ALL layers?`n`nThis will permanently delete all recorded macros but preserve stats.", "Confirm Clear All", "YesNo Icon!")
     
     if (result = "Yes") {
         ; Clear all macros
         macroEvents := Map()
+        buttonLetterboxingStates.Clear()
         
         ; Save the cleared state
         SaveConfig()
@@ -4362,20 +4787,27 @@ ClearAllMacros(parentGui := 0) {
 }
 
 ResetStatsFromSettings(parentGui) {
-    global macroExecutionLog
-    
-    result := MsgBox("Reset all statistics data?`n`nThis will clear execution logs but preserve macros.", "Confirm Stats Reset", "YesNo Icon!")
-    
-    if (result = "Yes") {
-        ; Export current data before clearing
-        ExportAllHistoricalData()
-        
-        ; Clear stats
-        macroExecutionLog := []
-        SaveExecutionData()
-        
-        UpdateStatus("📊 Statistics reset - Historical data preserved")
-        
+    global macroExecutionLog, masterStatsCSV, workDir
+
+    if (MsgBox("Reset all statistics data?`n`nThis will clear execution logs but preserve macros.", "Confirm Stats Reset", "YesNo Icon!") = "Yes") {
+        try {
+            macroExecutionLog := []
+
+            statsJsonFile := workDir . "\stats_log.json"
+            if FileExist(statsJsonFile) {
+                FileDelete(statsJsonFile)
+            }
+
+            if (masterStatsCSV != "" && FileExist(masterStatsCSV)) {
+                FileDelete(masterStatsCSV)
+            }
+
+            InitializeStatsSystem()
+            UpdateStatus("?? Statistics reset - Ready for new session")
+        } catch Error as err {
+            UpdateStatus("?? Failed to reset statistics: " . err.Message)
+        }
+
         if (parentGui) {
             parentGui.Destroy()
         }
@@ -4385,6 +4817,9 @@ ResetStatsFromSettings(parentGui) {
 ; ===== CONFIGURATION SAVE/LOAD SYSTEM =====
 SaveConfig() {
     global currentLayer, macroEvents, configFile, totalLayers, buttonNames, buttonCustomLabels, annotationMode, workDir
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     
     try {
         ; Ensure directories exist
@@ -4420,23 +4855,23 @@ SaveConfig() {
             configContent .= "`n"
         }
         
-; Add canvas calibration section
-configContent .= "[Canvas]`n"
-configContent .= "wideCanvasLeft=" . wideCanvasLeft . "`n"
-configContent .= "wideCanvasTop=" . wideCanvasTop . "`n"
-configContent .= "wideCanvasRight=" . wideCanvasRight . "`n"
-configContent .= "wideCanvasBottom=" . wideCanvasBottom . "`n"
-configContent .= "isWideCanvasCalibrated=" . isWideCanvasCalibrated . "`n"
-configContent .= "narrowCanvasLeft=" . narrowCanvasLeft . "`n"
-configContent .= "narrowCanvasTop=" . narrowCanvasTop . "`n"
-configContent .= "narrowCanvasRight=" . narrowCanvasRight . "`n"
-configContent .= "narrowCanvasBottom=" . narrowCanvasBottom . "`n"
-configContent .= "isNarrowCanvasCalibrated=" . isNarrowCanvasCalibrated . "`n"
-configContent .= "userCanvasLeft=" . userCanvasLeft . "`n"
-configContent .= "userCanvasTop=" . userCanvasTop . "`n"
-configContent .= "userCanvasRight=" . userCanvasRight . "`n"
-configContent .= "userCanvasBottom=" . userCanvasBottom . "`n"
-configContent .= "isCanvasCalibrated=" . isCanvasCalibrated . "`n`n"
+        ; Add canvas calibration section
+        configContent .= "[Canvas]`n"
+        configContent .= "wideCanvasLeft=" . FormatCanvasCoord(wideCanvasLeft) . "`n"
+        configContent .= "wideCanvasTop=" . FormatCanvasCoord(wideCanvasTop) . "`n"
+        configContent .= "wideCanvasRight=" . FormatCanvasCoord(wideCanvasRight) . "`n"
+        configContent .= "wideCanvasBottom=" . FormatCanvasCoord(wideCanvasBottom) . "`n"
+        configContent .= "isWideCanvasCalibrated=" . (isWideCanvasCalibrated ? 1 : 0) . "`n"
+        configContent .= "narrowCanvasLeft=" . FormatCanvasCoord(narrowCanvasLeft) . "`n"
+        configContent .= "narrowCanvasTop=" . FormatCanvasCoord(narrowCanvasTop) . "`n"
+        configContent .= "narrowCanvasRight=" . FormatCanvasCoord(narrowCanvasRight) . "`n"
+        configContent .= "narrowCanvasBottom=" . FormatCanvasCoord(narrowCanvasBottom) . "`n"
+        configContent .= "isNarrowCanvasCalibrated=" . (isNarrowCanvasCalibrated ? 1 : 0) . "`n"
+        configContent .= "userCanvasLeft=" . FormatCanvasCoord(userCanvasLeft) . "`n"
+        configContent .= "userCanvasTop=" . FormatCanvasCoord(userCanvasTop) . "`n"
+        configContent .= "userCanvasRight=" . FormatCanvasCoord(userCanvasRight) . "`n"
+        configContent .= "userCanvasBottom=" . FormatCanvasCoord(userCanvasBottom) . "`n"
+        configContent .= "isCanvasCalibrated=" . (isCanvasCalibrated ? 1 : 0) . "`n`n"
 
         ; Add macros section
         configContent .= "[Macros]`n"
@@ -4502,6 +4937,9 @@ configContent .= "isCanvasCalibrated=" . isCanvasCalibrated . "`n`n"
 
 LoadConfig() {
     global currentLayer, macroEvents, configFile, totalLayers, buttonNames, buttonCustomLabels, annotationMode, modeToggleBtn
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
     
     if !FileExist(configFile) {
         UpdateStatus("📚 No config file found - starting fresh")
@@ -4546,35 +4984,38 @@ LoadConfig() {
                 } else if (currentSection = "Canvas") {
                     ; Load canvas calibration data
                     if (key = "wideCanvasLeft") {
-                        wideCanvasLeft := Integer(value)
+                        wideCanvasLeft := value != "" ? value + 0.0 : 0.0
                     } else if (key = "wideCanvasTop") {
-                        wideCanvasTop := Integer(value)
+                        wideCanvasTop := value != "" ? value + 0.0 : 0.0
                     } else if (key = "wideCanvasRight") {
-                        wideCanvasRight := Integer(value)
+                        wideCanvasRight := value != "" ? value + 0.0 : 0.0
                     } else if (key = "wideCanvasBottom") {
-                        wideCanvasBottom := Integer(value)
+                        wideCanvasBottom := value != "" ? value + 0.0 : 0.0
                     } else if (key = "isWideCanvasCalibrated") {
-                        isWideCanvasCalibrated := (value = "1" || value = "true")
+                        valueLower := StrLower(value)
+                        isWideCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     } else if (key = "narrowCanvasLeft") {
-                        narrowCanvasLeft := Integer(value)
+                        narrowCanvasLeft := value != "" ? value + 0.0 : 0.0
                     } else if (key = "narrowCanvasTop") {
-                        narrowCanvasTop := Integer(value)
+                        narrowCanvasTop := value != "" ? value + 0.0 : 0.0
                     } else if (key = "narrowCanvasRight") {
-                        narrowCanvasRight := Integer(value)
+                        narrowCanvasRight := value != "" ? value + 0.0 : 0.0
                     } else if (key = "narrowCanvasBottom") {
-                        narrowCanvasBottom := Integer(value)
+                        narrowCanvasBottom := value != "" ? value + 0.0 : 0.0
                     } else if (key = "isNarrowCanvasCalibrated") {
-                        isNarrowCanvasCalibrated := (value = "1" || value = "true")
+                        valueLower := StrLower(value)
+                        isNarrowCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     } else if (key = "userCanvasLeft") {
-                        userCanvasLeft := Integer(value)
+                        userCanvasLeft := value != "" ? value + 0.0 : 0.0
                     } else if (key = "userCanvasTop") {
-                        userCanvasTop := Integer(value)
+                        userCanvasTop := value != "" ? value + 0.0 : 0.0
                     } else if (key = "userCanvasRight") {
-                        userCanvasRight := Integer(value)
+                        userCanvasRight := value != "" ? value + 0.0 : 0.0
                     } else if (key = "userCanvasBottom") {
-                        userCanvasBottom := Integer(value)
+                        userCanvasBottom := value != "" ? value + 0.0 : 0.0
                     } else if (key = "isCanvasCalibrated") {
-                        isCanvasCalibrated := (value = "1" || value = "true")
+                        valueLower := StrLower(value)
+                        isCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
                 } else if (currentSection = "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -4677,8 +5118,6 @@ LoadConfig() {
             modeToggleBtn.Redraw()
         }
 
-        NormalizeCanvasCalibration()
-        
         ; Update UI to reflect loaded configuration
         SwitchLayer("")
         
@@ -4701,7 +5140,7 @@ SaveToSlot(slotNumber) {
     
     try {
         SaveConfig()
-        SaveExecutionData()
+        SaveStatsToJson()
         
         slotDir := workDir . "\slots\slot_" . slotNumber
         if !DirExist(slotDir) {
@@ -4711,9 +5150,9 @@ SaveToSlot(slotNumber) {
         ; Copy current config to slot
         FileCopy(configFile, slotDir . "\config.ini", true)
         
-        logFile := workDir . "\macro_execution_log.json"
+        logFile := workDir . "\stats_log.json"
         if FileExist(logFile) {
-            FileCopy(logFile, slotDir . "\macro_execution_log.json", true)
+            FileCopy(logFile, slotDir . "\stats_log.json", true)
         }
         
         ; Save slot info
@@ -4741,13 +5180,13 @@ LoadFromSlot(slotNumber) {
         ; Copy slot config to current
         FileCopy(slotDir . "\config.ini", configFile, true)
         
-        logFile := workDir . "\macro_execution_log.json"
-        if FileExist(slotDir . "\macro_execution_log.json") {
-            FileCopy(slotDir . "\macro_execution_log.json", logFile, true)
+        logFile := workDir . "\stats_log.json"
+        if FileExist(slotDir . "\stats_log.json") {
+            FileCopy(slotDir . "\stats_log.json", logFile, true)
         }
         
         LoadConfig()
-        LoadStatsData()
+        LoadStatsFromJson()
         
         ; Refresh UI
         global buttonNames
@@ -4850,11 +5289,13 @@ AnalyzeDegradationPattern(events) {
     local currentDegradationType := 1
     local degradationCounts := Map()
     
-    for id, typeName in degradationTypes {
+    for id, typeName in degradationTypes
+    {
         degradationCounts[id] := 0
     }
     
-    for boxIndex, box in boxes {
+    for boxIndex, box in boxes
+    {
         local nextBoxTime := (boxIndex < boxes.Length) ? boxes[boxIndex + 1].time : 999999999
         
         local closestKeyPress := ""
@@ -4936,7 +5377,7 @@ AutoSave() {
     
     if (!recording && !breakMode) {
         SaveConfig()
-        SaveExecutionData()
+        SaveStatsToJson()
     }
 }
 
@@ -4964,7 +5405,7 @@ CleanupAndExit() {
         }
 
         savedMacros := SaveMacroState()
-        SaveExecutionData()
+        SaveStatsToJson()
         UpdateStatus("💾 Saved " . savedMacros . " macros")
 
         ; Clean up visualization resources - COMPREHENSIVE HBITMAP CLEANUP
@@ -4995,7 +5436,7 @@ CleanupAndExit() {
     } catch Error as e {
         try {
             SaveConfig()
-            SaveExecutionData()
+            SaveStatsToJson()
             CleanupHBITMAPCache()
             CleanupButtonDisplayedHBITMAPs()
         } catch {
