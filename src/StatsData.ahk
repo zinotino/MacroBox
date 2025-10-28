@@ -55,17 +55,42 @@ Stats_BuildCsvRow(executionData) {
 }
 
 InitializeStatsSystem() {
-    global masterStatsCSV, workDir, sessionId, currentUsername, permanentStatsFile
+    global masterStatsCSV, documentsDir, workDir, sessionId, permanentStatsFile, currentSessionId
 
-    ; Ensure CSV file exists
-    if (!FileExist(masterStatsCSV)) {
-        InitializeCSVFile()
+    defaultDocumentsDir := A_MyDocuments . "\MacroMaster"
+    if (!IsSet(documentsDir) || documentsDir = "") {
+        documentsDir := defaultDocumentsDir
     }
 
-    ; Initialize permanent master stats file (NEVER gets reset)
-    InitializePermanentStatsFile()
+    if (!IsSet(workDir) || workDir = "") {
+        workDir := documentsDir . "\data"
+    }
 
-    ; Prepare temp staging area for async disk writes
+    try {
+        if (!DirExist(documentsDir)) {
+            DirCreate(documentsDir)
+        }
+
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+    } catch {
+    }
+
+    masterStatsCSV := workDir . "\macro_execution_stats.csv"
+
+    InitializeCSVFile()
+
+    sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
+    currentSessionId := sessionId
+
+    InitializePermanentStatsFile()
+    LoadStatsFromJson()
+
+    try {
+        UpdateStatus("?? Stats system initialized")
+    } catch {
+    }
 }
 
 InitializeCSVFile() {
@@ -1147,7 +1172,11 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     }
 
     ; Record to CSV with comprehensive data (removed excessive UpdateStatus call)
-    return AppendToCSV(executionData)
+    result := AppendToCSV(executionData)
+    if (result) {
+        SaveStatsToJson()
+    }
+    return result
 }
 
 ; ===== IN-MEMORY STATS LOG =====
@@ -1198,6 +1227,10 @@ SaveStatsToJson() {
     statsJsonFile := workDir . "\stats_log.json"
 
     try {
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+
         jsonData := Map()
         jsonData["version"] := "1.0"
         jsonData["last_updated"] := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
@@ -1216,6 +1249,10 @@ LoadStatsFromJson() {
     statsJsonFile := workDir . "\stats_log.json"
 
     try {
+        if (!DirExist(workDir)) {
+            DirCreate(workDir)
+        }
+
         if (!FileExist(statsJsonFile)) {
             macroExecutionLog := []
             return 0

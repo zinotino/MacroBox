@@ -276,6 +276,7 @@ global buttonCustomLabels := Map()
 global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
+global resizeTimer := 0  ; Timer for debouncing resize events
 ; ===== STATS SYSTEM GLOBALS =====
 global masterStatsCSV := ""
 global permanentStatsFile := ""
@@ -307,11 +308,22 @@ global breakStartTime := 0
 global currentDay := FormatTime(A_Now, "yyyy-MM-dd")  ; Track current day for daily reset
 
 ; ===== UI CONFIGURATION =====
+global baseWidth := 1200
+global baseHeight := 800
 global windowWidth := 1200
 global windowHeight := 800
-global scaleFactor := 1.0
-global minWindowWidth := 900
+global minWindowWidth := 800
 global minWindowHeight := 600
+global scaleFactor := 1.0  ; Font scaling factor (optional, for manual font size adjustment)
+
+; Calculate scale factor based on current window size vs base size
+GetScaleFactor() {
+    global windowWidth, windowHeight, baseWidth, baseHeight
+    ; Use the smaller scale factor to ensure everything fits
+    scaleX := windowWidth / baseWidth
+    scaleY := windowHeight / baseHeight
+    return Min(scaleX, scaleY)
+}
 
 ; ===== LAYER SYSTEM (REMOVED - SINGLE LAYER ONLY) =====
 global currentLayer := 1
@@ -383,7 +395,7 @@ global utilityHotkeysEnabled := true           ; Enable/disable utility hotkeys
 
 ; ===== WASD SETTINGS =====
 global hotkeyProfileActive := true  ; FIXED: Was false, should default to true
-global wasdLabelsEnabled := false
+global wasdLabelsEnabled := true  ; Always enabled by default
 global wasdHotkeyMap := Map()
 global capsLockPressed := false
 
@@ -670,11 +682,26 @@ ManualRestoreConfig() {
     MsgBox("Configuration restore feature is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
+; ===== HOTKEY CAPTURE SYSTEM =====
+CaptureHotkey(editControl, hotkeyName) {
+    ; Simple prompt for hotkey input
+    result := InputBox("Enter your hotkey combination for " . hotkeyName . "`n`nExamples:`n  ^k = Ctrl+K`n  !F5 = Alt+F5`n  +Enter = Shift+Enter`n  ^!a = Ctrl+Alt+A`n  F12 = F12`n  NumpadEnter = NumpadEnter`n  CapsLock & f = CapsLock+F`n`nModifiers: ^ = Ctrl, ! = Alt, + = Shift, # = Win", "Set Hotkey - " . hotkeyName, "w400 h280", editControl.Value)
+
+    if (result.Result = "OK" && result.Value != "") {
+        editControl.Value := result.Value
+    }
+}
+
 ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui) {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
     global hotkeyStats, hotkeyBreakMode, hotkeySettings
 
-    ; Store new values
+    ; Store old values for hotkey re-registration
+    oldSubmit := hotkeySubmit
+    oldUtilitySubmit := hotkeyUtilitySubmit
+    oldUtilityBackspace := hotkeyUtilityBackspace
+
+    ; Update to new values
     hotkeyRecordToggle := editRecordToggle.Value
     hotkeySubmit := editSubmit.Value
     hotkeyDirectClear := editDirectClear.Value
@@ -684,16 +711,89 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySu
     hotkeyBreakMode := editBreakMode.Value
     hotkeySettings := editSettings.Value
 
+    ; Re-register hotkeys with new bindings (apply instantly without restart)
+    try {
+        ; Unregister old hotkeys
+        if (oldSubmit)
+            Hotkey(oldSubmit, "Off")
+        if (oldUtilitySubmit)
+            Hotkey(oldUtilitySubmit, "Off")
+        if (oldUtilityBackspace)
+            Hotkey(oldUtilityBackspace, "Off")
+
+        ; Register new hotkeys
+        if (hotkeySubmit)
+            Hotkey(hotkeySubmit, (*) => SubmitCurrentImage(), "On")
+        if (hotkeyUtilitySubmit)
+            Hotkey(hotkeyUtilitySubmit, (*) => UtilitySubmit(), "On")
+        if (hotkeyUtilityBackspace)
+            Hotkey(hotkeyUtilityBackspace, (*) => UtilityBackspace(), "On")
+    } catch Error as e {
+        MsgBox("Error applying hotkeys: " . e.Message . "`n`nPlease check your hotkey syntax and try again.", "Hotkey Error", "Icon!")
+        return
+    }
+
     ; Save to config
     SaveConfig()
 
-    ; Notify user to restart for hotkeys to take effect
-    MsgBox("Hotkey settings saved!`n`nPlease restart the application for hotkey changes to take effect.", "Hotkeys Updated", "Icon!")
-    UpdateStatus("✅ Hotkeys saved - restart to apply")
+    ; Notify user - changes applied instantly
+    MsgBox("Hotkey settings saved and applied!`n`nYour new hotkeys are now active.", "Hotkeys Updated", "Icon!")
+    UpdateStatus("✅ Hotkeys applied successfully")
 }
 
 ResetHotkeySettings(settingsGui) {
-    MsgBox("Hotkey reset feature is available in the full modular version.", "Feature Notice", "Icon!")
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+    global hotkeyStats, hotkeyBreakMode, hotkeySettings
+
+    ; Confirm reset
+    result := MsgBox("Reset all hotkeys to default values?`n`nThis will restore:`n• Record Toggle: CapsLock & f`n• Submit: NumpadEnter`n• Direct Clear: +Enter`n• Utility Submit: +CapsLock`n• Utility Backspace: ^CapsLock`n• Stats: F12`n• Break Mode: ^b`n• Settings: ^k", "Reset Hotkeys", "YesNo Icon?")
+
+    if (result = "No")
+        return
+
+    ; Store old values for hotkey re-registration
+    oldSubmit := hotkeySubmit
+    oldUtilitySubmit := hotkeyUtilitySubmit
+    oldUtilityBackspace := hotkeyUtilityBackspace
+
+    ; Reset to defaults
+    hotkeyRecordToggle := "CapsLock & f"
+    hotkeySubmit := "NumpadEnter"
+    hotkeyDirectClear := "+Enter"
+    hotkeyUtilitySubmit := "+CapsLock"
+    hotkeyUtilityBackspace := "^CapsLock"
+    hotkeyStats := "F12"
+    hotkeyBreakMode := "^b"
+    hotkeySettings := "^k"
+
+    ; Re-register hotkeys with default bindings
+    try {
+        ; Unregister old hotkeys
+        if (oldSubmit)
+            Hotkey(oldSubmit, "Off")
+        if (oldUtilitySubmit)
+            Hotkey(oldUtilitySubmit, "Off")
+        if (oldUtilityBackspace)
+            Hotkey(oldUtilityBackspace, "Off")
+
+        ; Register default hotkeys
+        Hotkey(hotkeySubmit, (*) => SubmitCurrentImage(), "On")
+        Hotkey(hotkeyUtilitySubmit, (*) => UtilitySubmit(), "On")
+        Hotkey(hotkeyUtilityBackspace, (*) => UtilityBackspace(), "On")
+    } catch Error as e {
+        MsgBox("Error resetting hotkeys: " . e.Message, "Hotkey Error", "Icon!")
+        return
+    }
+
+    ; Save to config
+    SaveConfig()
+
+    ; Close and reopen settings to show updated values
+    settingsGui.Destroy()
+    ShowSettings()
+
+    MsgBox("Hotkeys have been reset to default values!", "Reset Complete", "Icon!")
+    UpdateStatus("✅ Hotkeys reset to defaults")
 }
 
 ; ===== ASYNC STATS RECORDING - PREVENTS FREEZE =====
@@ -3526,7 +3626,6 @@ ExecuteMacro(buttonName) {
         }
     }
 
-    ; Call the function from the included module
     RecordExecutionStatsAsync(buttonName, startTime, events.Length = 1 && events[1].type = "jsonAnnotation" ? "json_profile" : "macro", events, analysisRecord)
 
     ; PERFORMANCE: MacroExecutionAnalysis() removed - stats are in-memory only now
@@ -3880,74 +3979,70 @@ InitializeGui() {
 }
 
 CreateToolbar() {
-    global mainGui, darkMode, modeToggleBtn, scaleFactor, windowWidth
+    global mainGui, darkMode, modeToggleBtn, windowWidth
 
-    toolbarHeight := Round(40 * scaleFactor)       ; Reduced from 45
-    btnHeight := Round(28 * scaleFactor)           ; Reduced from 30
+    ; Calculate scale based on current window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - SIMPLE percentage scaling
+    toolbarHeight := Round(40 * scale)
+    btnHeight := Round(28 * scale)
     btnY := Round((toolbarHeight - btnHeight) / 2)
+    spacing := Round(8 * scale)
 
-    ; Background - NIGHT MODE
+    ; Background
     tbBg := mainGui.Add("Text", "x0 y0 w" . windowWidth . " h" . toolbarHeight)
     tbBg.BackColor := "0x1E1E1E"
     mainGui.tbBg := tbBg
 
-    ; Left section
-    spacing := 8
     x := spacing
 
-    ; Record button - NIGHT MODE
-    btnRecord := mainGui.Add("Button", "x" . x . " y" . btnY . " w75 h" . btnHeight, "🎥 Record")
+    btnRecord := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(75 * scale) . " h" . btnHeight, "🎥 Record")
     btnRecord.OnEvent("Click", (*) => F9_RecordingOnly())
-    btnRecord.SetFont("s9 bold", "cWhite")
+    btnRecord.SetFont("s" . Round(9 * scale) . " bold", "cWhite")
     btnRecord.Opt("+Background0x3A3A3A")
     mainGui.btnRecord := btnRecord
-    x += 80
+    x += Round(80 * scale)
 
-    ; Mode toggle - NIGHT MODE (gray instead of colors)
-    modeToggleBtn := mainGui.Add("Button", "x" . x . " y" . btnY . " w70 h" . btnHeight, (annotationMode = "Wide" ? "🔦 Wide" : "📱 Narrow"))
+    modeToggleBtn := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(70 * scale) . " h" . btnHeight, (annotationMode = "Wide" ? "🔦 Wide" : "📱 Narrow"))
     modeToggleBtn.OnEvent("Click", (*) => ToggleAnnotationMode())
-    modeToggleBtn.SetFont("s8 bold", "cWhite")
+    modeToggleBtn.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     modeToggleBtn.Opt("+Background0x505050")
     mainGui.modeToggleBtn := modeToggleBtn
-    x += 75
+    x += Round(75 * scale)
 
-    ; Break mode toggle - NIGHT MODE
-    btnBreakMode := mainGui.Add("Button", "x" . x . " y" . btnY . " w65 h" . btnHeight, "☕ Break")
+    btnBreakMode := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(65 * scale) . " h" . btnHeight, "☕ Break")
     btnBreakMode.OnEvent("Click", (*) => ToggleBreakMode())
-    btnBreakMode.SetFont("s8 bold", "cWhite")
+    btnBreakMode.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     btnBreakMode.Opt("+Background0x505050")
     mainGui.btnBreakMode := btnBreakMode
-    x += 70
+    x += Round(70 * scale)
 
-    ; Clear button - NIGHT MODE
-    btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w50 h" . btnHeight, "🗑️ Clear")
+    btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . Round(50 * scale) . " h" . btnHeight, "🗑️ Clear")
     btnClear.OnEvent("Click", (*) => ShowClearDialog())
-    btnClear.SetFont("s7 bold", "cWhite")
+    btnClear.SetFont("s" . Round(7 * scale) . " bold", "cWhite")
     btnClear.Opt("+Background0x505050")
-    x += 55
 
-    ; LAYER NAVIGATION REMOVED - Single layer only
-
-    ; Right section - shifted left since center is removed
+    ; Right section
     rightSection := Round(windowWidth * 0.5)
     rightWidth := windowWidth - rightSection - spacing
-    btnWidth := Round((rightWidth - 20) / 3)
+    btnWidth := Round((rightWidth - Round(20 * scale)) / 3)
 
     btnStats := mainGui.Add("Button", "x" . rightSection . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "📊 Stats")
     btnStats.OnEvent("Click", (*) => ShowStatsMenu())
-    btnStats.SetFont("s8 bold", "cWhite")
+    btnStats.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     btnStats.Opt("+Background0x3A3A3A")
     mainGui.btnStats := btnStats
 
-    btnSettings := mainGui.Add("Button", "x" . (rightSection + btnWidth + 5) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "⚙️ Config")
+    btnSettings := mainGui.Add("Button", "x" . (rightSection + btnWidth + Round(5 * scale)) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "⚙️ Config")
     btnSettings.OnEvent("Click", (*) => ShowSettings())
-    btnSettings.SetFont("s8 bold", "cWhite")
+    btnSettings.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     btnSettings.Opt("+Background0x3A3A3A")
     mainGui.btnSettings := btnSettings
 
-    btnEmergency := mainGui.Add("Button", "x" . (rightSection + (btnWidth * 2) + 10) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "🚨 STOP`nCapsLock+SPACE")
+    btnEmergency := mainGui.Add("Button", "x" . (rightSection + (btnWidth * 2) + Round(10 * scale)) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "🚨 STOP`nCapsLock+SPACE")
     btnEmergency.OnEvent("Click", (*) => EmergencyStop())
-    btnEmergency.SetFont("s8 bold", "cWhite")
+    btnEmergency.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     btnEmergency.Opt("+Background0x8B0000")
     mainGui.btnEmergency := btnEmergency
 }
@@ -3960,26 +4055,52 @@ CreateGridOutline() {
     gridOutline.Opt("+Background0x555555")
 }
 
-CreateButtonGrid() {
-    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, windowWidth, windowHeight, gridOutline, scaleFactor
+DestroyButtonGrid() {
+    global buttonGrid, buttonLabels, buttonPictures, buttonNames
 
-    ; Optimized spacing to maximize button area
-    margin := 8                                    ; Reduced from 12
-    padding := 3                                   ; Reduced from 4
-    toolbarHeight := Round(40 * scaleFactor)       ; Reduced from 45
-    gridTopPadding := 4                            ; Reduced from 8
-    gridBottomPadding := 32                        ; Reduced from 50
+    ; Safely destroy all existing button grid controls
+    for buttonName in buttonNames {
+        if (buttonGrid.Has(buttonName)) {
+            try buttonGrid[buttonName].Destroy()
+        }
+        if (buttonLabels.Has(buttonName)) {
+            try buttonLabels[buttonName].Destroy()
+        }
+        if (buttonPictures.Has(buttonName)) {
+            try buttonPictures[buttonName].Destroy()
+        }
+    }
+
+    ; Clear the maps
+    buttonGrid.Clear()
+    buttonLabels.Clear()
+    buttonPictures.Clear()
+}
+
+CreateButtonGrid() {
+    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, windowWidth, windowHeight, gridOutline
+
+    ; Calculate scale based on current window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - SIMPLE percentage scaling
+    margin := Round(8 * scale)
+    padding := Round(3 * scale)
+    toolbarHeight := Round(40 * scale)
+    gridTopPadding := Round(4 * scale)
+    gridBottomPadding := Round(32 * scale)
 
     gridWidth := windowWidth - (margin * 2)
     gridHeight := windowHeight - toolbarHeight - gridTopPadding - gridBottomPadding - (margin * 2)
 
+    ; Calculate button dimensions from available space
     buttonWidth := Floor((gridWidth - padding * 2) / 3)
     buttonHeight := Floor((gridHeight - padding * 3) / 4)
-    labelHeight := Round(20 * scaleFactor)         ; Increased from 18 for better readability
-    thumbHeight := buttonHeight - labelHeight - 1  ; Reduced gap from 2 to 1
-    
-    outlineThickness := 2
-    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness, 
+    labelHeight := Round(20 * scale)
+    thumbHeight := buttonHeight - labelHeight - Round(1 * scale)
+
+    outlineThickness := Round(2 * scale)
+    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
                     gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
     
     for row in [0, 1, 2, 3] {
@@ -3987,15 +4108,16 @@ CreateButtonGrid() {
             index := row * 3 + col + 1
             if (index > 12)
                 continue
-                
+
             buttonName := buttonNames[index]
+            ; Position using simple grid layout
             x := margin + col * (buttonWidth + padding)
             y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
-            
+
             ; NIGHT MODE - dark background for all buttons
-            button := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x201 +Border", "")
+            button := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x201", "")
             button.Opt("+Background0x2A2A2A")
-            button.SetFont("s" . Round(9 * scaleFactor), "cWhite")
+            button.SetFont("s" . Round(9 * scale), "cWhite")
 
             picture := mainGui.Add("Picture", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " Hidden")
 
@@ -4018,9 +4140,10 @@ CreateButtonGrid() {
                 case "NumMult": wasdKey := "C"
             }
             labelText := "Num " . simpleName . " / Caps+" . wasdKey
-            label := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y + thumbHeight + 1) . " w" . Floor(buttonWidth) . " h" . Floor(labelHeight) . " Center BackgroundTrans", labelText)
+            labelY := y + thumbHeight + Round(1 * scale)
+            label := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(labelY) . " w" . Floor(buttonWidth) . " h" . Floor(labelHeight) . " Center BackgroundTrans", labelText)
             label.Opt("cWhite")
-            label.SetFont("s" . Round(8 * scaleFactor) . " bold")
+            label.SetFont("s" . Round(8 * scale) . " bold")
             
             buttonGrid[buttonName] := button
             buttonLabels[buttonName] := label
@@ -4036,14 +4159,86 @@ CreateButtonGrid() {
     }
 }
 
+ResizeButtonGrid() {
+    global buttonGrid, buttonLabels, buttonPictures, buttonNames, windowWidth, windowHeight, gridOutline, mainGui
+
+    ; Disable redrawing to reduce flicker
+    static WM_SETREDRAW := 0x000B
+    SendMessage(WM_SETREDRAW, 0, 0, mainGui)
+
+    ; Calculate scale based on current window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - SIMPLE percentage scaling (same as CreateButtonGrid)
+    margin := Round(8 * scale)
+    padding := Round(3 * scale)
+    toolbarHeight := Round(40 * scale)
+    gridTopPadding := Round(4 * scale)
+    gridBottomPadding := Round(32 * scale)
+
+    gridWidth := windowWidth - (margin * 2)
+    gridHeight := windowHeight - toolbarHeight - gridTopPadding - gridBottomPadding - (margin * 2)
+
+    ; Calculate button dimensions from available space
+    buttonWidth := Floor((gridWidth - padding * 2) / 3)
+    buttonHeight := Floor((gridHeight - padding * 3) / 4)
+    labelHeight := Round(20 * scale)
+    thumbHeight := buttonHeight - labelHeight - Round(1 * scale)
+
+    ; Move grid outline
+    outlineThickness := Round(2 * scale)
+    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
+                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
+
+    ; Move and resize existing controls
+    for row in [0, 1, 2, 3] {
+        for col in [0, 1, 2] {
+            index := row * 3 + col + 1
+            if (index > 12)
+                continue
+
+            buttonName := buttonNames[index]
+
+            ; Calculate position (same logic as CreateButtonGrid)
+            x := margin + col * (buttonWidth + padding)
+            y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
+            labelY := y + thumbHeight + Round(1 * scale)
+
+            ; Move existing controls instead of recreating them
+            if (buttonGrid.Has(buttonName)) {
+                buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+                ; Update font size for the button
+                buttonGrid[buttonName].SetFont("s" . Round(9 * scale))
+            }
+
+            if (buttonPictures.Has(buttonName)) {
+                buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+            }
+
+            if (buttonLabels.Has(buttonName)) {
+                buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
+                ; Update font size for the label
+                buttonLabels[buttonName].SetFont("s" . Round(8 * scale) . " bold")
+            }
+        }
+    }
+
+    ; Re-enable redrawing and force a single refresh
+    SendMessage(WM_SETREDRAW, 1, 0, mainGui)
+    DllCall("RedrawWindow", "Ptr", mainGui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0081) ; RDW_INVALIDATE | RDW_UPDATENOW
+}
+
 CreateStatusBar() {
     global mainGui, statusBar, windowWidth, windowHeight
 
-    ; NIGHT MODE - white text on dark background
-    statusY := windowHeight - 30                   ; Reduced from 35
-    statusBar := mainGui.Add("Text", "x8 y" . statusY . " w" . (windowWidth - 16) . " h22", "✅ Ready - CapsLock+F to record")
+    ; Calculate scale based on current window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - SIMPLE percentage scaling
+    statusY := windowHeight - Round(30 * scale)
+    statusBar := mainGui.Add("Text", "x" . Round(8 * scale) . " y" . statusY . " w" . (windowWidth - Round(16 * scale)) . " h" . Round(22 * scale), "✅ Ready - CapsLock+F to record")
     statusBar.Opt("cWhite")
-    statusBar.SetFont("s8")                        ; Reduced from s9
+    statusBar.SetFont("s" . Round(8 * scale))
 }
 
 HandleButtonClick(buttonName, *) {
@@ -4366,7 +4561,7 @@ UpdateStatus(text) {
 }
 
 GuiResize(thisGui, minMax, width, height) {
-    global statusBar, windowWidth, windowHeight, mainGui
+    global statusBar, windowWidth, windowHeight, mainGui, resizeTimer
 
     if (minMax = -1)
         return
@@ -4374,16 +4569,28 @@ GuiResize(thisGui, minMax, width, height) {
     windowWidth := width
     windowHeight := height
 
+    ; Calculate scale based on NEW window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - DYNAMIC percentage scaling
     if (statusBar) {
-        statusY := height - 35
-        statusBar.Move(8, statusY, width - 16, 25)
+        statusY := height - Round(35 * scale)
+        statusBar.Move(Round(8 * scale), statusY, width - Round(16 * scale), Round(25 * scale))
     }
 
     if (mainGui.HasProp("tbBg") && mainGui.tbBg) {
-        mainGui.tbBg.Move(0, 0, width, 40)
+        mainGui.tbBg.Move(0, 0, width, Round(40 * scale))
     }
 
-    CreateButtonGrid()
+    ; Debounce button grid resize to reduce flicker during continuous resizing
+    ; Clear any existing timer
+    if (resizeTimer) {
+        SetTimer(resizeTimer, 0)
+    }
+
+    ; Set a new timer to resize after user stops dragging (50ms delay)
+    resizeTimer := () => ResizeButtonGrid()
+    SetTimer(resizeTimer, -50)
 }
 
 ; ===== LAYER SYSTEM =====
@@ -4753,63 +4960,119 @@ ShowSettings() {
     tabs.UseTab(3)
     global hotkeyProfileActive, wasdHotkeyMap, wasdLabelsEnabled
 
-    ; Header focused on utility functions
-    settingsGui.Add("Text", "x30 y95 w480 h20", "🎮 Hotkey & Utility Configuration:")
-    settingsGui.Add("Text", "x30 y115 w480 h15 c0x666666", "Configure keyboard shortcuts and utility functions")
+    ; Header
+    settingsGui.Add("Text", "x30 y75 w480 h20", "🎮 Hotkey Configuration")
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x30 y98 w480 h14 c0x666666", "Type hotkey manually or click 'Set' to capture key combination")
+    settingsGui.SetFont("s9")
 
-    ; WASD Info - show current status
-    wasdStatus := wasdLabelsEnabled ? "Enabled" : "Disabled"
-    settingsGui.Add("Text", "x30 y140 w480 h15", "🏷️ WASD Labels: " . wasdStatus)
-
-    ; Main Utility Hotkeys Section (clean layout without WASD clutter)
-    settingsGui.Add("Text", "x30 y170 w480 h20", "🎮 Main Utility Hotkeys:")
-    hotkeyY := 195
+    ; Core Macro Controls Section
+    settingsGui.Add("Text", "x30 y120 w480 h18", "🎯 Core Macro Controls:")
+    hotkeyY := 145
 
     ; Record Toggle
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Record Toggle:")
-    editRecordToggle := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyRecordToggle)
-    hotkeyY += 25
-
-    ; Submit/Direct Clear keys
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Submit:")
-    editSubmit := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeySubmit)
-    settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Direct Clear:")
-    editDirectClear := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeyDirectClear)
-    hotkeyY += 25
-
-    ; Utility Submit (Shift+CapsLock → Shift+Enter)
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Utility Submit:")
-    editUtilitySubmit := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyUtilitySubmit)
-    settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Utility Backspace:")
-    editUtilityBackspace := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeyUtilityBackspace)
-    hotkeyY += 25
-
-    ; Stats key (on separate row)
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Stats:")
-    editStats := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyStats)
-    hotkeyY += 25
-
-    ; Break Mode/Settings keys
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Break Mode:")
-    editBreakMode := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyBreakMode)
-    settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Settings:")
-    editSettings := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeySettings)
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Record Toggle:")
+    editRecordToggle := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyRecordToggle)
+    btnCaptureRecordToggle := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureRecordToggle.OnEvent("Click", (*) => CaptureHotkey(editRecordToggle, "Record Toggle"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Start/Stop recording")
+    settingsGui.SetFont("s9")
     hotkeyY += 30
 
+    ; Submit
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Submit:")
+    editSubmit := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeySubmit)
+    btnCaptureSubmit := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureSubmit.OnEvent("Click", (*) => CaptureHotkey(editSubmit, "Submit"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Submit current box")
+    settingsGui.SetFont("s9")
+    hotkeyY += 30
+
+    ; Direct Clear
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Direct Clear:")
+    editDirectClear := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyDirectClear)
+    btnCaptureDirectClear := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureDirectClear.OnEvent("Click", (*) => CaptureHotkey(editDirectClear, "Direct Clear"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Clear without menu")
+    settingsGui.SetFont("s9")
+    hotkeyY += 35
+
+    ; Workflow Utility Keys Section
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h18", "⚡ Workflow Utilities:")
+    hotkeyY += 25
+
+    ; Utility Submit
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Utility Submit:")
+    editUtilitySubmit := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyUtilitySubmit)
+    btnCaptureUtilitySubmit := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureUtilitySubmit.OnEvent("Click", (*) => CaptureHotkey(editUtilitySubmit, "Utility Submit"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Shift+Enter to browser")
+    settingsGui.SetFont("s9")
+    hotkeyY += 30
+
+    ; Utility Backspace
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Utility Backspace:")
+    editUtilityBackspace := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyUtilityBackspace)
+    btnCaptureUtilityBackspace := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureUtilityBackspace.OnEvent("Click", (*) => CaptureHotkey(editUtilityBackspace, "Utility Backspace"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Backspace to browser")
+    settingsGui.SetFont("s9")
+    hotkeyY += 35
+
+    ; App Controls Section
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h18", "🔧 App Controls:")
+    hotkeyY += 25
+
+    ; Stats
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Stats Window:")
+    editStats := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyStats)
+    btnCaptureStats := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureStats.OnEvent("Click", (*) => CaptureHotkey(editStats, "Stats Window"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Show/hide stats")
+    settingsGui.SetFont("s9")
+    hotkeyY += 30
+
+    ; Break Mode
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Break Mode:")
+    editBreakMode := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyBreakMode)
+    btnCaptureBreakMode := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureBreakMode.OnEvent("Click", (*) => CaptureHotkey(editBreakMode, "Break Mode"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Toggle break mode")
+    settingsGui.SetFont("s9")
+    hotkeyY += 30
+
+    ; Settings
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Settings:")
+    editSettings := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeySettings)
+    btnCaptureSettings := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureSettings.OnEvent("Click", (*) => CaptureHotkey(editSettings, "Settings"))
+    settingsGui.SetFont("s7")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Open settings")
+    settingsGui.SetFont("s9")
+    hotkeyY += 35
+
     ; Apply/Reset buttons for hotkeys
-    btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w100 h25", "🎮 Apply Keys")
+    btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w120 h28", "✅ Apply Hotkeys")
     btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui))
 
-    btnResetHotkeys := settingsGui.Add("Button", "x150 y" . hotkeyY . " w100 h25", "🔄 Reset Keys")
+    btnResetHotkeys := settingsGui.Add("Button", "x165 y" . hotkeyY . " w120 h28", "🔄 Reset to Default")
     btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
+    hotkeyY += 36
 
-    ; Enhanced Instructions (focused on utility functions)
-    instructY := hotkeyY + 40
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x0066CC", "📋 Quick Instructions:")
-    instructY += 20
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h70", "• ⚙️ Configure all utility hotkeys above for your workflow`n• 🎯 Utility Submit/Backspace help with labeler workflow`n• 💾 Click Apply, then restart app for hotkeys to take effect`n• ⌨️ All hotkeys work alongside standard numpad keys`n• 🏷️ WASD labels are handled automatically")
-    instructY += 75
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Utility hotkeys send Shift+Enter and Backspace to browser.")
+    ; Instructions
+    settingsGui.SetFont("s8 Bold c0x0066CC")
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h14", "💡 How to Set Hotkeys:")
+    hotkeyY += 18
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h52", "• Click the 'Set' button next to any hotkey field`n• Press your desired key combination (e.g., Ctrl+Alt+K, Shift+F5, etc.)`n• The hotkey will be captured and displayed automatically`n• Click 'Apply Hotkeys' to save and activate all changes immediately")
+    settingsGui.SetFont("s9")
 
     ; Show settings window
 settingsGui.Show("w580 h580")
@@ -5040,8 +5303,6 @@ class JSON {
         return "{}"
     }
 }
-
-; InitializeStatsSystem() is now in src/StatsData.ahk
 
 InitializeJsonAnnotations() {
     global jsonAnnotations, degradationTypes, severityLevels
@@ -6116,8 +6377,6 @@ StrTitle(str) {
     str := StrReplace(str, "_", " ")
     return StrUpper(SubStr(str, 1, 1)) . SubStr(str, 2)
 }
-
-; UpdateActiveTime() is now in src/StatsData.ahk
 
 AutoSave() {
     global breakMode, recording

@@ -31,9 +31,9 @@ ObjLoad(path) {
 }
 
 ObjToString(value) {
-    if (value === true)
+    if (value == true)
         return "true"
-    if (value === false)
+    if (value == false)
         return "false"
 
     valueType := Type(value)

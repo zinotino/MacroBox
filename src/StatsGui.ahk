@@ -254,13 +254,12 @@ ShowStatsMenu() {
 
     statsGuiOpen := true
 
-    ; CRITICAL FIX: Slow down refresh timer to prevent freezing
-    ; Was 500ms (2x/second) causing 2-5 second freezes
-    ; Now 5000ms (every 5 seconds) for smooth operation
+    ; Refresh stats frequently - in-memory aggregation keeps this lightweight
+    ; Update once per second for near real-time feedback without UI stalls
 
     UpdateStatsDisplay()
 
-    SetTimer(UpdateStatsDisplay, 5000)
+    SetTimer(UpdateStatsDisplay, 1000)
 
 }
 
