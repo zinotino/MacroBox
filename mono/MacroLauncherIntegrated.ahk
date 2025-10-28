@@ -2,7 +2,6 @@
 #SingleInstance Force
 SendMode "Input"
 Persistent
-#Include "../src/ObjPersistence.ahk"
 
 /*
 ===============================================================================
@@ -12,6 +11,253 @@ All functionality combined into one script to eliminate module conflicts
 Comprehensive macro recording, playback, and degradation tracking system
 ===============================================================================
 */
+
+; ===== OBJECT PERSISTENCE MODULE =====
+; Simple JSON save/load for stats persistence
+
+ObjSave(obj, path) {
+    file := ""
+    try {
+        data := ObjToString(obj)
+        file := FileOpen(path, "w", "UTF-8")
+        if (!file)
+            return false
+        file.Write(data)
+        return true
+    } catch {
+        return false
+    } finally {
+        if (IsObject(file))
+            file.Close()
+    }
+}
+
+ObjLoad(path) {
+    try {
+        if (!FileExist(path))
+            return Map()
+        data := FileRead(path, "UTF-8")
+        result := StrToObj(data)
+        return IsObject(result) ? result : Map()
+    } catch {
+        return Map()
+    }
+}
+
+ObjToString(value) {
+    if (value == true)
+        return "true"
+    if (value == false)
+        return "false"
+
+    valueType := Type(value)
+    if (valueType = "ComValue")
+        return "null"
+
+    if (valueType = "Map") {
+        items := []
+        for key, itemValue in value {
+            keyText := ObjToString(String(key))
+            items.Push(keyText . ":" . ObjToString(itemValue))
+        }
+        return "{" . StrJoin(items, ",") . "}"
+    }
+
+    if (valueType = "Array") {
+        items := []
+        for element in value {
+            items.Push(ObjToString(element))
+        }
+        return "[" . StrJoin(items, ",") . "]"
+    }
+
+    if (valueType = "String") {
+        quote := Chr(34)
+        return quote . JsonEscape(value) . quote
+    }
+
+    return String(value)
+}
+
+StrToObj(text) {
+    try {
+        pos := 1
+        return Jxon_ParseValue(text, &pos)
+    } catch {
+        return Map()
+    }
+}
+
+Jxon_ParseValue(text, &pos) {
+    Jxon_SkipWhitespace(text, &pos)
+    if (pos > StrLen(text))
+        throw Error("Unexpected end")
+
+    char := SubStr(text, pos, 1)
+    if (char = "{")
+        return Jxon_ParseObject(text, &pos)
+    if (char = "[")
+        return Jxon_ParseArray(text, &pos)
+    if (char = Chr(34))
+        return Jxon_ParseString(text, &pos)
+    if (SubStr(text, pos, 4) = "null") {
+        pos += 4
+        return ""
+    }
+    if (SubStr(text, pos, 4) = "true") {
+        pos += 4
+        return true
+    }
+    if (SubStr(text, pos, 5) = "false") {
+        pos += 5
+        return false
+    }
+    return Jxon_ParseNumber(text, &pos)
+}
+
+Jxon_ParseObject(text, &pos) {
+    obj := Map()
+    pos += 1
+    Jxon_SkipWhitespace(text, &pos)
+    if (SubStr(text, pos, 1) = "}") {
+        pos += 1
+        return obj
+    }
+
+    while true {
+        key := Jxon_ParseString(text, &pos)
+        Jxon_SkipWhitespace(text, &pos)
+        if (SubStr(text, pos, 1) != ":")
+            throw Error("Expected ':'")
+        pos += 1
+        value := Jxon_ParseValue(text, &pos)
+        obj[key] := value
+        Jxon_SkipWhitespace(text, &pos)
+        char := SubStr(text, pos, 1)
+        if (char = "}") {
+            pos += 1
+            break
+        }
+        if (char != ",")
+            throw Error("Expected ',' or '}'")
+        pos += 1
+    }
+    return obj
+}
+
+Jxon_ParseArray(text, &pos) {
+    arr := []
+    pos += 1
+    Jxon_SkipWhitespace(text, &pos)
+    if (SubStr(text, pos, 1) = "]") {
+        pos += 1
+        return arr
+    }
+
+    while true {
+        value := Jxon_ParseValue(text, &pos)
+        arr.Push(value)
+        Jxon_SkipWhitespace(text, &pos)
+        char := SubStr(text, pos, 1)
+        if (char = "]") {
+            pos += 1
+            break
+        }
+        if (char != ",")
+            throw Error("Expected ',' or ']'")
+        pos += 1
+    }
+    return arr
+}
+
+Jxon_ParseString(text, &pos) {
+    quote := Chr(34)
+    backslash := Chr(92)
+    pos += 1
+    start := pos
+    result := ""
+
+    while true {
+        if (pos > StrLen(text))
+            throw Error("Unexpected end of string")
+
+        char := SubStr(text, pos, 1)
+        if (char = quote) {
+            result .= SubStr(text, start, pos - start)
+            pos += 1
+            break
+        }
+
+        if (char = backslash) {
+            result .= SubStr(text, start, pos - start)
+            pos += 1
+            if (pos > StrLen(text))
+                throw Error("Unexpected end of string")
+
+            escapeChar := SubStr(text, pos, 1)
+            if (escapeChar = quote)
+                result .= quote
+            else if (escapeChar = backslash)
+                result .= backslash
+            else if (escapeChar = "n")
+                result .= "`n"
+            else if (escapeChar = "r")
+                result .= "`r"
+            else if (escapeChar = "t")
+                result .= "`t"
+            pos += 1
+            start := pos
+        } else {
+            pos += 1
+        }
+    }
+    return result
+}
+
+Jxon_ParseNumber(text, &pos) {
+    start := pos
+    while (pos <= StrLen(text) && InStr("0123456789+-.eE", SubStr(text, pos, 1)))
+        pos += 1
+    number := SubStr(text, start, pos - start)
+    if (InStr(number, ".") || InStr(number, "e") || InStr(number, "E"))
+        return number + 0.0
+    return Integer(number)
+}
+
+Jxon_SkipWhitespace(text, &pos) {
+    while (pos <= StrLen(text) && InStr(" `t`r`n", SubStr(text, pos, 1)))
+        pos += 1
+}
+
+JsonEscape(text) {
+    result := ""
+    backslash := Chr(92)
+    Loop Parse text {
+        char := A_LoopField
+        code := Ord(char)
+        if (code = 9)
+            result .= backslash . "t"
+        else if (code = 10)
+            result .= backslash . "n"
+        else if (code = 13)
+            result .= backslash . "r"
+        else if (code = 34)
+            result .= backslash . Chr(34)
+        else if (code = 92)
+            result .= backslash . backslash
+        else
+            result .= char
+    }
+    return result
+}
+
+StrJoin(array, sep) {
+    result := ""
+    for index, element in array {
+        result .= (index = 1 ? "" : sep) . element
+    }
+    return result
+}
 
 ; ===== CORE VARIABLES & CONFIGURATION =====
 global mainGui := 0
@@ -73,12 +319,12 @@ global totalLayers := 1
 
 ; ===== TIMING CONFIGURATION =====
 global boxDrawDelay := 50
-global mouseClickDelay := 60
-global mouseDragDelay := 65
-global mouseReleaseDelay := 65
-global betweenBoxDelay := 150
+global mouseClickDelay := 75
+global mouseDragDelay := 50
+global mouseReleaseDelay := 75
+global betweenBoxDelay := 120
 global keyPressDelay := 12
-global focusDelay := 80
+global focusDelay := 60
 
 ; ===== RECORDING SETTINGS =====
 global mouseMoveThreshold := 3
@@ -114,10 +360,12 @@ global degradationColors := Map(
 global severityLevels := ["high", "medium", "low"]
 
 ; ===== INTELLIGENT TIMING SYSTEM - UNIQUE DELAYS =====
-global smartBoxClickDelay := 35    ; Optimized for fast box drawing in intelligent system
-global smartMenuClickDelay := 120  ; Optimized for accurate menu selections in intelligent system
-global mouseHoverDelay := 35
+global smartBoxClickDelay := 45    ; Optimized for fast box drawing in intelligent system
+global smartMenuClickDelay := 100  ; Optimized for accurate menu selections in intelligent system
+global mouseHoverDelay := 30
 global menuClickDelay := 120       ; Menu click delay for settings
+global firstBoxDelay := 180        ; Extra delay after first box in macro for UI stabilization
+global menuWaitDelay := 50         ; Wait time for dropdown menus (kept for reference)
 
 ; ===== HOTKEY SETTINGS =====
 global hotkeyRecordToggle := "CapsLock & f"
@@ -127,6 +375,11 @@ global hotkeyDirectClear := "+Enter"
 global hotkeyStats := "F12"
 global hotkeyBreakMode := "^b"
 global hotkeySettings := "^k"
+
+; ===== UTILITY HOTKEYS FOR LABELER WORKFLOW =====
+global hotkeyUtilitySubmit := "+CapsLock"      ; LShift + CapsLock = Shift+Enter
+global hotkeyUtilityBackspace := "^CapsLock"   ; LCtrl + CapsLock = Backspace
+global utilityHotkeysEnabled := true           ; Enable/disable utility hotkeys
 
 ; ===== WASD SETTINGS =====
 global hotkeyProfileActive := true  ; FIXED: Was false, should default to true
@@ -304,23 +557,7 @@ ConfigureWideCanvasFromSettings(settingsGui) {
     wideCanvasBottom := bottom
     isWideCanvasCalibrated := true
 
-    ; Debug: Show values before save
-    MsgBox("DEBUG: About to save Wide canvas`n`nLeft: " . wideCanvasLeft . "`nTop: " . wideCanvasTop . "`nRight: " . wideCanvasRight . "`nBottom: " . wideCanvasBottom . "`nCalibrated flag: " . isWideCanvasCalibrated, "Pre-Save Debug")
-
     SaveConfig()
-
-    ; Debug: Verify the config file was written
-    global configFile
-    if FileExist(configFile) {
-        configContent := FileRead(configFile)
-        if InStr(configContent, "[Canvas]") {
-            MsgBox("✅ Config file saved successfully!`n`nCanvas section found in config file.", "Save Success")
-        } else {
-            MsgBox("❌ ERROR: Canvas section NOT found in config file!`n`nFile exists but Canvas section is missing.", "Save Error")
-        }
-    } else {
-        MsgBox("❌ ERROR: Config file does not exist!`n`nPath: " . configFile, "Save Error")
-    }
 
     UpdateStatus("✅ Wide canvas calibrated")
     RefreshAllButtonAppearances()
@@ -405,21 +642,7 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
     narrowCanvasBottom := bottom
     isNarrowCanvasCalibrated := true
 
-    ; Debug: Show values before save
-    MsgBox("DEBUG: About to save Narrow canvas`n`nLeft: " . narrowCanvasLeft . "`nTop: " . narrowCanvasTop . "`nRight: " . narrowCanvasRight . "`nBottom: " . narrowCanvasBottom . "`nCalibrated flag: " . isNarrowCanvasCalibrated, "Pre-Save Debug")
-
     SaveConfig()
-
-    ; Debug: Verify the config file was written
-    global configFile
-    if FileExist(configFile) {
-        configContent := FileRead(configFile)
-        if InStr(configContent, "[Canvas]") && InStr(configContent, "isNarrowCanvasCalibrated=1") {
-            MsgBox("✅ Config file saved successfully!`n`nNarrow canvas flag = 1 in config file.", "Save Success")
-        } else {
-            MsgBox("❌ ERROR: Narrow canvas NOT properly saved!`n`nCheck config file manually.", "Save Error")
-        }
-    }
 
     UpdateStatus("✅ Narrow canvas calibrated")
     RefreshAllButtonAppearances()
@@ -444,17 +667,32 @@ ManualSaveConfig() {
 }
 
 ManualRestoreConfig() {
-    UpdateStatus("📤 Configuration restore - feature coming soon")
     MsgBox("Configuration restore feature is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
-ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, settingsGui) {
-    UpdateStatus("🎮 Hotkey settings - feature coming soon")
-    MsgBox("Hotkey configuration feature is available in the full modular version.", "Feature Notice", "Icon!")
+ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui) {
+    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+    global hotkeyStats, hotkeyBreakMode, hotkeySettings
+
+    ; Store new values
+    hotkeyRecordToggle := editRecordToggle.Value
+    hotkeySubmit := editSubmit.Value
+    hotkeyDirectClear := editDirectClear.Value
+    hotkeyUtilitySubmit := editUtilitySubmit.Value
+    hotkeyUtilityBackspace := editUtilityBackspace.Value
+    hotkeyStats := editStats.Value
+    hotkeyBreakMode := editBreakMode.Value
+    hotkeySettings := editSettings.Value
+
+    ; Save to config
+    SaveConfig()
+
+    ; Notify user to restart for hotkeys to take effect
+    MsgBox("Hotkey settings saved!`n`nPlease restart the application for hotkey changes to take effect.", "Hotkeys Updated", "Icon!")
+    UpdateStatus("✅ Hotkeys saved - restart to apply")
 }
 
 ResetHotkeySettings(settingsGui) {
-    UpdateStatus("🔄 Hotkey reset - feature coming soon")
     MsgBox("Hotkey reset feature is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
@@ -665,19 +903,65 @@ InitializeVisualizationSystem() {
             result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiPlusToken, "Ptr", si, "Ptr", 0)
             if (result = 0) {
                 gdiPlusInitialized := true
+                VizLog("✓ GDI+ initialized successfully")
             } else {
-                UpdateStatus("⚠️ GDI+ initialization failed")
+                UpdateStatus("⚠️ GDI+ initialization failed (error code: " . result . ")")
+                VizLog("✗ GDI+ initialization failed with code: " . result)
                 gdiPlusInitialized := false
             }
         } catch Error as e {
-            UpdateStatus("⚠️ GDI+ startup failed")
+            UpdateStatus("⚠️ GDI+ startup exception: " . e.Message)
+            VizLog("✗ GDI+ startup exception: " . e.Message)
             gdiPlusInitialized := false
         }
+        FlushVizLog()
     }
 
 
     ; Detect initial canvas type
     DetectCanvasType()
+}
+
+ValidateCanvasCalibration() {
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
+
+    VizLog("=== CANVAS CALIBRATION STATUS ===")
+
+    ; Check Wide canvas
+    wideConfigured := (wideCanvasRight > wideCanvasLeft && wideCanvasBottom > wideCanvasTop)
+    VizLog("Wide Canvas: " . (wideConfigured ? "CONFIGURED" : "NOT CONFIGURED"))
+    if (wideConfigured) {
+        VizLog("  - Bounds: L=" . wideCanvasLeft . " T=" . wideCanvasTop . " R=" . wideCanvasRight . " B=" . wideCanvasBottom)
+        VizLog("  - Flag: " . (isWideCanvasCalibrated ? "TRUE" : "FALSE"))
+    }
+
+    ; Check Narrow canvas
+    narrowConfigured := (narrowCanvasRight > narrowCanvasLeft && narrowCanvasBottom > narrowCanvasTop)
+    VizLog("Narrow Canvas: " . (narrowConfigured ? "CONFIGURED" : "NOT CONFIGURED"))
+    if (narrowConfigured) {
+        VizLog("  - Bounds: L=" . narrowCanvasLeft . " T=" . narrowCanvasTop . " R=" . narrowCanvasRight . " B=" . narrowCanvasBottom)
+        VizLog("  - Flag: " . (isNarrowCanvasCalibrated ? "TRUE" : "FALSE"))
+    }
+
+    ; Check User canvas
+    userConfigured := (userCanvasRight > userCanvasLeft && userCanvasBottom > userCanvasTop)
+    VizLog("User Canvas: " . (userConfigured ? "CONFIGURED" : "NOT CONFIGURED"))
+    if (userConfigured) {
+        VizLog("  - Bounds: L=" . userCanvasLeft . " T=" . userCanvasTop . " R=" . userCanvasRight . " B=" . userCanvasBottom)
+        VizLog("  - Flag: " . (isCanvasCalibrated ? "TRUE" : "FALSE"))
+    }
+
+    ; Warn if no canvas is configured
+    if (!wideConfigured && !narrowConfigured && !userConfigured) {
+        VizLog("⚠️ WARNING: NO CANVAS CONFIGURED - Visualization will fail!")
+        UpdateStatus("⚠️ Canvas not calibrated - Please configure in Settings")
+    } else {
+        VizLog("✓ At least one canvas is configured")
+    }
+
+    FlushVizLog()
 }
 
 ; ===== BOX EVENT EXTRACTION =====
@@ -782,7 +1066,22 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     }
 
     ; Use stored mode if available, otherwise use current annotation mode
+    ; HOWEVER: If the stored mode's canvas is not configured, fall back to current mode
     effectiveMode := (storedMode != "" && storedMode != "unknown") ? storedMode : annotationMode
+
+    ; Check if effectiveMode's canvas is actually configured
+    global wideCanvasRight, wideCanvasLeft, narrowCanvasRight, narrowCanvasLeft
+    wideConfiguredCheck := (wideCanvasRight > wideCanvasLeft)
+    narrowConfiguredCheck := (narrowCanvasRight > narrowCanvasLeft)
+
+    ; If stored mode's canvas isn't configured, use current annotation mode instead
+    if (effectiveMode = "Wide" && !wideConfiguredCheck && narrowConfiguredCheck) {
+        VizLog("⚠️ Wide canvas not configured, falling back to Narrow")
+        effectiveMode := "Narrow"
+    } else if (effectiveMode = "Narrow" && !narrowConfiguredCheck && wideConfiguredCheck) {
+        VizLog("⚠️ Narrow canvas not configured, falling back to Wide")
+        effectiveMode := "Wide"
+    }
 
     recordedCanvas := ""
     recordedCanvasMode := ""
@@ -804,6 +1103,14 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     wideConfigured := (wideCanvasRight > wideCanvasLeft && wideCanvasBottom > wideCanvasTop)
     narrowConfigured := (narrowCanvasRight > narrowCanvasLeft && narrowCanvasBottom > narrowCanvasTop)
     userConfigured := (isCanvasCalibrated && userCanvasRight > userCanvasLeft && userCanvasBottom > userCanvasTop)
+
+    VizLog("DrawMacroBoxes - effectiveMode: " . effectiveMode . ", boxes: " . boxes.Length)
+    VizLog("  Wide: " . (wideConfigured ? "YES" : "NO") . ", Narrow: " . (narrowConfigured ? "YES" : "NO") . ", User: " . (userConfigured ? "YES" : "NO"))
+
+    ; SAFETY: If NO canvas is configured at all, we'll rely on fallback box derivation
+    if (!wideConfigured && !narrowConfigured && !userConfigured && !hasRecordedCanvas) {
+        VizLog("⚠️ WARNING: No canvas configured at all - will use fallback box derivation")
+    }
 
     offsetX := 0
     offsetY := 0
@@ -1054,11 +1361,13 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     }
 
     if (!canvasChosen) {
+        VizLog("⚠️ No canvas configured for mode: " . effectiveMode . " - Using fallback box derivation")
         useFallbackBoxes := true
     }
 
     if (useFallbackBoxes) {
         ; No manual calibration - derive canvas from recorded boxes (FALLBACK)
+        VizLog("Using fallback: deriving canvas from box coordinates")
         minX := 999999
         minY := 999999
         maxX := -999999
@@ -1286,47 +1595,164 @@ DetectCanvasType() {
 
 
 
-; Simple logger that appends to a single line buffer to avoid file locking
-global vizLogBuffer := ""
-global vizLogPath := ""
+; VizLog infrastructure for debugging visualization issues
+global vizLogBuffer := []
+global vizLogPath := A_ScriptDir "\vizlog_debug.txt"
+
 VizLog(msg) {
-    ; Simplified - just buffer, don't write to file unless debugging
     global vizLogBuffer
-    try {
-        vizLogBuffer .= msg . "`n"
-    } catch {
-        ; Silent fail
-    }
-}
-
-EnsureVizLogPath() {
-    global vizLogPath
-
-    if (vizLogPath != "")
-        return vizLogPath
-
-    tempDir := A_Temp . "\MacroMasterViz"
-
-    try {
-        if !DirExist(tempDir) {
-            DirCreate(tempDir)
-        }
-        vizLogPath := tempDir . "\viz_debug.log"
-    } catch {
-        vizLogPath := ""
-    }
-
-    if (vizLogPath = "") {
-        vizLogPath := A_ScriptDir . "\viz_debug.log"
-    }
-
-    return vizLogPath
+    vizLogBuffer.Push(A_Now . " - " . msg)
 }
 
 FlushVizLog() {
-    global vizLogBuffer
-    ; SIMPLIFIED: Just clear buffer without file I/O
-    vizLogBuffer := ""
+    global vizLogBuffer, vizLogPath
+    if (vizLogBuffer.Length > 0) {
+        content := ""
+        for index, line in vizLogBuffer {
+            content .= line . "`n"
+        }
+        try {
+            FileAppend(content, vizLogPath)
+        } catch as e {
+            ; Silently fail if we can't write log
+        }
+        vizLogBuffer := []
+    }
+}
+
+CreateJsonAnnotationVisual(buttonWidth, buttonHeight, labelText, colorHex, isNarrowMode) {
+    ; Creates an HBITMAP with colored background and letterboxing for Narrow mode
+    global gdiPlusInitialized
+
+    if (!gdiPlusInitialized) {
+        return 0
+    }
+
+    bitmap := 0
+    graphics := 0
+    hbitmap := 0
+
+    try {
+        ; Create bitmap
+        DllCall("gdiplus\GdipCreateBitmapFromScan0", "Int", buttonWidth, "Int", buttonHeight, "Int", 0, "Int", 0x26200A, "Ptr", 0, "Ptr*", &bitmap)
+        DllCall("gdiplus\GdipGetImageGraphicsContext", "Ptr", bitmap, "Ptr*", &graphics)
+
+        ; Set high quality rendering
+        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)
+        DllCall("gdiplus\GdipSetTextRenderingHint", "Ptr", graphics, "Int", 4)
+
+        ; Convert color hex string to integer with full alpha
+        ; degradationColors values are like "0xFF8C00" (RGB only)
+        ; We need to ensure it has full alpha: 0xFFFF8C00 (ARGB)
+        colorInt := Integer(colorHex)
+        ; If the value is less than 0x01000000, it's missing the alpha channel
+        if (colorInt < 0x01000000) {
+            colorInt := colorInt | 0xFF000000  ; Add full alpha
+        }
+
+        ; Always fill with degradation color first
+        colorBrush := 0
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", colorInt, "Ptr*", &colorBrush)
+        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", colorBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", colorBrush)
+
+        if (isNarrowMode) {
+            ; Narrow mode: Add black letterboxing bars to show 4:3 content area
+            narrowAspect := 4.0 / 3.0
+            buttonAspect := buttonWidth / buttonHeight
+
+            if (buttonAspect > narrowAspect) {
+                ; Button is wider - add letterbox bars on left/right sides
+                contentHeight := buttonHeight
+                contentWidth := contentHeight * narrowAspect
+                offsetX := (buttonWidth - contentWidth) / 2
+                offsetY := 0
+
+                ; Draw black bars on sides
+                blackBrush := 0
+                DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
+                ; Left bar
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", offsetX, "Float", buttonHeight)
+                ; Right bar
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", offsetX + contentWidth, "Float", 0, "Float", offsetX, "Float", buttonHeight)
+                DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
+
+                ; Text in content area
+                textX := offsetX
+                textY := 0
+                textWidth := contentWidth
+                textHeight := buttonHeight
+            } else {
+                ; Button is taller - add letterbox bars on top/bottom
+                contentWidth := buttonWidth
+                contentHeight := contentWidth / narrowAspect
+                offsetX := 0
+                offsetY := (buttonHeight - contentHeight) / 2
+
+                ; Draw black bars on top/bottom
+                blackBrush := 0
+                DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &blackBrush)
+                ; Top bar
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", offsetY)
+                ; Bottom bar
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", blackBrush, "Float", 0, "Float", offsetY + contentHeight, "Float", buttonWidth, "Float", offsetY)
+                DllCall("gdiplus\GdipDeleteBrush", "Ptr", blackBrush)
+
+                ; Text in content area
+                textX := 0
+                textY := offsetY
+                textWidth := buttonWidth
+                textHeight := contentHeight
+            }
+        } else {
+            ; Wide mode: No letterboxing, use full button
+            textX := 0
+            textY := 0
+            textWidth := buttonWidth
+            textHeight := buttonHeight
+        }
+
+        ; Draw text label
+        fontFamily := 0
+        font := 0
+        stringFormat := 0
+        textBrush := 0
+
+        DllCall("gdiplus\GdipCreateFontFamilyFromName", "WStr", "Arial", "Ptr", 0, "Ptr*", &fontFamily)
+        DllCall("gdiplus\GdipCreateFont", "Ptr", fontFamily, "Float", 11, "Int", 1, "Int", 2, "Ptr*", &font)
+        DllCall("gdiplus\GdipCreateStringFormat", "Int", 0, "Int", 0, "Ptr*", &stringFormat)
+        DllCall("gdiplus\GdipSetStringFormatAlign", "Ptr", stringFormat, "Int", 1)  ; Center
+        DllCall("gdiplus\GdipSetStringFormatLineAlign", "Ptr", stringFormat, "Int", 1)  ; Middle
+
+        ; Use black text
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF000000, "Ptr*", &textBrush)
+
+        rectF := Buffer(16, 0)
+        NumPut("Float", textX, rectF, 0)
+        NumPut("Float", textY, rectF, 4)
+        NumPut("Float", textWidth, rectF, 8)
+        NumPut("Float", textHeight, rectF, 12)
+
+        DllCall("gdiplus\GdipDrawString", "Ptr", graphics, "WStr", labelText, "Int", -1, "Ptr", font, "Ptr", rectF, "Ptr", stringFormat, "Ptr", textBrush)
+
+        ; Cleanup text resources
+        DllCall("gdiplus\GdipDeleteBrush", "Ptr", textBrush)
+        DllCall("gdiplus\GdipDeleteStringFormat", "Ptr", stringFormat)
+        DllCall("gdiplus\GdipDeleteFont", "Ptr", font)
+        DllCall("gdiplus\GdipDeleteFontFamily", "Ptr", fontFamily)
+
+        ; Convert to HBITMAP
+        DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "Ptr", bitmap, "Ptr*", &hbitmap, "UInt", 0xFF000000)
+
+        return hbitmap
+    } catch {
+        return 0
+    } finally {
+        if (graphics)
+            DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
+        if (bitmap)
+            DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
+    }
 }
 
 CreateHBITMAPVisualization(macroEvents, buttonDims) {
@@ -2519,7 +2945,7 @@ ShowStatsMenu() {
     statsGui.Show("w700 h" . (y + 40))
     statsGuiOpen := true
     UpdateStatsDisplay()
-    SetTimer(UpdateStatsDisplay, 1000)
+    SetTimer(UpdateStatsDisplay, 2000)
 }
 
 AddHorizontalStatRowLive(gui, y, label, allKey, todayKey) {
@@ -2554,7 +2980,7 @@ AddStatsHeader(gui, y, text, x, width) {
 }
 
 UpdateStatsDisplay() {
-    global statsGuiOpen, statsControls
+    global statsGuiOpen, statsControls, macroExecutionLog, sessionId
     if (!statsGuiOpen) {
         SetTimer(UpdateStatsDisplay, 0)
         return
@@ -2562,19 +2988,57 @@ UpdateStatsDisplay() {
     try {
         allStats := ReadStatsFromMemory(false)
         todayStats := GetTodayStatsFromMemory()
-        currentSessionStats := ReadStatsFromMemory(true)
-        recordedSessionActive := (currentSessionStats.Has("session_active_time") ? currentSessionStats["session_active_time"] : 0)
+
+        ; Get current live active time
         currentActiveTime := GetCurrentSessionActiveTime()
+
+        ; Determine the time accumulated since last execution was saved
+        ; This avoids double-counting when sessions span multiple days
+        lastExecutionTime := 0
+        if (macroExecutionLog.Length > 0) {
+            lastExecution := macroExecutionLog[macroExecutionLog.Length]
+            if (lastExecution.Has("session_active_time_ms")) {
+                lastExecutionTime := lastExecution["session_active_time_ms"]
+            }
+        }
+
+        ; Calculate live time delta (time since last saved execution)
+        liveTimeDelta := (currentActiveTime > lastExecutionTime) ? (currentActiveTime - lastExecutionTime) : 0
+
+        ; For ALL-TIME: Add live delta to recorded total
         effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
-        effectiveAllActiveTime += currentActiveTime - recordedSessionActive
+        effectiveAllActiveTime += liveTimeDelta
+
         if (effectiveAllActiveTime > 5000) {
             activeTimeHours := effectiveAllActiveTime / 3600000
             allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
             allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
         }
         allStats["session_active_time"] := effectiveAllActiveTime
+
+        ; For TODAY: Only add live delta if last execution was from today
         effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
-        effectiveTodayActiveTime += currentActiveTime - recordedSessionActive
+
+        ; Check if last execution was today
+        today := FormatTime(A_Now, "yyyy-MM-dd")
+        lastExecutionWasToday := false
+
+        if (macroExecutionLog.Length > 0) {
+            lastExecution := macroExecutionLog[macroExecutionLog.Length]
+            if (lastExecution.Has("timestamp")) {
+                lastTimestamp := lastExecution["timestamp"]
+                lastExecutionWasToday := (SubStr(lastTimestamp, 1, 10) = today)
+            }
+        }
+
+        ; Add live time to today only if last execution was today OR no executions yet
+        if (lastExecutionWasToday) {
+            effectiveTodayActiveTime += liveTimeDelta
+        } else if (macroExecutionLog.Length = 0) {
+            ; No executions yet - all current time belongs to today
+            effectiveTodayActiveTime += currentActiveTime
+        }
+
         if (effectiveTodayActiveTime > 5000) {
             activeTimeHours := effectiveTodayActiveTime / 3600000
             todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
@@ -2733,8 +3197,8 @@ Main() {
         RefreshAllButtonAppearances()
 
         ; Setup time tracking and auto-save
-        SetTimer(UpdateActiveTime, 5000)
-        SetTimer(AutoSave, 60000)
+        SetTimer(UpdateActiveTime, 5000)  ; Update active time every 5 seconds
+        SetTimer(AutoSave, 60000)  ; Auto-save every 60 seconds
 
         ; Setup cleanup
         OnExit((*) => CleanupAndExit())
@@ -2779,6 +3243,8 @@ InitializeDirectories() {
 
 ; ===== HOTKEY SETUP - FIXED F9 SYSTEM =====
 SetupHotkeys() {
+    global hotkeySubmit, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+
     try {
         ; CRITICAL: Clear any existing hotkeys to prevent conflicts
         try {
@@ -2830,8 +3296,12 @@ SetupHotkeys() {
         Hotkey("CapsLock & x", (*) => ExecuteWASDMacro("NumDot"))
         Hotkey("CapsLock & c", (*) => ExecuteWASDMacro("NumMult"))
 
-        ; Utility
-        Hotkey("NumpadEnter", (*) => SubmitCurrentImage())
+        ; Utility - Standard
+        Hotkey(hotkeySubmit, (*) => SubmitCurrentImage())
+
+        ; Utility - Labeler Workflow Helpers
+        Hotkey(hotkeyUtilitySubmit, (*) => UtilitySubmit())       ; LShift + CapsLock = Shift+Enter
+        Hotkey(hotkeyUtilityBackspace, (*) => UtilityBackspace())   ; LCtrl + CapsLock = Backspace
 
         UpdateStatus("✅ Hotkeys configured - CapsLock+F for recording, CapsLock+SPACE for emergency stop")
     } catch Error as e {
@@ -2912,8 +3382,8 @@ ForceStartRecording() {
         mainGui.btnRecord.Text := "🔴 Stop (CapsLock+F)"
         mainGui.btnRecord.Opt("+Background0xDC143C")
     }
-    
-    UpdateStatus("🎥 RECORDING ACTIVE on Layer " . currentLayer . " - Draw boxes, CapsLock+F to stop")
+
+    UpdateStatus("🎥 RECORDING - Draw boxes, CapsLock+F to stop")
 }
 
 ForceStopRecording() {
@@ -2968,11 +3438,9 @@ ResetRecordingUI() {
 SafeExecuteMacroByKey(buttonName) {
     ; CRITICAL: Absolutely prevent hotkey keys from reaching macro execution
     if (buttonName = "CapsLock" || buttonName = "f" || buttonName = "Space") {
-        UpdateStatus("🚫 Hotkey keys BLOCKED from macro execution - Use for system functions only")
         return
     }
 
-    UpdateStatus("🎹 Numpad: " . buttonName)
     ExecuteMacro(buttonName)
 }
 
@@ -2981,7 +3449,6 @@ ExecuteMacro(buttonName) {
 
     ; Double-check hotkey protection
     if (buttonName = "CapsLock" || buttonName = "f" || buttonName = "Space") {
-        UpdateStatus("🚫 Hotkey EXECUTION BLOCKED")
         return
     }
 
@@ -3009,10 +3476,8 @@ ExecuteMacro(buttonName) {
     startTime := A_TickCount
 
     if (events.Length = 1 && events[1].type = "jsonAnnotation") {
-        UpdateStatus("⚡ JSON " . events[1].mode . " L" . currentLayer)
         ExecuteJsonAnnotation(events[1])
     } else {
-        UpdateStatus("▶️ Playing macro...")
         PlayEventsOptimized(events)
     }
 
@@ -3122,18 +3587,32 @@ MouseProc(nCode, wParam, lParam) {
         if (isDrawingBox) {
             local dragDistX := Abs(x - boxStartX)
             local dragDistY := Abs(y - boxStartY)
-            
+
             if (dragDistX > boxDragMinDistance && dragDistY > boxDragMinDistance) {
+                ; Count existing bounding boxes to determine if this is the first
+                local boxCount := 0
+                for evt in events {
+                    if (evt.type = "boundingBox")
+                        boxCount++
+                }
+
+                ; Calculate time since previous event
+                local timeSincePrevious := 0
+                if (events.Length > 0) {
+                    timeSincePrevious := timestamp - events[events.Length].time
+                }
+
                 local boundingBoxEvent := {
-                    type: "boundingBox", 
+                    type: "boundingBox",
                     left: Min(boxStartX, x),
                     top: Min(boxStartY, y),
                     right: Max(boxStartX, x),
                     bottom: Max(boxStartY, y),
-                    time: timestamp
+                    time: timestamp,
+                    isFirstBox: (boxCount = 0),
+                    timeSincePrevious: timeSincePrevious
                 }
                 events.Push(boundingBoxEvent)
-                UpdateStatus("📦 Box created → Press 1-9 to tag")
             } else {
                 events.Push({type: "click", button: "left", x: x, y: y, time: timestamp})
             }
@@ -3290,6 +3769,7 @@ AssignToButton(buttonName) {
 ; ===== MACRO PLAYBACK =====
 PlayEventsOptimized(recordedEvents) {
     global playback, boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay
+    global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay
 
     SetMouseDelay(0)
     SetKeyDelay(5)
@@ -3300,26 +3780,42 @@ PlayEventsOptimized(recordedEvents) {
             break
 
         if (event.type = "boundingBox") {
+            ; === INTELLIGENT TIMING: Box Drawing Sequence ===
+
+            ; Step 1: Move to start position with smart timing
             MouseMove(event.left, event.top, 2)
-            Sleep(boxDrawDelay)
+            Sleep(smartBoxClickDelay)  ; Minimal delay for cursor positioning
 
+            ; Step 2: Press mouse button
             Send("{LButton Down}")
-            Sleep(mouseClickDelay)
+            Sleep(mouseClickDelay)  ; Brief pause during click
 
-            MouseMove(event.right, event.bottom, 5)
-            Sleep(mouseReleaseDelay)
+            ; Step 3: Drag to end position (speed 8 for accuracy)
+            MouseMove(event.right, event.bottom, 8)
+            Sleep(mouseReleaseDelay)  ; Brief pause before release
 
+            ; Step 4: Release mouse button
             Send("{LButton Up}")
-            Sleep(betweenBoxDelay)
+
+            ; Step 5: Intelligent delay - optimized single wait period
+            ; Wait time accounts for both UI response and preparation for next action
+            if (event.HasOwnProp("isFirstBox") && event.isFirstBox) {
+                ; First box: Extra time for initial UI stabilization
+                Sleep(firstBoxDelay)
+            } else {
+                ; Subsequent boxes: Standard delay includes menu wait time
+                Sleep(betweenBoxDelay)
+            }
         }
         else if (event.type = "mouseDown") {
             MouseMove(event.x, event.y, 2)
-            Sleep(10)
+            Sleep(smartBoxClickDelay)
             Send("{LButton Down}")
+            Sleep(mouseClickDelay)
         }
         else if (event.type = "mouseUp") {
             MouseMove(event.x, event.y, 2)
-            Sleep(10)
+            Sleep(mouseReleaseDelay)
             Send("{LButton Up}")
         }
         else if (event.type = "keyDown") {
@@ -3338,7 +3834,6 @@ PlayEventsOptimized(recordedEvents) {
 ExecuteJsonAnnotation(jsonEvent) {
     global annotationMode
 
-    UpdateStatus("⚡ Executing JSON annotation (" . jsonEvent.mode . " mode)")
     FocusBrowser()
 
     ; Use the stored annotation from the JSON event
@@ -3347,8 +3842,6 @@ ExecuteJsonAnnotation(jsonEvent) {
     Send("^v")
     Sleep(30)
     Send("+{Enter}")
-
-    UpdateStatus("✅ JSON annotation executed in " . jsonEvent.mode . " mode")
 }
 
 FocusBrowser() {
@@ -3554,21 +4047,41 @@ CreateStatusBar() {
 }
 
 HandleButtonClick(buttonName, *) {
-    UpdateStatus("🖱️ Button: " . buttonName)
     ExecuteMacro(buttonName)
 }
 
 HandleContextMenu(buttonName, *) {
-    UpdateStatus("🖱️ Right-click: " . buttonName)
     ShowContextMenu(buttonName)
 }
 
 ; ===== BUTTON APPEARANCE =====
 RefreshAllButtonAppearances() {
     global buttonNames
+    VizLog("=== RefreshAllButtonAppearances START ===")
+    errorCount := 0
+    successCount := 0
+
     for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
+        try {
+            UpdateButtonAppearance(buttonName)
+            successCount++
+        } catch Error as e {
+            errorCount++
+            VizLog("ERROR refreshing " . buttonName . ": " . e.Message . " (Line: " . e.Line . ")")
+            ; Try to make the button show something instead of crashing
+            try {
+                global buttonGrid
+                if (buttonGrid.Has(buttonName)) {
+                    btn := buttonGrid[buttonName]
+                    btn.Visible := true
+                    btn.Text := "ERROR"
+                }
+            }
+        }
     }
+
+    VizLog("RefreshAllButtonAppearances complete: " . successCount . " success, " . errorCount . " errors")
+    FlushVizLog()
 }
 
 UpdateButtonAppearance(buttonName) {
@@ -3597,7 +4110,8 @@ UpdateButtonAppearance(buttonName) {
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
-        jsonInfo := jsonEvent.mode . "`n" . typeName . " " . StrUpper(jsonEvent.severity)
+        ; Remove mode from text - will be shown visually via letterboxing
+        jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
 
         if (degradationColors.Has(jsonEvent.categoryId)) {
             jsonColor := degradationColors[jsonEvent.categoryId]
@@ -3624,15 +4138,50 @@ UpdateButtonAppearance(buttonName) {
                 buttonDisplayedHBITMAPs[buttonName] := 0
             }
         } else if (isJsonAnnotation) {
-            ; JSON annotation display
-            picture.Visible := false
-            button.Visible := true
-            button.Opt("+Background" . jsonColor)
-            button.SetFont("s7 bold", "cBlack")
-            button.Text := jsonInfo
-            if (oldHbitmap) {
-                RemoveHBITMAPReference(oldHbitmap)
-                buttonDisplayedHBITMAPs[buttonName] := 0
+            ; JSON annotation display with visual letterboxing for Narrow mode
+            jsonEvent := macroEvents[layerMacroName][1]
+            isNarrowMode := (jsonEvent.mode = "Narrow")
+
+            ; Get button dimensions
+            buttonGrid[buttonName].GetPos(, , &btnW, &btnH)
+
+            ; Create visual representation with letterboxing
+            hbitmap := CreateJsonAnnotationVisual(btnW, btnH, jsonInfo, jsonColor, isNarrowMode)
+
+            if (hbitmap && hbitmap != 0) {
+                button.Visible := false
+                picture.Visible := true
+                picture.Text := ""
+                try {
+                    picture.Value := HBITMAPToPictureValue(hbitmap)
+                    AddHBITMAPReference(hbitmap)
+                    buttonDisplayedHBITMAPs[buttonName] := hbitmap
+                    picture.Redraw()
+
+                    if (oldHbitmap) {
+                        RemoveHBITMAPReference(oldHbitmap)
+                    }
+                } catch {
+                    ; Fallback to button text if visual creation fails
+                    RemoveHBITMAPReference(hbitmap)
+                    picture.Visible := false
+                    button.Visible := true
+                    button.Opt("+Background" . jsonColor)
+                    button.SetFont("s7 bold", "cBlack")
+                    button.Text := jsonInfo
+                    buttonDisplayedHBITMAPs[buttonName] := 0
+                }
+            } else {
+                ; Fallback to button text
+                picture.Visible := false
+                button.Visible := true
+                button.Opt("+Background" . jsonColor)
+                button.SetFont("s7 bold", "cBlack")
+                button.Text := jsonInfo
+                if (oldHbitmap) {
+                    RemoveHBITMAPReference(oldHbitmap)
+                    buttonDisplayedHBITMAPs[buttonName] := 0
+                }
             }
         } else if (hasMacro) {
             ; DIRECT HBITMAP VISUALIZATION - Pure in-memory, zero file I/O
@@ -3683,13 +4232,36 @@ UpdateButtonAppearance(buttonName) {
                 } else {
                     RemoveHBITMAPReference(hbitmap)
                     if (oldHbitmapValid) {
-                        VizLog(">>> UpdateButtonAppearance: HBITMAP assignment failed - restoring previous visualization")
-                        picture.Visible := true
-                        button.Visible := false
-                        picture.Text := ""
-                        picture.Value := HBITMAPToPictureValue(oldHbitmap)
-                        picture.Redraw()
-                        buttonDisplayedHBITMAPs[buttonName] := oldHbitmap
+                        VizLog(">>> UpdateButtonAppearance: HBITMAP assignment failed - trying to restore previous")
+                        ; Double-check old HBITMAP is still valid before trying to restore
+                        if (IsHBITMAPValid(oldHbitmap)) {
+                            try {
+                                picture.Visible := true
+                                button.Visible := false
+                                picture.Text := ""
+                                picture.Value := HBITMAPToPictureValue(oldHbitmap)
+                                picture.Redraw()
+                                buttonDisplayedHBITMAPs[buttonName] := oldHbitmap
+                                VizLog(">>> UpdateButtonAppearance: Successfully restored old HBITMAP")
+                            } catch Error as restoreError {
+                                VizLog(">>> UpdateButtonAppearance: EXCEPTION restoring old HBITMAP - " . restoreError.Message)
+                                ; Old HBITMAP also failed, show text fallback
+                                picture.Visible := false
+                                button.Visible := true
+                                button.Opt("+Background0x3A3A3A")
+                                button.SetFont("s7 bold", "cWhite")
+                                button.Text := "MACRO`n" . events.Length . " events`n(viz error)"
+                                buttonDisplayedHBITMAPs[buttonName] := 0
+                            }
+                        } else {
+                            VizLog(">>> UpdateButtonAppearance: Old HBITMAP no longer valid")
+                            picture.Visible := false
+                            button.Visible := true
+                            button.Opt("+Background0x3A3A3A")
+                            button.SetFont("s7 bold", "cWhite")
+                            button.Text := "MACRO`n" . events.Length . " events`n(viz error)"
+                            buttonDisplayedHBITMAPs[buttonName] := 0
+                        }
                     } else {
                         picture.Visible := false
                         button.Visible := true
@@ -3704,6 +4276,33 @@ UpdateButtonAppearance(buttonName) {
             } else {
                 ; HBITMAP creation failed - simple text fallback
                 VizLog(">>> UpdateButtonAppearance: HBITMAP FAILED - using text fallback")
+
+                ; Determine why it failed
+                global gdiPlusInitialized, wideCanvasRight, wideCanvasLeft, narrowCanvasRight, narrowCanvasLeft
+                failureReason := ""
+                hasBoxes := false
+
+                ; Check if macro has any box events
+                for event in events {
+                    if (event.type = "boundingBox") {
+                        hasBoxes := true
+                        break
+                    }
+                }
+
+                if (!hasBoxes) {
+                    failureReason := ""  ; No error - just no boxes to visualize
+                    VizLog("  Reason: No bounding boxes in macro (clicks/keys only)")
+                } else if (!gdiPlusInitialized) {
+                    failureReason := "`n(GDI+ fail)"
+                    VizLog("  Reason: GDI+ not initialized")
+                } else if (wideCanvasRight <= wideCanvasLeft && narrowCanvasRight <= narrowCanvasLeft) {
+                    failureReason := "`n(No canvas)"
+                    VizLog("  Reason: No canvas configured")
+                } else {
+                    failureReason := "`n(Viz error)"
+                    VizLog("  Reason: Unknown visualization error")
+                }
                 FlushVizLog()
 
                 if (oldHbitmapValid) {
@@ -3719,7 +4318,7 @@ UpdateButtonAppearance(buttonName) {
                     button.Visible := true
                     button.Opt("+Background0x3A3A3A")
                     button.SetFont("s7 bold", "cWhite")
-                    button.Text := "MACRO`n" . events.Length . " events"
+                    button.Text := "MACRO`n" . events.Length . " events" . failureReason
                     buttonDisplayedHBITMAPs[buttonName] := 0
                 }
             }
@@ -3742,14 +4341,21 @@ UpdateButtonAppearance(buttonName) {
             picture.Redraw()
 
     } catch Error as e {
-        ; Simple error handling
+        ; Simple error handling with safety checks
         VizLog(">>> UpdateButtonAppearance: EXCEPTION - " . e.Message)
         FlushVizLog()
-        button.Visible := true
-        picture.Visible := false
-        button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
-        button.SetFont("s8", "cGray")
-        button.Text := "ERROR"
+
+        try {
+            button.Visible := true
+            picture.Visible := false
+            button.Opt("+Background" . (darkMode ? "0x2A2A2A" : "0xF8F8F8"))
+            button.SetFont("s8", "cGray")
+            button.Text := "ERROR"
+        } catch Error as innerError {
+            VizLog(">>> UpdateButtonAppearance: CRITICAL - Error handler itself failed: " . innerError.Message)
+            FlushVizLog()
+            ; At this point, just give up gracefully - don't crash
+        }
     }
 }
 
@@ -4115,23 +4721,33 @@ ShowSettings() {
     hoverDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("mouseHoverDelay", hoverDelayEdit))
     settingsGui.hoverDelayEdit := hoverDelayEdit
 
-    ; Preset buttons section (clear spacing from timing controls)
-    settingsGui.Add("Text", "x30 y345 w480 h18", "🎚️ Timing Presets")
+    settingsGui.Add("Text", "x30 y335 w170 h20", "First Box Delay (ms):")
+    firstBoxDelayEdit := settingsGui.Add("Edit", "x200 y333 w70 h22", firstBoxDelay)
+    firstBoxDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("firstBoxDelay", firstBoxDelayEdit))
+    settingsGui.firstBoxDelayEdit := firstBoxDelayEdit
 
-    btnFast := settingsGui.Add("Button", "x30 y368 w100 h25", "⚡ Fast")
+    settingsGui.Add("Text", "x280 y335 w170 h20", "Menu Wait Delay (ms):")
+    menuWaitDelayEdit := settingsGui.Add("Edit", "x450 y333 w70 h22", menuWaitDelay)
+    menuWaitDelayEdit.OnEvent("Change", (*) => UpdateTimingFromEdit("menuWaitDelay", menuWaitDelayEdit))
+    settingsGui.menuWaitDelayEdit := menuWaitDelayEdit
+
+    ; Preset buttons section (clear spacing from timing controls)
+    settingsGui.Add("Text", "x30 y375 w480 h18", "🎚️ Timing Presets")
+
+    btnFast := settingsGui.Add("Button", "x30 y398 w100 h25", "⚡ Fast")
     btnFast.OnEvent("Click", (*) => ApplyTimingPreset("fast", settingsGui))
 
-    btnDefault := settingsGui.Add("Button", "x150 y368 w100 h25", "🎯 Default")
+    btnDefault := settingsGui.Add("Button", "x150 y398 w100 h25", "🎯 Default")
     btnDefault.OnEvent("Click", (*) => ApplyTimingPreset("default", settingsGui))
 
-    btnSafe := settingsGui.Add("Button", "x270 y368 w100 h25", "🛡️ Safe")
+    btnSafe := settingsGui.Add("Button", "x270 y398 w100 h25", "🛡️ Safe")
     btnSafe.OnEvent("Click", (*) => ApplyTimingPreset("safe", settingsGui))
 
-    btnSlow := settingsGui.Add("Button", "x390 y368 w100 h25", "🐌 Slow")
+    btnSlow := settingsGui.Add("Button", "x390 y398 w100 h25", "🐌 Slow")
     btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
 
     ; Instructions
-    settingsGui.Add("Text", "x30 y405 w480 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
+    settingsGui.Add("Text", "x30 y435 w480 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
 
     ; TAB 3: Hotkeys
     tabs.UseTab(3)
@@ -4161,6 +4777,13 @@ ShowSettings() {
     editDirectClear := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeyDirectClear)
     hotkeyY += 25
 
+    ; Utility Submit (Shift+CapsLock → Shift+Enter)
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Utility Submit:")
+    editUtilitySubmit := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyUtilitySubmit)
+    settingsGui.Add("Text", "x275 y" . hotkeyY . " w90 h20", "Utility Backspace:")
+    editUtilityBackspace := settingsGui.Add("Edit", "x375 y" . (hotkeyY-2) . " w80 h20", hotkeyUtilityBackspace)
+    hotkeyY += 25
+
     ; Stats key (on separate row)
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w130 h20", "Stats:")
     editStats := settingsGui.Add("Edit", "x165 y" . (hotkeyY-2) . " w90 h20", hotkeyStats)
@@ -4175,7 +4798,7 @@ ShowSettings() {
 
     ; Apply/Reset buttons for hotkeys
     btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w100 h25", "🎮 Apply Keys")
-    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editStats, editBreakMode, editSettings, settingsGui))
+    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui))
 
     btnResetHotkeys := settingsGui.Add("Button", "x150 y" . hotkeyY . " w100 h25", "🔄 Reset Keys")
     btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
@@ -4184,9 +4807,9 @@ ShowSettings() {
     instructY := hotkeyY + 40
     settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x0066CC", "📋 Quick Instructions:")
     instructY += 20
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h50", "• 🏷️ WASD labels show key mappings for buttons`n• ⚙️ Configure utility hotkeys above for your workflow`n• 💾 Apply to test changes, save to make permanent`n• ⌨️ All hotkeys work alongside standard numpad keys")
-    instructY += 60
-    settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Focus on utility functions - WASD mapping handled automatically.")
+    settingsGui.Add("Text", "x30 y" . instructY . " w480 h70", "• ⚙️ Configure all utility hotkeys above for your workflow`n• 🎯 Utility Submit/Backspace help with labeler workflow`n• 💾 Click Apply, then restart app for hotkeys to take effect`n• ⌨️ All hotkeys work alongside standard numpad keys`n• 🏷️ WASD labels are handled automatically")
+    instructY += 75
+    settingsGui.Add("Text", "x30 y" . instructY . " w480 h15 c0x666666", "ℹ️ Utility hotkeys send Shift+Enter and Backspace to browser.")
 
     ; Show settings window
 settingsGui.Show("w580 h580")
@@ -4246,19 +4869,24 @@ UpdateModeToggleButton() {
 ToggleAnnotationMode() {
     global annotationMode, modeToggleBtn
 
+    VizLog("=== ToggleAnnotationMode START ===")
+
     ; CRITICAL FIX: Read current state from button text to ensure sync
     currentState := InStr(modeToggleBtn.Text, "Wide") ? "Wide" : "Narrow"
+    VizLog("Current state: " . currentState)
 
     if (currentState = "Wide") {
         annotationMode := "Narrow"
         modeToggleBtn.Text := "📱 Narrow"
         modeToggleBtn.Opt("+Background0xFF8C00")
         UpdateStatus("📱 Narrow mode selected")
+        VizLog("Switched to NARROW mode")
     } else {
         annotationMode := "Wide"
         modeToggleBtn.Text := "🔦 Wide"
         modeToggleBtn.Opt("+Background0x4169E1")
         UpdateStatus("🔦 Wide mode selected")
+        VizLog("Switched to WIDE mode")
     }
 
     modeToggleBtn.SetFont(, "cWhite")
@@ -4267,12 +4895,15 @@ ToggleAnnotationMode() {
     ; Update existing JSON macros when mode changes
     UpdateExistingJSONMacros(annotationMode)
 
-    ; CRITICAL: Refresh ALL button visualizations to use the new mode immediately
-    ; This ensures bounding boxes are drawn with the correct canvas (Wide/Narrow)
-    RefreshAllButtonAppearances()
+    ; NOTE: We do NOT refresh visualizations here!
+    ; Visualizations remember which mode they were recorded in via recordedMode property.
+    ; Only NEW recordings will use the new mode. Existing visualizations stay as-is.
+    VizLog("Mode changed - affects NEW recordings only, existing visualizations unchanged")
 
     ; Save the mode change
     SaveConfig()
+    VizLog("=== ToggleAnnotationMode END ===")
+    FlushVizLog()
 }
 
 ; ===== UPDATE EXISTING JSON MACROS =====
@@ -4675,14 +5306,15 @@ LoadMacroState() {
 ; ===== TIMING CONFIGURATION FUNCTIONS =====
 UpdateTimingFromEdit(variableName, editControl) {
     global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
-    
+    global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
+
     try {
         value := Integer(editControl.Text)
         if (value < 0 || value > 5000) {
             UpdateStatus("⚠️ Timing value must be between 0-5000ms")
             return
         }
-        
+
         switch variableName {
             case "boxDrawDelay":
                 boxDrawDelay := value
@@ -4698,12 +5330,22 @@ UpdateTimingFromEdit(variableName, editControl) {
                 keyPressDelay := value
             case "focusDelay":
                 focusDelay := value
+            case "smartBoxClickDelay":
+                smartBoxClickDelay := value
+            case "smartMenuClickDelay":
+                smartMenuClickDelay := value
+            case "firstBoxDelay":
+                firstBoxDelay := value
+            case "menuWaitDelay":
+                menuWaitDelay := value
+            case "mouseHoverDelay":
+                mouseHoverDelay := value
         }
-        
+
         ; Save configuration
         SaveConfig()
         UpdateStatus("⚡ Updated " . variableName . " to " . value . "ms")
-        
+
     } catch {
         UpdateStatus("⚠️ Invalid timing value")
     }
@@ -4711,52 +5353,73 @@ UpdateTimingFromEdit(variableName, editControl) {
 
 ApplyTimingPreset(preset, settingsGui) {
     global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
-    
+    global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
+
     switch preset {
         case "fast":
-            boxDrawDelay := 35
-            mouseClickDelay := 45
+            boxDrawDelay := 45
+            mouseClickDelay := 55
             mouseDragDelay := 50
-            mouseReleaseDelay := 50
-            betweenBoxDelay := 100
+            mouseReleaseDelay := 55
+            betweenBoxDelay := 90  ; Optimized - single delay per box
             keyPressDelay := 10
-            focusDelay := 60
-            
+            focusDelay := 50
+            smartBoxClickDelay := 30
+            smartMenuClickDelay := 80
+            firstBoxDelay := 135  ; Slightly more for first box stability
+            menuWaitDelay := 30
+            mouseHoverDelay := 20
+
         case "default":
             boxDrawDelay := 50
-            mouseClickDelay := 60
-            mouseDragDelay := 65
-            mouseReleaseDelay := 65
-            betweenBoxDelay := 150
+            mouseClickDelay := 75
+            mouseDragDelay := 50
+            mouseReleaseDelay := 75
+            betweenBoxDelay := 120  ; Balanced speed + reliability
             keyPressDelay := 12
-            focusDelay := 80
-            
+            focusDelay := 60
+            smartBoxClickDelay := 45
+            smartMenuClickDelay := 100
+            firstBoxDelay := 180  ; Adequate for UI stabilization
+            menuWaitDelay := 50
+            mouseHoverDelay := 30
+
         case "safe":
-            boxDrawDelay := 75
-            mouseClickDelay := 90
-            mouseDragDelay := 95
+            boxDrawDelay := 70
+            mouseClickDelay := 95
+            mouseDragDelay := 75
             mouseReleaseDelay := 95
-            betweenBoxDelay := 200
-            keyPressDelay := 20
-            focusDelay := 120
-            
+            betweenBoxDelay := 180  ; Conservative but not excessive
+            keyPressDelay := 15
+            focusDelay := 80
+            smartBoxClickDelay := 60
+            smartMenuClickDelay := 130
+            firstBoxDelay := 270  ; Extra safety for first box
+            menuWaitDelay := 80
+            mouseHoverDelay := 40
+
         case "slow":
             boxDrawDelay := 100
-            mouseClickDelay := 120
-            mouseDragDelay := 125
-            mouseReleaseDelay := 125
-            betweenBoxDelay := 300
-            keyPressDelay := 30
-            focusDelay := 180
+            mouseClickDelay := 130
+            mouseDragDelay := 120
+            mouseReleaseDelay := 130
+            betweenBoxDelay := 270  ; Maximum reliability
+            keyPressDelay := 20
+            focusDelay := 120
+            smartBoxClickDelay := 80
+            smartMenuClickDelay := 180
+            firstBoxDelay := 420  ; Very conservative first box
+            menuWaitDelay := 150
+            mouseHoverDelay := 60
     }
-    
+
     ; Save configuration
     SaveConfig()
-    
+
     ; Close and reopen settings to refresh values
     settingsGui.Destroy()
     ShowSettings()
-    
+
     UpdateStatus("🎚️ Applied " . StrTitle(preset) . " timing preset")
 }
 
@@ -4872,6 +5535,37 @@ SaveConfig() {
         configContent .= "userCanvasRight=" . FormatCanvasCoord(userCanvasRight) . "`n"
         configContent .= "userCanvasBottom=" . FormatCanvasCoord(userCanvasBottom) . "`n"
         configContent .= "isCanvasCalibrated=" . (isCanvasCalibrated ? 1 : 0) . "`n`n"
+
+        ; Add timing configuration section
+        global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
+        global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
+        configContent .= "[Timing]`n"
+        configContent .= "boxDrawDelay=" . boxDrawDelay . "`n"
+        configContent .= "mouseClickDelay=" . mouseClickDelay . "`n"
+        configContent .= "mouseDragDelay=" . mouseDragDelay . "`n"
+        configContent .= "mouseReleaseDelay=" . mouseReleaseDelay . "`n"
+        configContent .= "betweenBoxDelay=" . betweenBoxDelay . "`n"
+        configContent .= "keyPressDelay=" . keyPressDelay . "`n"
+        configContent .= "focusDelay=" . focusDelay . "`n"
+        configContent .= "smartBoxClickDelay=" . smartBoxClickDelay . "`n"
+        configContent .= "smartMenuClickDelay=" . smartMenuClickDelay . "`n"
+        configContent .= "firstBoxDelay=" . firstBoxDelay . "`n"
+        configContent .= "menuWaitDelay=" . menuWaitDelay . "`n"
+        configContent .= "mouseHoverDelay=" . mouseHoverDelay . "`n`n"
+
+        ; Add hotkeys section
+        global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+        global hotkeyStats, hotkeyBreakMode, hotkeySettings, utilityHotkeysEnabled
+        configContent .= "[Hotkeys]`n"
+        configContent .= "hotkeyRecordToggle=" . hotkeyRecordToggle . "`n"
+        configContent .= "hotkeySubmit=" . hotkeySubmit . "`n"
+        configContent .= "hotkeyDirectClear=" . hotkeyDirectClear . "`n"
+        configContent .= "hotkeyUtilitySubmit=" . hotkeyUtilitySubmit . "`n"
+        configContent .= "hotkeyUtilityBackspace=" . hotkeyUtilityBackspace . "`n"
+        configContent .= "hotkeyStats=" . hotkeyStats . "`n"
+        configContent .= "hotkeyBreakMode=" . hotkeyBreakMode . "`n"
+        configContent .= "hotkeySettings=" . hotkeySettings . "`n"
+        configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n`n"
 
         ; Add macros section
         configContent .= "[Macros]`n"
@@ -5017,6 +5711,61 @@ LoadConfig() {
                         valueLower := StrLower(value)
                         isCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
+                } else if (currentSection = "Timing") {
+                    ; Load timing configuration
+                    global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
+                    global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
+
+                    if (key = "boxDrawDelay") {
+                        boxDrawDelay := Integer(value)
+                    } else if (key = "mouseClickDelay") {
+                        mouseClickDelay := Integer(value)
+                    } else if (key = "mouseDragDelay") {
+                        mouseDragDelay := Integer(value)
+                    } else if (key = "mouseReleaseDelay") {
+                        mouseReleaseDelay := Integer(value)
+                    } else if (key = "betweenBoxDelay") {
+                        betweenBoxDelay := Integer(value)
+                    } else if (key = "keyPressDelay") {
+                        keyPressDelay := Integer(value)
+                    } else if (key = "focusDelay") {
+                        focusDelay := Integer(value)
+                    } else if (key = "smartBoxClickDelay") {
+                        smartBoxClickDelay := Integer(value)
+                    } else if (key = "smartMenuClickDelay") {
+                        smartMenuClickDelay := Integer(value)
+                    } else if (key = "firstBoxDelay") {
+                        firstBoxDelay := Integer(value)
+                    } else if (key = "menuWaitDelay") {
+                        menuWaitDelay := Integer(value)
+                    } else if (key = "mouseHoverDelay") {
+                        mouseHoverDelay := Integer(value)
+                    }
+                } else if (currentSection = "Hotkeys") {
+                    ; Load hotkey configuration
+                    global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+                    global hotkeyStats, hotkeyBreakMode, hotkeySettings, utilityHotkeysEnabled
+
+                    if (key = "hotkeyRecordToggle") {
+                        hotkeyRecordToggle := value
+                    } else if (key = "hotkeySubmit") {
+                        hotkeySubmit := value
+                    } else if (key = "hotkeyDirectClear") {
+                        hotkeyDirectClear := value
+                    } else if (key = "hotkeyUtilitySubmit") {
+                        hotkeyUtilitySubmit := value
+                    } else if (key = "hotkeyUtilityBackspace") {
+                        hotkeyUtilityBackspace := value
+                    } else if (key = "hotkeyStats") {
+                        hotkeyStats := value
+                    } else if (key = "hotkeyBreakMode") {
+                        hotkeyBreakMode := value
+                    } else if (key = "hotkeySettings") {
+                        hotkeySettings := value
+                    } else if (key = "utilityHotkeysEnabled") {
+                        valueLower := StrLower(value)
+                        utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
+                    }
                 } else if (currentSection = "Labels") {
                     if (buttonCustomLabels.Has(key)) {
                         buttonCustomLabels[key] := value
@@ -5123,7 +5872,10 @@ LoadConfig() {
         
         ; Refresh all button appearances to ensure JSON annotations display correctly
         RefreshAllButtonAppearances()
-        
+
+        ; Validate canvas calibration and log status
+        ValidateCanvasCalibration()
+
         if (macrosLoaded > 0) {
             UpdateStatus("📚 Configuration loaded: " . macrosLoaded . " macros restored")
         } else {
@@ -5206,27 +5958,22 @@ LoadFromSlot(slotNumber) {
 
 ; ===== PLACEHOLDER EXPORT/IMPORT FUNCTIONS =====
 ExportConfiguration() {
-    UpdateStatus("📤 Export configuration feature - coming soon")
     MsgBox("Export configuration feature is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
 ImportConfiguration() {
-    UpdateStatus("📥 Import configuration feature - coming soon") 
     MsgBox("Import configuration feature is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
 CreateMacroPack() {
-    UpdateStatus("📦 Create macro pack feature - coming soon")
     MsgBox("Macro pack creation is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
 BrowseMacroPacks() {
-    UpdateStatus("📚 Browse macro packs feature - coming soon")
     MsgBox("Macro pack browsing is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
 ImportNewMacroPack() {
-    UpdateStatus("📥 Import macro pack feature - coming soon")
     MsgBox("Macro pack import is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
@@ -5519,6 +6266,57 @@ SubmitCurrentImage() {
     }
 }
 
+; ===== UTILITY HOTKEY HANDLERS =====
+UtilitySubmit() {
+    ; LShift + CapsLock sends Shift+Enter
+    global utilityHotkeysEnabled, focusDelay
+    if (!utilityHotkeysEnabled)
+        return
+
+    browserFocused := false
+
+    if (WinExist("ahk_exe chrome.exe")) {
+        WinActivate("ahk_exe chrome.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe firefox.exe")) {
+        WinActivate("ahk_exe firefox.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe msedge.exe")) {
+        WinActivate("ahk_exe msedge.exe")
+        browserFocused := true
+    }
+
+    if (browserFocused) {
+        Sleep(focusDelay)
+        Send("+{Enter}")
+    }
+}
+
+UtilityBackspace() {
+    ; LCtrl + CapsLock sends Backspace
+    global utilityHotkeysEnabled, focusDelay
+    if (!utilityHotkeysEnabled)
+        return
+
+    browserFocused := false
+
+    if (WinExist("ahk_exe chrome.exe")) {
+        WinActivate("ahk_exe chrome.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe firefox.exe")) {
+        WinActivate("ahk_exe firefox.exe")
+        browserFocused := true
+    } else if (WinExist("ahk_exe msedge.exe")) {
+        WinActivate("ahk_exe msedge.exe")
+        browserFocused := true
+    }
+
+    if (browserFocused) {
+        Sleep(focusDelay)
+        Send("{Backspace}")
+    }
+}
+
 ShowRecordingDebug() {
     global recording, currentMacro, macroEvents, currentLayer, buttonNames
     
@@ -5559,12 +6357,10 @@ TestSaveLoad() {
             }
         }
     }
-    
-    UpdateStatus("🔬 Testing: " . currentMacros . " macros before save")
-    
+
     ; Force save
     SaveConfig()
-    
+
     ; Clear in-memory macros
     macroEventsBackup := Map()
     for layer in 1..8 {
@@ -5576,18 +6372,17 @@ TestSaveLoad() {
             }
         }
     }
-    
+
     ; Update UI to show cleared state
     for buttonName in buttonNames {
         UpdateButtonAppearance(buttonName)
     }
-    
-    UpdateStatus("🗑️ Cleared macros from memory")
+
     Sleep(1000)
-    
+
     ; Force load
     LoadConfig()
-    
+
     ; Count loaded macros
     loadedMacros := 0
     for layer in 1..8 {
@@ -5598,13 +6393,11 @@ TestSaveLoad() {
             }
         }
     }
-    
+
     ; Update UI to show loaded state
     for buttonName in buttonNames {
         UpdateButtonAppearance(buttonName)
     }
-    
-    UpdateStatus("📂 Test complete: " . currentMacros . " saved → " . loadedMacros . " loaded")
     
     if (loadedMacros != currentMacros) {
         MsgBox("Save/Load mismatch!`n`nOriginal: " . currentMacros . " macros`nLoaded: " . loadedMacros . " macros`n`nPress F11 for detailed debug info.", "Save/Load Test Failed", "Icon!")
