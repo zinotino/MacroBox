@@ -5,10 +5,34 @@ Persistent
 
 /*
 ===============================================================================
-COMPLETE DATA LABELING ASSISTANT - UNIFIED SCRIPT
+COMPLETE DATA LABELING ASSISTANT - MONOLITHIC STANDALONE VERSION
 ===============================================================================
-All functionality combined into one script to eliminate module conflicts
-Comprehensive macro recording, playback, and degradation tracking system
+ARCHITECTURE: Single self-contained file with ALL functionality embedded
+  - No external #Include statements
+  - No module dependencies
+  - Zero external files required for execution
+
+BENEFITS:
+  - Single file deployment (just copy this .ahk file)
+  - No path issues when transferring between machines
+  - No include failures or module synchronization problems
+  - Simplified maintenance and debugging
+
+LEGACY NOTE:
+  - Earlier versions used separate modular files in /src directory
+  - Those files are now archived in /archive/legacy-modular
+  - This monolithic version is the current production implementation
+
+FEATURES:
+  - Macro recording and playback with optimization
+  - HBITMAP visualization thumbnails (Wide/Narrow canvas modes)
+  - Stats tracking with JSON persistence and CSV export
+  - Degradation type tracking (10 types: smudge, glare, splashes, etc.)
+  - Dark mode GUI with live auto-refresh
+  - Hotkey customization with live re-registration
+  - Window scaling with debounced resize handling
+
+Total Lines: ~6,669 | Functions: 165+ | Health Score: B+ (85/100)
 ===============================================================================
 */
 
