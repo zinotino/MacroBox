@@ -4143,7 +4143,7 @@ CreateButtonGrid() {
             button.Opt("+Background0x2A2A2A")
             button.SetFont("s" . Round(9 * scale), "cWhite")
 
-            picture := mainGui.Add("Picture", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " Hidden")
+            picture := mainGui.Add("Picture", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x10E Hidden")
 
             ; Label showing both Numpad and CapsLock+key hotkeys
             simpleName := StrReplace(StrReplace(StrReplace(buttonName, "Num", ""), "Dot", "."), "Mult", "*")
