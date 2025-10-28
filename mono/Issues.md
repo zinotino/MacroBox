@@ -66,6 +66,73 @@
 
 ---
 
+## KNOWN ISSUES
+
+### **Canvas Change Breaks Existing Visualizations** ⚠️
+**Status:** Known Limitation - By Design
+**Date Reported:** 2025-10-28
+
+**Description:**
+When the canvas area is recalibrated (Wide/Narrow canvas bounds changed in Settings), existing macro visualizations may no longer display correctly or appear broken. The visualizations are generated using the canvas bounds that existed at the time of recording.
+
+**Why This Happens:**
+- Each macro stores its `recordedCanvas` property (the canvas bounds at recording time)
+- Visualizations use these bounds to scale bounding boxes to thumbnail size
+- If canvas is recalibrated, recorded macros have outdated canvas bounds
+- The scaling calculations produce incorrect positioning/sizing
+
+**Impact:**
+- Low - Users should configure their canvas upon first launch
+- Once configured, canvas should remain stable
+- Only affects users who change canvas calibration after recording macros
+
+**Workaround:**
+- Re-record macros after changing canvas calibration
+- Or restore original canvas bounds in config.ini
+
+**Decision:**
+- This is acceptable behavior for first-time setup workflow
+- Users calibrate canvas once, then record macros
+- No fix needed - document as expected behavior
+
+---
+
+## RECENT FIXES - 2025-10-28
+
+### **FIXED: Visualizations Not Displaying on Different Machines** ✅
+**Status:** Complete - Cross-machine compatibility restored
+
+**The Problem:**
+- Visualizations worked at home but showed blank/grid at work
+- HBITMAP was created successfully (valid handle, no errors)
+- Code logged "SUCCESS - HBITMAP displayed" but nothing appeared
+- Config files (config.ini, config_simple.txt) were properly transferred
+
+**Root Cause:**
+- Picture control was missing the `0x10E` style flag (SS_BITMAP | SS_CENTERIMAGE)
+- Without SS_BITMAP (0x100), Windows Picture controls cannot render HBITMAP handles
+- Different AutoHotkey v2 or Windows versions enforce this requirement differently
+- Home machine: More lenient, auto-applied style flag
+- Work machine: Strict requirement, needed explicit flag
+
+**The Fix:** ([MacroLauncherIntegrated.ahk:4146](MacroLauncherIntegrated.ahk#L4146))
+```ahk
+# BEFORE
+picture := mainGui.Add("Picture", "... Hidden")
+
+# AFTER
+picture := mainGui.Add("Picture", "... 0x10E Hidden")
+```
+
+**Why 0x10E:**
+- `0x100` = SS_BITMAP (required for HBITMAP display)
+- `0xE` = SS_CENTERIMAGE (centers image in control)
+- Combined = proper bitmap rendering with centering
+
+**Result:** Visualizations now display correctly on all machines regardless of AHK/Windows version.
+
+---
+
 ## RECENT FIXES - 2025-10-27
 
 ### **FIXED: Wide/Narrow Toggle No Longer Refreshes Visualizations** ✅
