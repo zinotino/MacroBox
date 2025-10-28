@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ajnef/my-coding-projects/BackroadCodexMONO4z/src/**)",
+      "Bash(powershell.exe -Command \"Start-Process ''MacroLauncherIntegrated.ahk''\")",
+      "Bash(powershell.exe -Command \"Get-Process | Where-Object {$_ProcessName -eq ''AutoHotkey64'' -or $_ProcessName -eq ''AutoHotkey''} | Select-Object -First 1\")",
+      "Read(//c/Users/ajnef/my-coding-projects/BackroadCodexMONO4z/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
