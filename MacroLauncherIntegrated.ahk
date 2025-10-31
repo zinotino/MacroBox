@@ -3337,8 +3337,17 @@ Main() {
         ; Load configuration (after GUI is created so mode toggle button can be updated)
         LoadConfig()
         
-        ; Load saved macros
-        loadedMacros := LoadMacroState()
+        ; SIMPLE, ROBUST RESTORE: do not overwrite rich config with simplified state
+        ; Count macros loaded by LoadConfig() directly to report status
+        loadedMacros := 0
+        try {
+            for macroName, events in macroEvents {
+                if (IsObject(events) && events.Length > 0)
+                    loadedMacros++
+            }
+        } catch {
+            loadedMacros := 0
+        }
 
         ; Initialize WASD hotkeys
         InitializeWASDHotkeys()
