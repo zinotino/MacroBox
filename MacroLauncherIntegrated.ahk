@@ -3936,11 +3936,24 @@ AssignToButton(buttonName) {
     }
 
     macroEvents.Delete(currentMacro)
-    
+
     events := macroEvents[layerMacroName]
+
+    ; DEBUG: Verify degradation types before saving
+    VizLog("=== PRE-SAVE CHECK for " . layerMacroName . " ===")
+    local boxCount := 0
+    for evt in events {
+        if (evt.type = "boundingBox") {
+            boxCount++
+            local degType := evt.HasOwnProp("degradationType") ? evt.degradationType : "MISSING"
+            VizLog("  Box #" . boxCount . ": degradationType=" . degType)
+        }
+    }
+    FlushVizLog()
+
     UpdateButtonAppearance(buttonName)
     SaveMacroState()
-    
+
     UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
 }
 
