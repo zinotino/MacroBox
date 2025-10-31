@@ -73,7 +73,7 @@ ObjToString(value) {
     valueType := Type(value)
 
     ; Handle numbers before boolean check (prevents 0/1 being coerced to false/true)
-    if (valueType = "Integer" || valueType = "Float")
+    if (valueType == "Integer" || valueType == "Float")
         return String(value)
 
     ; Now safe to check booleans (only true booleans, not coerced numbers)
@@ -81,10 +81,10 @@ ObjToString(value) {
         return "true"
     if (value == false)
         return "false"
-    if (valueType = "ComValue")
+    if (valueType == "ComValue")
         return "null"
 
-    if (valueType = "Map") {
+    if (valueType == "Map") {
         items := []
         for key, itemValue in value {
             keyText := ObjToString(String(key))
@@ -93,7 +93,7 @@ ObjToString(value) {
         return "{" . StrJoin(items, ",") . "}"
     }
 
-    if (valueType = "Array") {
+    if (valueType == "Array") {
         items := []
         for element in value {
             items.Push(ObjToString(element))
@@ -101,7 +101,7 @@ ObjToString(value) {
         return "[" . StrJoin(items, ",") . "]"
     }
 
-    if (valueType = "String") {
+    if (valueType == "String") {
         quote := Chr(34)
         return quote . JsonEscape(value) . quote
     }
@@ -124,21 +124,21 @@ Jxon_ParseValue(text, &pos) {
         throw Error("Unexpected end")
 
     char := SubStr(text, pos, 1)
-    if (char = "{")
+    if (char == "{")
         return Jxon_ParseObject(text, &pos)
-    if (char = "[")
+    if (char == "[")
         return Jxon_ParseArray(text, &pos)
-    if (char = Chr(34))
+    if (char == Chr(34))
         return Jxon_ParseString(text, &pos)
-    if (SubStr(text, pos, 4) = "null") {
+    if (SubStr(text, pos, 4) == "null") {
         pos += 4
         return ""
     }
-    if (SubStr(text, pos, 4) = "true") {
+    if (SubStr(text, pos, 4) == "true") {
         pos += 4
         return true
     }
-    if (SubStr(text, pos, 5) = "false") {
+    if (SubStr(text, pos, 5) == "false") {
         pos += 5
         return false
     }
@@ -149,7 +149,7 @@ Jxon_ParseObject(text, &pos) {
     obj := Map()
     pos += 1
     Jxon_SkipWhitespace(text, &pos)
-    if (SubStr(text, pos, 1) = "}") {
+    if (SubStr(text, pos, 1) == "}") {
         pos += 1
         return obj
     }
@@ -164,7 +164,7 @@ Jxon_ParseObject(text, &pos) {
         obj[key] := value
         Jxon_SkipWhitespace(text, &pos)
         char := SubStr(text, pos, 1)
-        if (char = "}") {
+        if (char == "}") {
             pos += 1
             break
         }
@@ -179,7 +179,7 @@ Jxon_ParseArray(text, &pos) {
     arr := []
     pos += 1
     Jxon_SkipWhitespace(text, &pos)
-    if (SubStr(text, pos, 1) = "]") {
+    if (SubStr(text, pos, 1) == "]") {
         pos += 1
         return arr
     }
@@ -189,7 +189,7 @@ Jxon_ParseArray(text, &pos) {
         arr.Push(value)
         Jxon_SkipWhitespace(text, &pos)
         char := SubStr(text, pos, 1)
-        if (char = "]") {
+        if (char == "]") {
             pos += 1
             break
         }
@@ -212,28 +212,28 @@ Jxon_ParseString(text, &pos) {
             throw Error("Unexpected end of string")
 
         char := SubStr(text, pos, 1)
-        if (char = quote) {
+        if (char == quote) {
             result .= SubStr(text, start, pos - start)
             pos += 1
             break
         }
 
-        if (char = backslash) {
+        if (char == backslash) {
             result .= SubStr(text, start, pos - start)
             pos += 1
             if (pos > StrLen(text))
                 throw Error("Unexpected end of string")
 
             escapeChar := SubStr(text, pos, 1)
-            if (escapeChar = quote)
+            if (escapeChar == quote)
                 result .= quote
-            else if (escapeChar = backslash)
+            else if (escapeChar == backslash)
                 result .= backslash
-            else if (escapeChar = "n")
+            else if (escapeChar == "n")
                 result .= "`n"
-            else if (escapeChar = "r")
+            else if (escapeChar == "r")
                 result .= "`r"
-            else if (escapeChar = "t")
+            else if (escapeChar == "t")
                 result .= "`t"
             pos += 1
             start := pos
@@ -265,15 +265,15 @@ JsonEscape(text) {
     Loop Parse text {
         char := A_LoopField
         code := Ord(char)
-        if (code = 9)
+        if (code == 9)
             result .= backslash . "t"
-        else if (code = 10)
+        else if (code == 10)
             result .= backslash . "n"
-        else if (code = 13)
+        else if (code == 13)
             result .= backslash . "r"
-        else if (code = 34)
+        else if (code == 34)
             result .= backslash . Chr(34)
-        else if (code = 92)
+        else if (code == 92)
             result .= backslash . backslash
         else
             result .= char
@@ -455,7 +455,7 @@ ResetWideCanvasCalibration(settingsGui) {
 global isWideCanvasCalibrated, wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
 
 result := MsgBox("Reset Wide canvas calibration to automatic detection?", "Reset Wide Canvas", "YesNo")
-if (result = "Yes") {
+if (result == "Yes") {
     isWideCanvasCalibrated := false
     GetVirtualScreenBounds(&vsLeft, &vsTop, &vsRight, &vsBottom)
     wideCanvasLeft := vsLeft
@@ -477,7 +477,7 @@ ResetNarrowCanvasCalibration(settingsGui) {
 global isNarrowCanvasCalibrated, narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
 
 result := MsgBox("Reset Narrow canvas calibration to automatic detection?", "Reset Narrow Canvas", "YesNo")
-if (result = "Yes") {
+if (result == "Yes") {
     isNarrowCanvasCalibrated := false
     ; Reset to 4:3 aspect ratio centered
     narrowAspectRatio := 4.0 / 3.0
@@ -534,7 +534,7 @@ ConfigureWideCanvasFromSettings(settingsGui) {
 
     result := MsgBox("Calibrate 16:9 Wide Canvas Area`n`nThis is for WIDE mode recordings (full screen, widescreen).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 16:9 area`n2. Click BOTTOM-RIGHT corner of your 16:9 area", "Wide Canvas Calibration", "OKCancel")
 
-    if (result = "Cancel") {
+    if (result == "Cancel") {
         settingsGui.Show()
         return
     }
@@ -570,7 +570,7 @@ ConfigureWideCanvasFromSettings(settingsGui) {
     canvasW := right - left
     canvasH := bottom - top
 
-    if (canvasH = 0) {
+    if (canvasH == 0) {
         MsgBox("⚠️ Calibration failed: Selected area has zero height.`n`nPlease try again and select a valid area.", "Calibration Error", "Icon!")
         settingsGui.Show()
         return
@@ -591,7 +591,7 @@ ConfigureWideCanvasFromSettings(settingsGui) {
 
     result := MsgBox(confirmMsg, "Confirm Wide Canvas Calibration", "YesNo Icon?")
 
-    if (result = "No") {
+    if (result == "No") {
         UpdateStatus("🔄 Cancelled")
         settingsGui.Show()
         return
@@ -624,7 +624,7 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
 
     result := MsgBox("Calibrate 4:3 Narrow Canvas Area`n`nThis is for NARROW mode recordings (constrained, square-ish).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 4:3 area`n2. Click BOTTOM-RIGHT corner of your 4:3 area", "Narrow Canvas Calibration", "OKCancel")
 
-    if (result = "Cancel") {
+    if (result == "Cancel") {
         settingsGui.Show()
         return
     }
@@ -660,7 +660,7 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
     canvasW := right - left
     canvasH := bottom - top
 
-    if (canvasH = 0) {
+    if (canvasH == 0) {
         MsgBox("⚠️ Calibration failed: Selected area has zero height.`n`nPlease try again and select a valid area.", "Calibration Error", "Icon!")
         settingsGui.Show()
         return
@@ -681,7 +681,7 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
 
     result := MsgBox(confirmMsg, "Confirm Narrow Canvas Calibration", "YesNo Icon?")
 
-    if (result = "No") {
+    if (result == "No") {
         UpdateStatus("🔄 Cancelled")
         settingsGui.Show()
         return
@@ -729,7 +729,7 @@ CaptureHotkey(editControl, hotkeyName) {
     ; Simple prompt for hotkey input
     result := InputBox("Enter your hotkey combination for " . hotkeyName . "`n`nExamples:`n  ^k = Ctrl+K`n  !F5 = Alt+F5`n  +Enter = Shift+Enter`n  ^!a = Ctrl+Alt+A`n  F12 = F12`n  NumpadEnter = NumpadEnter`n  CapsLock & f = CapsLock+F`n`nModifiers: ^ = Ctrl, ! = Alt, + = Shift, # = Win", "Set Hotkey - " . hotkeyName, "w400 h280", editControl.Value)
 
-    if (result.Result = "OK" && result.Value != "") {
+    if (result.Result == "OK" && result.Value != "") {
         editControl.Value := result.Value
     }
 }
@@ -790,7 +790,7 @@ ResetHotkeySettings(settingsGui) {
     ; Confirm reset
     result := MsgBox("Reset all hotkeys to default values?`n`nThis will restore:`n• Record Toggle: CapsLock & f`n• Submit: NumpadEnter`n• Direct Clear: +Enter`n• Utility Submit: +CapsLock`n• Utility Backspace: ^CapsLock`n• Stats: F12`n• Break Mode: ^b`n• Settings: ^k", "Reset Hotkeys", "YesNo Icon?")
 
-    if (result = "No")
+    if (result == "No")
         return
 
     ; Store old values for hotkey re-registration
@@ -952,7 +952,7 @@ if (virtualWidth <= 0 || virtualHeight <= 0) {
 
 defaultScreenWidth := A_ScreenWidth
 defaultScreenHeight := A_ScreenHeight
-if (isCanvasCalibrated && userCanvasLeft = 0 && userCanvasTop = 0 && userCanvasRight = defaultScreenWidth && userCanvasBottom = defaultScreenHeight && (virtualLeft != 0 || virtualTop != 0)) {
+if (isCanvasCalibrated && userCanvasLeft == 0 && userCanvasTop == 0 && userCanvasRight == defaultScreenWidth && userCanvasBottom == defaultScreenHeight && (virtualLeft != 0 || virtualTop != 0)) {
     userCanvasLeft := virtualLeft
     userCanvasTop := virtualTop
     userCanvasRight := virtualRight
@@ -1030,7 +1030,7 @@ InitializeVisualizationSystem() {
             si := Buffer(24, 0)
             NumPut("UInt", 1, si, 0)
             result := DllCall("gdiplus\GdiplusStartup", "Ptr*", &gdiPlusToken, "Ptr", si, "Ptr", 0)
-            if (result = 0) {
+            if (result == 0) {
                 gdiPlusInitialized := true
                 VizLog("✓ GDI+ initialized successfully")
             } else {
@@ -1111,7 +1111,7 @@ ExtractBoxEvents(macroEvents) {
             hasProps := event.HasOwnProp("left") && event.HasOwnProp("top") && event.HasOwnProp("right") && event.HasOwnProp("bottom")
         }
 
-        if (eventType = "boundingBox" && hasProps) {
+        if (eventType == "boundingBox" && hasProps) {
             ; Calculate box dimensions (support both Map and Object)
             left := (Type(event) = "Map") ? event["left"] : event.left
             top := (Type(event) = "Map") ? event["top"] : event.top
@@ -1122,7 +1122,7 @@ ExtractBoxEvents(macroEvents) {
             if ((right - left) >= 5 && (bottom - top) >= 5) {
                 ; Check if degradationType is already stored in the event (from config load)
                 degradationType := currentDegradationType
-                if ((Type(event) = "Map" && event.Has("degradationType")) || (IsObject(event) && event.HasOwnProp("degradationType"))) {
+                if ((Type(event) == "Map" && event.Has("degradationType")) || (IsObject(event) && event.HasOwnProp("degradationType"))) {
                     degradationType := (Type(event) = "Map") ? event["degradationType"] : event.degradationType
                     currentDegradationType := degradationType
                 } else {
@@ -1133,18 +1133,18 @@ ExtractBoxEvents(macroEvents) {
 
                         ; Get next event type (support Map and Object)
                         nextEventType := ""
-                        if (Type(nextEvent) = "Map") {
+                if (Type(nextEvent) == "Map") {
                             nextEventType := nextEvent.Has("type") ? nextEvent["type"] : ""
                         } else if (IsObject(nextEvent)) {
                             nextEventType := nextEvent.HasOwnProp("type") ? nextEvent.type : ""
                         }
 
                         ; Stop at next bounding box - keypress should be immediately after current box
-                        if (nextEventType = "boundingBox")
+                        if (nextEventType == "boundingBox")
                             break
 
                         ; Found a keypress after this box - this assigns the degradation type
-                        if (nextEventType = "keyDown") {
+                        if (nextEventType == "keyDown") {
                             nextKey := (Type(nextEvent) = "Map") ? (nextEvent.Has("key") ? nextEvent["key"] : "") : (nextEvent.HasOwnProp("key") ? nextEvent.key : "")
                             if (RegExMatch(nextKey, "^\d$")) {
                                 keyNumber := Integer(nextKey)
@@ -1184,7 +1184,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     global buttonLetterboxingStates
 
-    if (boxes.Length = 0) {
+    if (boxes.Length == 0) {
         return
     }
 
@@ -1208,10 +1208,10 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     narrowConfiguredCheck := (narrowCanvasRight > narrowCanvasLeft)
 
     ; If stored mode's canvas isn't configured, use current annotation mode instead
-    if (effectiveMode = "Wide" && !wideConfiguredCheck && narrowConfiguredCheck) {
+    if (effectiveMode == "Wide" && !wideConfiguredCheck && narrowConfiguredCheck) {
         VizLog("⚠️ Wide canvas not configured, falling back to Narrow")
         effectiveMode := "Narrow"
-    } else if (effectiveMode = "Narrow" && !narrowConfiguredCheck && wideConfiguredCheck) {
+    } else if (effectiveMode == "Narrow" && !narrowConfiguredCheck && wideConfiguredCheck) {
         VizLog("⚠️ Narrow canvas not configured, falling back to Wide")
         effectiveMode := "Wide"
     }
@@ -1253,7 +1253,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     canvasChosen := false
     useFallbackBoxes := false
 
-    if (!canvasChosen && effectiveMode = "Narrow" && narrowConfigured) {
+    if (!canvasChosen && effectiveMode == "Narrow" && narrowConfigured) {
         canvasLeft := narrowCanvasLeft
         canvasTop := narrowCanvasTop
         canvasRight := narrowCanvasRight
@@ -1288,7 +1288,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasChosen := true
     }
 
-    if (!canvasChosen && effectiveMode = "Narrow" && hasRecordedCanvas && (recordedCanvasMode = "" || recordedCanvasMode = "Narrow")) {
+    if (!canvasChosen && effectiveMode == "Narrow" && hasRecordedCanvas && (recordedCanvasMode == "" || recordedCanvasMode == "Narrow")) {
         canvasLeft := recordedCanvas.left + 0.0
         canvasTop := recordedCanvas.top + 0.0
         canvasRight := recordedCanvas.right + 0.0
@@ -1323,7 +1323,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasChosen := true
     }
 
-    if (!canvasChosen && effectiveMode = "Wide" && wideConfigured) {
+    if (!canvasChosen && effectiveMode == "Wide" && wideConfigured) {
         canvasLeft := wideCanvasLeft
         canvasTop := wideCanvasTop
         canvasRight := wideCanvasRight
@@ -1344,7 +1344,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasChosen := true
     }
 
-    if (!canvasChosen && effectiveMode = "Wide" && hasRecordedCanvas && (recordedCanvasMode = "" || recordedCanvasMode = "Wide")) {
+    if (!canvasChosen && effectiveMode == "Wide" && hasRecordedCanvas && (recordedCanvasMode == "" || recordedCanvasMode == "Wide")) {
         canvasLeft := recordedCanvas.left + 0.0
         canvasTop := recordedCanvas.top + 0.0
         canvasRight := recordedCanvas.right + 0.0
@@ -1551,7 +1551,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         canvasChosen := true
     }
 
-    if (canvasSource = "")
+    if (canvasSource == "")
         canvasSource := "auto"
 
     if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map") {
@@ -1708,7 +1708,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         ; Draw the box
         brush := 0
         result := DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
-        if (result = 0) {
+        if (result == 0) {
             DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
             DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
         }
@@ -1931,7 +1931,7 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
         VizLog("GDI+ already initialized")
     }
 
-    if (!macroEvents || macroEvents.Length = 0) {
+    if (!macroEvents || macroEvents.Length == 0) {
         VizLog("No macro events - returning 0")
         FlushVizLog()
         return 0
@@ -1953,7 +1953,7 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
     ; PERFORMANCE: Generate cache key based on macro events content
     cacheKey := ""
     for event in macroEvents {
-        if (event.type = "boundingBox") {
+        if (event.type == "boundingBox") {
             cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
         }
     }
@@ -1986,7 +1986,7 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
     ; Extract box drawing events
     boxes := ExtractBoxEvents(macroEvents)
     VizLog("Extracted boxes: " . boxes.Length)
-    if (boxes.Length = 0) {
+    if (boxes.Length == 0) {
         VizLog("No boxes found - returning 0")
         FlushVizLog()
         return 0
@@ -2046,7 +2046,7 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
         DllCall("gdiplus\GdipDeleteGraphics", "Ptr", graphics)
         DllCall("gdiplus\GdipDisposeImage", "Ptr", bitmap)
 
-        if (result = 0 && hbitmap) {
+        if (result == 0 && hbitmap) {
             VizLog("SUCCESS! Caching and returning HBITMAP: " . hbitmap)
             ; PERFORMANCE: Cache the HBITMAP for future use and add reference
             hbitmapCache[cacheKey] := hbitmap
@@ -2107,7 +2107,7 @@ CleanupButtonDisplayedHBITMAPs() {
 AddHBITMAPReference(hbitmap) {
     global hbitmapRefCounts
 
-    if (!hbitmap || hbitmap = 0) {
+    if (!hbitmap || hbitmap == 0) {
         return
     }
 
@@ -2121,7 +2121,7 @@ AddHBITMAPReference(hbitmap) {
 RemoveHBITMAPReference(hbitmap) {
     global hbitmapRefCounts
 
-    if (!hbitmap || hbitmap = 0) {
+    if (!hbitmap || hbitmap == 0) {
         return
     }
 
@@ -2141,7 +2141,7 @@ RemoveHBITMAPReference(hbitmap) {
 }
 
 IsHBITMAPValid(hbitmap) {
-    if (!hbitmap || hbitmap = 0) {
+    if (!hbitmap || hbitmap == 0) {
         return false
     }
 
@@ -2390,7 +2390,7 @@ ReadStatsFromMemory(filterBySession := false) {
         try {
             ; Use stored session_id from execution data, fall back to global if not present
             sessionKey := executionData.Has("session_id") ? executionData["session_id"] : sessionId
-            if (!filterBySession || sessionKey = sessionId) {
+            if (!filterBySession || sessionKey == sessionId) {
                 execution_type := executionData["execution_type"]
                 macro_name := executionData.Has("button_key") ? executionData["button_key"] : ""
                 layer := executionData.Has("layer") ? executionData["layer"] : 1
@@ -2409,9 +2409,9 @@ ReadStatsFromMemory(filterBySession := false) {
                 stats["total_boxes"] += total_boxes
                 stats["total_execution_time"] += execution_time
                 executionTimes.Push(execution_time)
-                if (execution_type = "clear") {
+                if (execution_type == "clear") {
                     stats["clear_executions_count"]++
-                } else if (execution_type = "json_profile") {
+                } else if (execution_type == "json_profile") {
                     stats["json_profile_executions_count"]++
                 } else {
                     stats["macro_executions_count"]++
@@ -2426,7 +2426,7 @@ ReadStatsFromMemory(filterBySession := false) {
                     layerCount[layer] := 0
                 }
                 layerCount[layer]++
-                if (execution_type = "json_profile" && severity_level != "") {
+                if (execution_type == "json_profile" && severity_level != "") {
                     switch StrLower(severity_level) {
                         case "low":
                             stats["severity_low"]++
@@ -2457,7 +2457,7 @@ ReadStatsFromMemory(filterBySession := false) {
                 stats["snow_total"] += snow
                 stats["clear_total"] += clear
                 ; Aggregate degradation counts by execution type
-                if (execution_type = "json_profile") {
+                if (execution_type == "json_profile") {
                     ; For JSON profiles, use the individual count fields (already populated)
                     stats["json_smudge"] += smudge
                     stats["json_glare"] += glare
@@ -2469,7 +2469,7 @@ ReadStatsFromMemory(filterBySession := false) {
                     stats["json_haze"] += haze
                     stats["json_snow"] += snow
                     stats["json_clear"] += clear
-                } else if (execution_type = "macro") {
+                } else if (execution_type == "macro") {
                     stats["macro_smudge"] += smudge
                     stats["macro_glare"] += glare
                     stats["macro_splashes"] += splashes
@@ -2551,9 +2551,9 @@ GetTodayStatsFromMemory() {
                 stats["total_executions"]++
                 stats["total_boxes"] += total_boxes
                 stats["total_execution_time"] += execution_time
-                if (execution_type = "json_profile") {
+                if (execution_type == "json_profile") {
                     stats["json_profile_executions_count"]++
-                } else if (execution_type = "macro") {
+                } else if (execution_type == "macro") {
                     stats["macro_executions_count"]++
                 }
                 ; Use stored session_id from execution data, fall back to global if not present
@@ -2564,7 +2564,7 @@ GetTodayStatsFromMemory() {
                 ; Use stored username from execution data, fall back to current
                 username := executionData.Has("username") ? executionData["username"] : currentUsername
                 UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
-                if (execution_type = "json_profile" && severity_level != "") {
+                if (execution_type == "json_profile" && severity_level != "") {
                     switch StrLower(severity_level) {
                         case "low":
                             stats["severity_low"]++
@@ -2595,7 +2595,7 @@ GetTodayStatsFromMemory() {
                 stats["snow_total"] += snow
                 stats["clear_total"] += clear
                 ; Aggregate degradation counts by execution type
-                if (execution_type = "json_profile") {
+                if (execution_type == "json_profile") {
                     ; For JSON profiles, use the individual count fields (already populated)
                     stats["json_smudge"] += smudge
                     stats["json_glare"] += glare
@@ -2659,7 +2659,7 @@ GetTodayStatsFromMemory() {
 }
 
 ProcessDegradationCounts(executionData, degradationString) {
-    if (degradationString = "" || degradationString = "none") {
+    if (degradationString == "" || degradationString == "none") {
         return
     }
     degradationTypes := StrSplit(degradationString, ",")
@@ -2670,7 +2670,7 @@ ProcessDegradationCounts(executionData, degradationString) {
 }
 
 UpdateUserSummary(userSummaryMap, username, totalBoxes, sessionId) {
-    if (username = "") {
+    if (username == "") {
         username := "unknown"
     }
     if (!userSummaryMap.Has(username)) {
@@ -2724,20 +2724,20 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     executionData["annotation_details"] := ""
     executionData["execution_success"] := "true"
     executionData["error_details"] := ""
-    if (executionType = "macro") {
+    if (executionType == "macro") {
         bbox_count := 0
         degradation_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
         for event in events {
             eventType := ""
-            if (Type(event) = "Map") {
+            if (Type(event) == "Map") {
                 eventType := event.Has("type") ? event["type"] : ""
             } else if (IsObject(event)) {
                 eventType := event.HasOwnProp("type") ? event.type : ""
             }
-            if (eventType = "boundingBox") {
+            if (eventType == "boundingBox") {
                 bbox_count++
                 degType := 0
-                if (Type(event) = "Map") {
+                if (Type(event) == "Map") {
                     degType := event.Has("degradationType") ? event["degradationType"] : 0
                 } else if (event.HasOwnProp("degradationType")) {
                     degType := event.degradationType
@@ -3191,7 +3191,7 @@ UpdateStatsDisplay() {
         ; Add live time to today only if last execution was today OR no executions yet
         if (lastExecutionWasToday) {
             effectiveTodayActiveTime += liveTimeDelta
-        } else if (macroExecutionLog.Length = 0) {
+        } else if (macroExecutionLog.Length == 0) {
             ; No executions yet - all current time belongs to today
             effectiveTodayActiveTime += currentActiveTime
         }
@@ -3281,7 +3281,7 @@ CloseStatsMenu() {
 
 ExportStatsData(statsMenuGui := "") {
     global macroExecutionLog, documentsDir
-    if (!macroExecutionLog || macroExecutionLog.Length = 0) {
+    if (!macroExecutionLog || macroExecutionLog.Length == 0) {
         MsgBox("📊 No data to export yet`n`nStart using macros to generate performance data!", "Info", "Icon!")
         return
     }
@@ -3301,7 +3301,7 @@ ExportStatsData(statsMenuGui := "") {
 ResetAllStats() {
     global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
     result := MsgBox("This will reset ALL statistics (Today and All-Time).`n`nAll execution data will be permanently deleted.`n`n⚠️ Export your stats first if you want to keep them!`n`nReset all stats?", "Reset Statistics", "YesNo Icon!")
-    if (result = "Yes") {
+    if (result == "Yes") {
         try {
             macroExecutionLog := []
             statsJsonFile := workDir . "\stats_log.json"
@@ -3568,7 +3568,7 @@ ForceStopRecording() {
     ResetRecordingUI()
 
     eventCount := macroEvents.Has(currentMacro) ? macroEvents[currentMacro].Length : 0
-    if (eventCount = 0) {
+    if (eventCount == 0) {
         UpdateStatus("🎬 Recording stopped - No events captured")
         if (macroEvents.Has(currentMacro)) {
             macroEvents.Delete(currentMacro)
@@ -3582,7 +3582,7 @@ ForceStopRecording() {
         VizLog("SET recordedMode for " . currentMacro . " to: " . annotationMode)
 
         ; Save the canvas bounds that were active during recording
-        if (annotationMode = "Wide") {
+        if (annotationMode == "Wide") {
             macroEvents[currentMacro].recordedCanvas := {
                 mode: "Wide",
                 left: wideCanvasLeft,
@@ -3625,7 +3625,7 @@ ResetRecordingUI() {
 ; ===== SAFE MACRO EXECUTION - BLOCKS F9 =====
 SafeExecuteMacroByKey(buttonName) {
     ; CRITICAL: Absolutely prevent hotkey keys from reaching macro execution
-    if (buttonName = "CapsLock" || buttonName = "f" || buttonName = "Space") {
+    if (buttonName == "CapsLock" || buttonName == "f" || buttonName == "Space") {
         return
     }
 
@@ -3636,7 +3636,7 @@ ExecuteMacro(buttonName) {
     global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay
 
     ; Double-check hotkey protection
-    if (buttonName = "CapsLock" || buttonName = "f" || buttonName = "Space") {
+    if (buttonName == "CapsLock" || buttonName == "f" || buttonName == "Space") {
         return
     }
 
@@ -3647,7 +3647,7 @@ ExecuteMacro(buttonName) {
     }
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
-    if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length = 0) {
+    if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length == 0) {
         UpdateStatus("⌛ No macro: " . buttonName . " L" . currentLayer . " | CapsLock+F to record")
         return
     }
@@ -3663,7 +3663,7 @@ ExecuteMacro(buttonName) {
     events := macroEvents[layerMacroName]
     startTime := A_TickCount
 
-    if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+    if (events.Length == 1 && events[1].type == "jsonAnnotation") {
         ExecuteJsonAnnotation(events[1])
     } else {
         PlayEventsOptimized(events)
@@ -3681,12 +3681,12 @@ ExecuteMacro(buttonName) {
     }
 
     ; Count bounding boxes and extract degradation data for macro executions
-    if (events.Length > 1 || (events.Length = 1 && events[1].type != "jsonAnnotation")) {
+    if (events.Length > 1 || (events.Length == 1 && events[1].type != "jsonAnnotation")) {
         bboxCount := 0
         degradationList := []
 
         for event in events {
-            if (event.type = "boundingBox") {
+            if (event.type == "boundingBox") {
                 bboxCount++
                 ; Extract degradation type if assigned during recording
                 if (event.HasOwnProp("degradationType") && event.degradationType >= 1 && event.degradationType <= 9) {
@@ -3703,7 +3703,7 @@ ExecuteMacro(buttonName) {
             }
             analysisRecord.degradationAssignments := degradationString
         }
-    } else if (events.Length = 1 && events[1].type = "jsonAnnotation") {
+    } else if (events.Length == 1 && events[1].type == "jsonAnnotation") {
         ; Extract JSON degradation info for stats tracking
         jsonEvent := events[1]
         if (jsonEvent.HasOwnProp("categoryId") && degradationTypes.Has(jsonEvent.categoryId)) {
@@ -3714,7 +3714,7 @@ ExecuteMacro(buttonName) {
         }
     }
 
-    RecordExecutionStatsAsync(buttonName, startTime, events.Length = 1 && events[1].type = "jsonAnnotation" ? "json_profile" : "macro", events, analysisRecord)
+    RecordExecutionStatsAsync(buttonName, startTime, events.Length == 1 && events[1].type == "jsonAnnotation" ? "json_profile" : "macro", events, analysisRecord)
 
     ; PERFORMANCE: MacroExecutionAnalysis() removed - stats are in-memory only now
 
@@ -3748,7 +3748,7 @@ SafeUninstallMouseHook() {
 MouseProc(nCode, wParam, lParam) {
     global recording, currentMacro, macroEvents, mouseMoveThreshold, mouseMoveInterval, boxDragMinDistance
     
-    if (nCode < 0 || !recording || currentMacro = "") {
+    if (nCode < 0 || !recording || currentMacro == "") {
         return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
     }
     
@@ -3764,13 +3764,13 @@ MouseProc(nCode, wParam, lParam) {
     
     local events := macroEvents[currentMacro]
     
-    if (wParam = WM_LBUTTONDOWN) {
+    if (wParam == WM_LBUTTONDOWN) {
         isDrawingBox := true
         boxStartX := x
         boxStartY := y
         events.Push({type: "mouseDown", button: "left", x: x, y: y, time: timestamp})
         
-    } else if (wParam = WM_LBUTTONUP) {
+    } else if (wParam == WM_LBUTTONUP) {
         if (isDrawingBox) {
             local dragDistX := Abs(x - boxStartX)
             local dragDistY := Abs(y - boxStartY)
@@ -3779,7 +3779,7 @@ MouseProc(nCode, wParam, lParam) {
                 ; Count existing bounding boxes to determine if this is the first
                 local boxCount := 0
                 for evt in events {
-                    if (evt.type = "boundingBox")
+                    if (evt.type == "boundingBox")
                         boxCount++
                 }
 
@@ -3807,7 +3807,7 @@ MouseProc(nCode, wParam, lParam) {
         }
         events.Push({type: "mouseUp", button: "left", x: x, y: y, time: timestamp})
         
-    } else if (wParam = WM_MOUSEMOVE) {
+    } else if (wParam == WM_MOUSEMOVE) {
         local moveDistance := Sqrt((x - lastX) ** 2 + (y - lastY) ** 2)
         local timeDelta := timestamp - lastMoveTime
         if (moveDistance > mouseMoveThreshold && timeDelta > mouseMoveInterval) {
@@ -3846,7 +3846,7 @@ SafeUninstallKeyboardHook() {
 KeyboardProc(nCode, wParam, lParam) {
     global recording, currentMacro, macroEvents
     
-    if (nCode < 0 || !recording || currentMacro = "") {
+    if (nCode < 0 || !recording || currentMacro == "") {
         return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
     }
     
@@ -3855,7 +3855,7 @@ KeyboardProc(nCode, wParam, lParam) {
     local keyName := GetKeyName("vk" . Format("{:X}", vkCode))
     
     ; Never record CapsLock+F, CapsLock+SPACE, or RCtrl
-    if (keyName = "CapsLock" || keyName = "f" || keyName = "Space" || keyName = "RCtrl") {
+    if (keyName == "CapsLock" || keyName == "f" || keyName == "Space" || keyName == "RCtrl") {
         return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
     }
     
@@ -3865,7 +3865,7 @@ KeyboardProc(nCode, wParam, lParam) {
     local events := macroEvents[currentMacro]
     local timestamp := A_TickCount
     
-    if (wParam = WM_KEYDOWN) {
+    if (wParam == WM_KEYDOWN) {
         events.Push({type: "keyDown", key: keyName, time: timestamp})
     } else if (wParam = WM_KEYUP) {
         events.Push({type: "keyUp", key: keyName, time: timestamp})
@@ -3923,7 +3923,7 @@ AssignToButton(buttonName) {
     awaitingAssignment := false
     layerMacroName := "L" . currentLayer . "_" . buttonName
     
-    if (!macroEvents.Has(currentMacro) || macroEvents[currentMacro].Length = 0) {
+    if (!macroEvents.Has(currentMacro) || macroEvents[currentMacro].Length == 0) {
         UpdateStatus("⚠️ No macro to assign")
         return
     }
@@ -3952,7 +3952,7 @@ AssignToButton(buttonName) {
     VizLog("=== PRE-SAVE CHECK for " . layerMacroName . " ===")
     local boxCount := 0
     for evt in events {
-        if (evt.type = "boundingBox") {
+        if (evt.type == "boundingBox") {
             boxCount++
             local degType := evt.HasOwnProp("degradationType") ? evt.degradationType : "MISSING"
             VizLog("  Box #" . boxCount . ": degradationType=" . degType)
@@ -3979,7 +3979,7 @@ PlayEventsOptimized(recordedEvents) {
         if (!playback)
             break
 
-        if (event.type = "boundingBox") {
+        if (event.type == "boundingBox") {
             ; === INTELLIGENT TIMING: Box Drawing Sequence ===
 
             ; Step 1: Move to start position with smart timing
@@ -4007,24 +4007,28 @@ PlayEventsOptimized(recordedEvents) {
                 Sleep(betweenBoxDelay)
             }
         }
-        else if (event.type = "mouseDown") {
-            MouseMove(event.x, event.y, 2)
+        else if (event.type == "mouseDown") {
+            if (event.HasOwnProp("x") && event.HasOwnProp("y")) {
+                MouseMove(event.x, event.y, 2)
+            }
             Sleep(smartBoxClickDelay)
             Send("{LButton Down}")
             Sleep(mouseClickDelay)
         }
-        else if (event.type = "mouseUp") {
-            MouseMove(event.x, event.y, 2)
+        else if (event.type == "mouseUp") {
+            if (event.HasOwnProp("x") && event.HasOwnProp("y")) {
+                MouseMove(event.x, event.y, 2)
+            }
             Sleep(mouseReleaseDelay)
             Send("{LButton Up}")
         }
-        else if (event.type = "keyDown") {
+        else if (event.type == "keyDown") {
             if (event.HasOwnProp("key") && event.key != "") {
                 Send("{" . event.key . " Down}")
                 Sleep(keyPressDelay)
             }
         }
-        else if (event.type = "keyUp") {
+        else if (event.type == "keyUp") {
             if (event.HasOwnProp("key") && event.key != "") {
                 Send("{" . event.key . " Up}")
             }
@@ -4406,7 +4410,7 @@ UpdateButtonAppearance(buttonName) {
     jsonInfo := ""
     jsonColor := "0xFFD700"
 
-    if (hasMacro && macroEvents[layerMacroName].Length = 1 && macroEvents[layerMacroName][1].type = "jsonAnnotation") {
+    if (hasMacro && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
         typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
@@ -4504,7 +4508,7 @@ UpdateButtonAppearance(buttonName) {
 
             if (hbitmap && hbitmap != 0) {
                 ; Check if this HBITMAP is already displayed on this button
-                if (oldHbitmap = hbitmap && oldHbitmapValid) {
+                if (oldHbitmap == hbitmap && oldHbitmapValid) {
                     VizLog(">>> UpdateButtonAppearance: HBITMAP already displayed, skipping reassignment")
                     FlushVizLog()
                     return
@@ -4591,7 +4595,7 @@ UpdateButtonAppearance(buttonName) {
 
                 ; Check if macro has any box events
                 for event in events {
-                    if (event.type = "boundingBox") {
+                    if (event.type == "boundingBox") {
                         hasBoxes := true
                         break
                     }
@@ -4675,7 +4679,7 @@ UpdateStatus(text) {
 GuiResize(thisGui, minMax, width, height) {
     global statusBar, windowWidth, windowHeight, mainGui, resizeTimer
 
-    if (minMax = -1)
+    if (minMax == -1)
         return
 
     windowWidth := width
@@ -4716,11 +4720,11 @@ SwitchLayer_OLD(direction) {
     ; OLD FUNCTION KEPT FOR REFERENCE - NOT USED
     global currentLayer, totalLayers, buttonNames
 
-    if (direction = "next") {
+    if (direction == "next") {
         currentLayer++
         if (currentLayer > totalLayers)
             currentLayer := 1
-    } else if (direction = "prev") {
+    } else if (direction == "prev") {
         currentLayer--
         if (currentLayer < 1)
             currentLayer := totalLayers
@@ -4946,7 +4950,7 @@ ShowSettings() {
     ; Find current selection index
     currentIndex := 1
     for i, val in pathValues {
-        if (val = visualizationSavePath) {
+        if (val == visualizationSavePath) {
             currentIndex := i
             break
         }
@@ -5227,7 +5231,7 @@ UpdateModeToggleButton() {
     global annotationMode, modeToggleBtn
     
     if (modeToggleBtn) {
-        if (annotationMode = "Narrow") {
+        if (annotationMode == "Narrow") {
             modeToggleBtn.Text := "📱 Narrow"
             modeToggleBtn.Opt("+Background0xFF8C00")
         } else {
@@ -5250,7 +5254,7 @@ ToggleAnnotationMode() {
     currentState := InStr(modeToggleBtn.Text, "Wide") ? "Wide" : "Narrow"
     VizLog("Current state: " . currentState)
 
-    if (currentState = "Wide") {
+    if (currentState == "Wide") {
         annotationMode := "Narrow"
         modeToggleBtn.Text := "📱 Narrow"
         modeToggleBtn.Opt("+Background0xFF8C00")
@@ -5290,7 +5294,7 @@ UpdateExistingJSONMacros(newMode) {
         layer := A_Index
         for buttonName in buttonNames {
             layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length = 1 && macroEvents[layerMacroName][1].type = "jsonAnnotation") {
+            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
                 jsonEvent := macroEvents[layerMacroName][1]
                 typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
                 presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
@@ -5302,7 +5306,7 @@ UpdateExistingJSONMacros(newMode) {
                     updatedCount++
                     
                     ; Update button appearance if it's on current layer
-                    if (layer = currentLayer) {
+                    if (layer == currentLayer) {
                         UpdateButtonAppearance(buttonName)
                     }
                 }
@@ -5440,7 +5444,7 @@ InitializeJsonAnnotations() {
 
 BuildJsonAnnotation(mode, categoryId, severity) {
     ; Define precise coordinates for each mode
-    if (mode = "Wide") {
+    if (mode == "Wide") {
         points := [[-22.18,-22.57],[3808.41,2130.71]]
     } else {
         points := [[-23.54,-23.12],[1891.76,1506.66]]
@@ -5504,25 +5508,31 @@ SaveMacroState() {
             }
 
             for event in events {
-                if (event.type = "boundingBox") {
+                if (event.type == "boundingBox") {
                     stateContent .= macroName . "=boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom . "`n"
                 }
-                else if (event.type = "jsonAnnotation") {
+                else if (event.type == "jsonAnnotation") {
                     stateContent .= macroName . "=jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity . "`n"
                 }
-                else if (event.type = "keyDown") {
-                    stateContent .= macroName . "=keyDown," . event.key . "`n"
+                else if (event.type == "keyDown") {
+                    keyVal := event.HasOwnProp("key") ? event.key : ""
+                    stateContent .= macroName . "=keyDown," . keyVal . "`n"
                 }
-                else if (event.type = "keyUp") {
-                    stateContent .= macroName . "=keyUp," . event.key . "`n"
+                else if (event.type == "keyUp") {
+                    keyVal := event.HasOwnProp("key") ? event.key : ""
+                    stateContent .= macroName . "=keyUp," . keyVal . "`n"
                 }
-                else if (event.type = "mouseDown") {
+                else if (event.type == "mouseDown") {
                     buttonVal := event.HasOwnProp("button") ? event.button : "left"
-                    stateContent .= macroName . "=mouseDown," . event.x . "," . event.y . "," . buttonVal . "`n"
+                    xVal := event.HasOwnProp("x") ? event.x : ""
+                    yVal := event.HasOwnProp("y") ? event.y : ""
+                    stateContent .= macroName . "=mouseDown," . xVal . "," . yVal . "," . buttonVal . "`n"
                 }
-                else if (event.type = "mouseUp") {
+                else if (event.type == "mouseUp") {
                     buttonVal := event.HasOwnProp("button") ? event.button : "left"
-                    stateContent .= macroName . "=mouseUp," . event.x . "," . event.y . "," . buttonVal . "`n"
+                    xVal := event.HasOwnProp("x") ? event.x : ""
+                    yVal := event.HasOwnProp("y") ? event.y : ""
+                    stateContent .= macroName . "=mouseUp," . xVal . "," . yVal . "," . buttonVal . "`n"
                 }
             }
         }
@@ -5560,7 +5570,7 @@ LoadMacroState() {
     macroCount := 0
     for line in lines {
         line := Trim(line)
-        if (line = "")
+        if (line == "")
             continue
             
         if (InStr(line, "=")) {
@@ -5572,7 +5582,7 @@ LoadMacroState() {
             if (parts.Length >= 1) {
                 event := {}
                 
-                if (parts[1] = "boundingBox" && parts.Length >= 5) {
+                if (parts[1] == "boundingBox" && parts.Length >= 5) {
                     event := {
                         type: "boundingBox",
                         left: Integer(parts[2]),
@@ -5581,7 +5591,7 @@ LoadMacroState() {
                         bottom: Integer(parts[5])
                     }
                 }
-                else if (parts[1] = "jsonAnnotation" && parts.Length >= 4) {
+                else if (parts[1] == "jsonAnnotation" && parts.Length >= 4) {
                     event := {
                         type: "jsonAnnotation",
                         mode: parts[2],
@@ -5590,19 +5600,19 @@ LoadMacroState() {
                         annotation: BuildJsonAnnotation(parts[2], Integer(parts[3]), parts[4])
                     }
                 }
-                else if (parts[1] = "keyDown" && parts.Length >= 2) {
+                else if (parts[1] == "keyDown" && parts.Length >= 2) {
                     event := {
                         type: "keyDown",
                         key: parts[2]
                     }
                 }
-                else if (parts[1] = "keyUp" && parts.Length >= 2) {
+                else if (parts[1] == "keyUp" && parts.Length >= 2) {
                     event := {
                         type: "keyUp",
                         key: parts[2]
                     }
                 }
-                else if (parts[1] = "mouseDown" && parts.Length >= 4) {
+                else if (parts[1] == "mouseDown" && parts.Length >= 4) {
                     event := {
                         type: "mouseDown",
                         x: Integer(parts[2]),
@@ -5610,7 +5620,7 @@ LoadMacroState() {
                         button: parts[4]
                     }
                 }
-                else if (parts[1] = "mouseUp" && parts.Length >= 4) {
+                else if (parts[1] == "mouseUp" && parts.Length >= 4) {
                     event := {
                         type: "mouseUp",
                         x: Integer(parts[2]),
@@ -5618,7 +5628,7 @@ LoadMacroState() {
                         button: parts[4]
                     }
                 }
-                else if (parts[1] = "recordedMode" && parts.Length >= 2) {
+                else if (parts[1] == "recordedMode" && parts.Length >= 2) {
                     ; Load recordedMode property and attach it to the macro array
                     if (!macroEvents.Has(macroName)) {
                         macroEvents[macroName] := []
@@ -5627,7 +5637,7 @@ LoadMacroState() {
                     macroEvents[macroName].recordedMode := parts[2]
                     continue
                 }
-                else if (parts[1] = "recordedCanvas" && parts.Length >= 5) {
+                else if (parts[1] == "recordedCanvas" && parts.Length >= 5) {
                     if (!macroEvents.Has(macroName)) {
                         macroEvents[macroName] := []
                         macroCount++
@@ -5654,7 +5664,7 @@ LoadMacroState() {
                     macroEvents[macroName].recordedCanvas := rc
                     continue
                 }
-                else if (parts[1] = "thumbnail" && parts.Length >= 2) {
+                else if (parts[1] == "thumbnail" && parts.Length >= 2) {
                     thumbnailPath := parts[2]
                     if (FileExist(thumbnailPath)) {
                         buttonThumbnails[macroName] := thumbnailPath
@@ -5801,7 +5811,7 @@ ClearAllMacros(parentGui := 0) {
     
     result := MsgBox("Clear ALL macros from ALL layers?`n`nThis will permanently delete all recorded macros but preserve stats.", "Confirm Clear All", "YesNo Icon!")
     
-    if (result = "Yes") {
+    if (result == "Yes") {
         ; Clear all macros
         macroEvents := Map()
         buttonLetterboxingStates.Clear()
@@ -5954,10 +5964,10 @@ SaveConfig() {
                     eventCount := 0
                     for event in macroEvents[layerMacroName] {
                         eventCount++
-                        if (event.type = "jsonAnnotation") {
+                        if (event.type == "jsonAnnotation") {
                             if (eventCount > 1) eventsStr .= "|"
                             eventsStr .= event.type . ",mode=" . event.mode . ",cat=" . event.categoryId . ",sev=" . event.severity
-                        } else if (event.type = "boundingBox") {
+                        } else if (event.type == "boundingBox") {
                             degradationType := event.HasOwnProp("degradationType") ? event.degradationType : 1
                             degradationName := event.HasOwnProp("degradationName") ? event.degradationName : "smudge"
                             isTagged := event.HasOwnProp("isTagged") ? event.isTagged : false
@@ -6042,7 +6052,7 @@ LoadConfig() {
         
         for line in lines {
             line := Trim(line)
-            if (line = "")
+            if (line == "")
                 continue
 
             ; Check for section headers
@@ -6057,100 +6067,100 @@ LoadConfig() {
                 key := Trim(SubStr(line, 1, equalPos - 1))
                 value := Trim(SubStr(line, equalPos + 1))
 
-                if (currentSection = "General") {
-                    if (key = "CurrentLayer") {
+                if (currentSection == "General") {
+                    if (key == "CurrentLayer") {
                         currentLayer := Integer(value)
-                    } else if (key = "AnnotationMode") {
+                    } else if (key == "AnnotationMode") {
                         annotationMode := value
                     }
-                } else if (currentSection = "Canvas") {
+                } else if (currentSection == "Canvas") {
                     ; Load canvas calibration data
-                    if (key = "wideCanvasLeft") {
+                    if (key == "wideCanvasLeft") {
                         wideCanvasLeft := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "wideCanvasTop") {
+                    } else if (key == "wideCanvasTop") {
                         wideCanvasTop := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "wideCanvasRight") {
+                    } else if (key == "wideCanvasRight") {
                         wideCanvasRight := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "wideCanvasBottom") {
+                    } else if (key == "wideCanvasBottom") {
                         wideCanvasBottom := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "isWideCanvasCalibrated") {
+                    } else if (key == "isWideCanvasCalibrated") {
                         valueLower := StrLower(value)
-                        isWideCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
-                    } else if (key = "narrowCanvasLeft") {
+                        isWideCanvasCalibrated := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                    } else if (key == "narrowCanvasLeft") {
                         narrowCanvasLeft := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "narrowCanvasTop") {
+                    } else if (key == "narrowCanvasTop") {
                         narrowCanvasTop := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "narrowCanvasRight") {
+                    } else if (key == "narrowCanvasRight") {
                         narrowCanvasRight := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "narrowCanvasBottom") {
+                    } else if (key == "narrowCanvasBottom") {
                         narrowCanvasBottom := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "isNarrowCanvasCalibrated") {
+                    } else if (key == "isNarrowCanvasCalibrated") {
                         valueLower := StrLower(value)
-                        isNarrowCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
-                    } else if (key = "userCanvasLeft") {
+                        isNarrowCanvasCalibrated := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                    } else if (key == "userCanvasLeft") {
                         userCanvasLeft := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "userCanvasTop") {
+                    } else if (key == "userCanvasTop") {
                         userCanvasTop := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "userCanvasRight") {
+                    } else if (key == "userCanvasRight") {
                         userCanvasRight := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "userCanvasBottom") {
+                    } else if (key == "userCanvasBottom") {
                         userCanvasBottom := value != "" ? value + 0.0 : 0.0
-                    } else if (key = "isCanvasCalibrated") {
+                    } else if (key == "isCanvasCalibrated") {
                         valueLower := StrLower(value)
-                        isCanvasCalibrated := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
+                        isCanvasCalibrated := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
                     }
-                } else if (currentSection = "Timing") {
+                } else if (currentSection == "Timing") {
                     ; Load timing configuration
                     global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
                     global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
 
-                    if (key = "boxDrawDelay") {
+                    if (key == "boxDrawDelay") {
                         boxDrawDelay := Integer(value)
-                    } else if (key = "mouseClickDelay") {
+                    } else if (key == "mouseClickDelay") {
                         mouseClickDelay := Integer(value)
-                    } else if (key = "mouseDragDelay") {
+                    } else if (key == "mouseDragDelay") {
                         mouseDragDelay := Integer(value)
-                    } else if (key = "mouseReleaseDelay") {
+                    } else if (key == "mouseReleaseDelay") {
                         mouseReleaseDelay := Integer(value)
-                    } else if (key = "betweenBoxDelay") {
+                    } else if (key == "betweenBoxDelay") {
                         betweenBoxDelay := Integer(value)
-                    } else if (key = "keyPressDelay") {
+                    } else if (key == "keyPressDelay") {
                         keyPressDelay := Integer(value)
-                    } else if (key = "focusDelay") {
+                    } else if (key == "focusDelay") {
                         focusDelay := Integer(value)
-                    } else if (key = "smartBoxClickDelay") {
+                    } else if (key == "smartBoxClickDelay") {
                         smartBoxClickDelay := Integer(value)
-                    } else if (key = "smartMenuClickDelay") {
+                    } else if (key == "smartMenuClickDelay") {
                         smartMenuClickDelay := Integer(value)
-                    } else if (key = "firstBoxDelay") {
+                    } else if (key == "firstBoxDelay") {
                         firstBoxDelay := Integer(value)
-                    } else if (key = "menuWaitDelay") {
+                    } else if (key == "menuWaitDelay") {
                         menuWaitDelay := Integer(value)
-                    } else if (key = "mouseHoverDelay") {
+                    } else if (key == "mouseHoverDelay") {
                         mouseHoverDelay := Integer(value)
                     }
-                } else if (currentSection = "Hotkeys") {
+                } else if (currentSection == "Hotkeys") {
                     ; Load hotkey configuration
                     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
                     global hotkeyStats, hotkeyBreakMode, hotkeySettings, utilityHotkeysEnabled
 
-                    if (key = "hotkeyRecordToggle") {
+                    if (key == "hotkeyRecordToggle") {
                         hotkeyRecordToggle := value
-                    } else if (key = "hotkeySubmit") {
+                    } else if (key == "hotkeySubmit") {
                         hotkeySubmit := value
-                    } else if (key = "hotkeyDirectClear") {
+                    } else if (key == "hotkeyDirectClear") {
                         hotkeyDirectClear := value
-                    } else if (key = "hotkeyUtilitySubmit") {
+                    } else if (key == "hotkeyUtilitySubmit") {
                         hotkeyUtilitySubmit := value
-                    } else if (key = "hotkeyUtilityBackspace") {
+                    } else if (key == "hotkeyUtilityBackspace") {
                         hotkeyUtilityBackspace := value
-                    } else if (key = "hotkeyStats") {
+                    } else if (key == "hotkeyStats") {
                         hotkeyStats := value
-                    } else if (key = "hotkeyBreakMode") {
+                    } else if (key == "hotkeyBreakMode") {
                         hotkeyBreakMode := value
-                    } else if (key = "hotkeySettings") {
+                    } else if (key == "hotkeySettings") {
                         hotkeySettings := value
-                    } else if (key = "utilityHotkeysEnabled") {
+                    } else if (key == "utilityHotkeysEnabled") {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
@@ -6198,14 +6208,14 @@ LoadConfig() {
                         eventLines := StrSplit(value, "|")
                         
                         for eventLine in eventLines {
-                            if (eventLine = "" || Trim(eventLine) = "")
+                            if (eventLine == "" || Trim(eventLine) == "")
                                 continue
                             parts := StrSplit(eventLine, ",")
                             
-                            if (parts.Length = 0)
+                            if (parts.Length == 0)
                                 continue
                                 
-                            if (parts[1] = "jsonAnnotation") {
+                            if (parts[1] == "jsonAnnotation") {
                                 mode := StrReplace(parts[2], "mode=", "")
                                 catId := Integer(StrReplace(parts[3], "cat=", ""))
                                 sev := StrReplace(parts[4], "sev=", "")
@@ -6217,7 +6227,7 @@ LoadConfig() {
                                     severity: sev
                                 })
                                 loadedEvents++
-                            } else if (parts[1] = "boundingBox" && parts.Length >= 5) {
+                            } else if (parts[1] == "boundingBox" && parts.Length >= 5) {
                                 event := {
                                     type: "boundingBox",
                                     left: Integer(parts[2]),
@@ -6237,7 +6247,7 @@ LoadConfig() {
                                             } else if (InStr(part, "name=")) {
                                                 event.degradationName := StrReplace(part, "name=", "")
                                             } else if (InStr(part, "tagged=")) {
-                                                event.isTagged := (StrReplace(part, "tagged=", "") = "true")
+                                                event.isTagged := (StrReplace(part, "tagged=", "") == "true")
                                             }
                                         }
                                     }
@@ -6274,7 +6284,7 @@ LoadConfig() {
         
         ; Update mode toggle button to match loaded setting
         if (modeToggleBtn) {
-            if (annotationMode = "Narrow") {
+            if (annotationMode == "Narrow") {
                 modeToggleBtn.Text := "📱 Narrow"
                 modeToggleBtn.Opt("+Background0xFF8C00")
             } else {
@@ -6419,7 +6429,7 @@ AnalyzeRecordedMacro(macroKey) {
     local degradationAnalysis := AnalyzeDegradationPattern(events)
     
     for event in events {
-        if (event.type = "boundingBox") {
+        if (event.type == "boundingBox") {
             boundingBoxCount++
         }
     }
@@ -6442,7 +6452,7 @@ AnalyzeDegradationPattern(events) {
     local keyPresses := []
     
     for event in events {
-        if (event.type = "boundingBox") {
+        if (event.type == "boundingBox") {
             boxes.Push({
                 index: boxes.Length + 1,
                 time: event.HasOwnProp("time") ? event.time : 0,
@@ -6450,7 +6460,7 @@ AnalyzeDegradationPattern(events) {
                 degradationType: 1,
                 assignedBy: "default"
             })
-        } else if (event.type = "keyDown" && event.HasOwnProp("key") && IsNumberKey(event.key)) {
+        } else if (event.type == "keyDown" && event.HasOwnProp("key") && IsNumberKey(event.key)) {
             local keyNum := GetNumberFromKey(event.key)
             if (keyNum >= 1 && keyNum <= 9) {
                 keyPresses.Push({
