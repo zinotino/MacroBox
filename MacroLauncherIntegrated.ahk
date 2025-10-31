@@ -6378,13 +6378,22 @@ ImportNewMacroPack() {
 ; ===== ANALYSIS FUNCTIONS =====
 AnalyzeRecordedMacro(macroKey) {
     global macroEvents
-    
-    if (!macroEvents.Has(macroKey))
+
+    VizLog(">>> AnalyzeRecordedMacro called for: " . macroKey)
+    FlushVizLog()
+
+    if (!macroEvents.Has(macroKey)) {
+        VizLog(">>> ERROR: macroKey not found in macroEvents!")
+        FlushVizLog()
         return
-    
+    }
+
     local events := macroEvents[macroKey]
+    VizLog(">>> Events count: " . events.Length)
+    FlushVizLog()
+
     local boundingBoxCount := 0
-    
+
     local degradationAnalysis := AnalyzeDegradationPattern(events)
     
     for event in events {
