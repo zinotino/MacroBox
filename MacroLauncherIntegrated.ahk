@@ -1021,6 +1021,9 @@ global severityLevels := ["high", "medium", "low"]
 InitializeVisualizationSystem() {
     global gdiPlusInitialized, gdiPlusToken, canvasWidth, canvasHeight, canvasType
 
+    ; Clear any stale HBITMAP cache from previous sessions
+    CleanupHBITMAPCache()
+
     ; Initialize GDI+
     if (!gdiPlusInitialized) {
         try {
