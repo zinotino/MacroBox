@@ -1,5 +1,14 @@
+# User config files
+config.ini
+config_simple.txt
+
+# User data (runtime generated)
+data/
+thumbnails/
+
 # Debug and log files
 debug_visualization.log
+vizlog_debug.txt
 tests/test_log.txt
 *.log
 
@@ -13,17 +22,15 @@ nul
 .DS_Store
 Thumbs.db
 
-# User data (runtime generated)
-data/
-config.ini
+# CSV exports
 *.csv
-
-# Thumbnails (runtime generated)
-thumbnails/
 
 # Temporary visualization files (runtime generated)
 src/macro_viz_*.png
 src/json_viz_*.png
+
+# Claude Code local settings
+.claude/settings.local.json
 
 # Archive (legacy code, not for distribution)
 archive/legacy-python/
