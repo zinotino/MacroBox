@@ -6459,24 +6459,29 @@ AnalyzeDegradationPattern(events) {
     for boxIndex, box in boxes
     {
         local nextBoxTime := (boxIndex < boxes.Length) ? boxes[boxIndex + 1].time : 999999999
-        
+
+        VizLog("Box #" . boxIndex . ": time=" . box.time . " nextBoxTime=" . nextBoxTime)
+
         local closestKeyPress := ""
         local closestTime := 999999999
-        
+
         for keyPress in keyPresses {
             if (keyPress.time > box.time && keyPress.time < nextBoxTime && keyPress.time < closestTime) {
                 closestKeyPress := keyPress
                 closestTime := keyPress.time
+                VizLog("  MATCHED keyPress deg=" . keyPress.degradationType . " at time=" . keyPress.time)
             }
         }
-        
+
         if (closestKeyPress != "") {
             currentDegradationType := closestKeyPress.degradationType
             box.degradationType := currentDegradationType
             box.assignedBy := "user_selection"
+            VizLog("  ASSIGNED deg=" . currentDegradationType . " (user_selection)")
         } else {
             box.degradationType := currentDegradationType
             box.assignedBy := "auto_default"
+            VizLog("  ASSIGNED deg=" . currentDegradationType . " (auto_default)")
         }
         
         degradationCounts[box.degradationType]++
