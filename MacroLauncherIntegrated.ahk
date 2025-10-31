@@ -464,6 +464,7 @@ if (result = "Yes") {
     wideCanvasBottom := vsBottom
     SaveConfig()
     UpdateStatus("🔄 Wide canvas reset")
+    CleanupHBITMAPCache()
     RefreshAllButtonAppearances()
     if (IsObject(settingsGui))
         UpdateCanvasStatusControls(settingsGui)
@@ -514,6 +515,7 @@ if (result = "Yes") {
     }
     SaveConfig()
     UpdateStatus("🔄 Narrow canvas reset")
+    CleanupHBITMAPCache()
     RefreshAllButtonAppearances()
     if (IsObject(settingsGui))
         UpdateCanvasStatusControls(settingsGui)
@@ -606,6 +608,7 @@ ConfigureWideCanvasFromSettings(settingsGui) {
     SaveConfig()
 
     UpdateStatus("✅ Wide canvas calibrated")
+    CleanupHBITMAPCache()
     RefreshAllButtonAppearances()
     if (IsObject(settingsGui))
         UpdateCanvasStatusControls(settingsGui)
@@ -695,6 +698,7 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
     SaveConfig()
 
     UpdateStatus("✅ Narrow canvas calibrated")
+    CleanupHBITMAPCache()
     RefreshAllButtonAppearances()
     if (IsObject(settingsGui))
         UpdateCanvasStatusControls(settingsGui)
