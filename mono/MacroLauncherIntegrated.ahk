@@ -3560,6 +3560,28 @@ ForceStopRecording() {
     if (macroEvents.Has(currentMacro)) {
         macroEvents[currentMacro].recordedMode := annotationMode
         VizLog("SET recordedMode for " . currentMacro . " to: " . annotationMode)
+
+        ; Save the canvas bounds that were active during recording
+        if (annotationMode = "Wide") {
+            macroEvents[currentMacro].recordedCanvas := {
+                mode: "Wide",
+                left: wideCanvasLeft,
+                top: wideCanvasTop,
+                right: wideCanvasRight,
+                bottom: wideCanvasBottom
+            }
+            VizLog("SET recordedCanvas for " . currentMacro . " to Wide: " . wideCanvasLeft . "," . wideCanvasTop . "," . wideCanvasRight . "," . wideCanvasBottom)
+        } else {
+            macroEvents[currentMacro].recordedCanvas := {
+                mode: "Narrow",
+                left: narrowCanvasLeft,
+                top: narrowCanvasTop,
+                right: narrowCanvasRight,
+                bottom: narrowCanvasBottom
+            }
+            VizLog("SET recordedCanvas for " . currentMacro . " to Narrow: " . narrowCanvasLeft . "," . narrowCanvasTop . "," . narrowCanvasRight . "," . narrowCanvasBottom)
+        }
+
         FlushVizLog()
     }
 
@@ -5919,6 +5941,12 @@ SaveConfig() {
                         if (macroEvents[layerMacroName].HasOwnProp("recordedMode")) {
                             configContent .= layerMacroName . "_recordedMode=" . macroEvents[layerMacroName].recordedMode . "`n"
                         }
+
+                        ; Save recordedCanvas if present
+                        if (macroEvents[layerMacroName].HasOwnProp("recordedCanvas")) {
+                            rc := macroEvents[layerMacroName].recordedCanvas
+                            configContent .= layerMacroName . "_recordedCanvas=" . rc.left . "," . rc.top . "," . rc.right . "," . rc.bottom . "," . rc.mode . "`n"
+                        }
                     }
                 }
             }
@@ -6098,6 +6126,26 @@ LoadConfig() {
                             macroEvents[macroName] := []
                         }
                         macroEvents[macroName].recordedMode := value
+                        continue
+                    }
+
+                    ; Check if this is a recordedCanvas entry
+                    if (InStr(key, "_recordedCanvas")) {
+                        macroName := StrReplace(key, "_recordedCanvas", "")
+                        if (!macroEvents.Has(macroName)) {
+                            macroEvents[macroName] := []
+                        }
+                        ; Parse canvas bounds: left,top,right,bottom,mode
+                        canvasParts := StrSplit(value, ",")
+                        if (canvasParts.Length >= 5) {
+                            macroEvents[macroName].recordedCanvas := {
+                                left: canvasParts[1] + 0.0,
+                                top: canvasParts[2] + 0.0,
+                                right: canvasParts[3] + 0.0,
+                                bottom: canvasParts[4] + 0.0,
+                                mode: Trim(canvasParts[5])
+                            }
+                        }
                         continue
                     }
 
