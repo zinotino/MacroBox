@@ -297,6 +297,7 @@ global modeToggleBtn := 0
 global recording := false
 global playback := false
 global awaitingAssignment := false
+global needsMacroStateSave := false
 global currentMacro := ""
 global macroEvents := Map()
 global buttonGrid := Map()
@@ -2379,129 +2380,297 @@ Stats_IncrementDegradationCountDirect(executionData, degradation_name) {
     }
 }
 
-ReadStatsFromMemory(filterBySession := false) {
+; =============================================================================
+; UNIFIED STATS QUERY SYSTEM
+; =============================================================================
+
+; Global cache for today's stats
+global todayStatsCache := Map()
+global todayStatsCacheDate := ""
+global todayStatsCacheInvalidated := true
+
+; Unified stats query function with flexible filtering
+; filterOptions := {
+;     dateFilter: "all" | "today" | "session"  (default: "all")
+;     sessionId: "specific_session_id"          (optional, requires dateFilter="session")
+;     username: "specific_username"             (optional)
+;     buttonKey: "specific_button"              (optional)
+;     layer: layer_number                       (optional)
+; }
+QueryUserStats(filterOptions := "") {
     global macroExecutionLog, sessionId, totalActiveTime, currentUsername
+
+    ; Initialize default filter options
+    if (filterOptions == "") {
+        filterOptions := Map()
+        filterOptions["dateFilter"] := "all"
+    }
+
+    ; Check if we can use cached today stats
+    ; IMPORTANT: For real-time display, we still need to update live time even from cache
+    if (filterOptions["dateFilter"] == "today") {
+        today := FormatTime(A_Now, "yyyy-MM-dd")
+        if (!todayStatsCacheInvalidated && todayStatsCacheDate == today && todayStatsCache.Count > 0) {
+            ; Clone cached stats to avoid modifying the cache itself
+            stats := Map()
+            for key, value in todayStatsCache {
+                stats[key] := value
+            }
+
+            ; CRITICAL: Update live time from current session
+            currentLiveTime := GetCurrentSessionActiveTime()
+            sessionActiveMap := stats.Has("session_active_time_map") ? stats["session_active_time_map"] : Map()
+
+            ; Recalculate total time with current live delta
+            totalSessionActive := 0
+            for sessId, activeMs in sessionActiveMap {
+                if (activeMs > 0) {
+                    totalSessionActive += activeMs
+                }
+            }
+
+            if (sessionActiveMap.Has(sessionId)) {
+                ; Add delta since last saved execution in this session
+                timeDelta := currentLiveTime - sessionActiveMap[sessionId]
+                if (timeDelta > 0) {
+                    totalSessionActive += timeDelta
+                }
+            } else {
+                ; No executions yet today in current session - add all current time
+                if (currentLiveTime > 0) {
+                    totalSessionActive += currentLiveTime
+                }
+            }
+
+            stats["session_active_time"] := totalSessionActive
+
+            ; Recalculate rates with updated time
+            if (stats["session_active_time"] > 5000) {
+                activeTimeHours := stats["session_active_time"] / 3600000
+                stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
+                stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
+            }
+
+            return stats
+        }
+    }
+
+    ; Build stats from scratch
     stats := Stats_CreateEmptyStatsMap()
     sessionActiveMap := Map()
     executionTimes := []
     buttonCount := Map()
     layerCount := Map()
+
+    ; Determine date filter
+    dateFilter := filterOptions.Has("dateFilter") ? filterOptions["dateFilter"] : "all"
+    today := (dateFilter == "today") ? FormatTime(A_Now, "yyyy-MM-dd") : ""
+    filterSession := (dateFilter == "session")
+    targetSessionId := filterOptions.Has("sessionId") ? filterOptions["sessionId"] : sessionId
+
+    ; Optional filters
+    filterUsername := filterOptions.Has("username") ? filterOptions["username"] : ""
+    filterButton := filterOptions.Has("buttonKey") ? filterOptions["buttonKey"] : ""
+    filterLayer := filterOptions.Has("layer") ? filterOptions["layer"] : 0
+
+    ; Process execution log
     for executionData in macroExecutionLog {
         try {
-            ; Use stored session_id from execution data, fall back to global if not present
-            sessionKey := executionData.Has("session_id") ? executionData["session_id"] : sessionId
-            if (!filterBySession || sessionKey == sessionId) {
-                execution_type := executionData["execution_type"]
-                macro_name := executionData.Has("button_key") ? executionData["button_key"] : ""
-                layer := executionData.Has("layer") ? executionData["layer"] : 1
-                execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
-                total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
-                severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
-                session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
-                ; Track maximum active time per session (represents cumulative time at that execution)
-                if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
-                    sessionActiveMap[sessionKey] := session_active_time
+            ; Apply date filter
+            if (dateFilter == "today") {
+                timestamp := executionData.Has("timestamp") ? executionData["timestamp"] : ""
+                if (SubStr(timestamp, 1, 10) != today) {
+                    continue
                 }
-                ; Use stored username from execution data, fall back to current
-                username := executionData.Has("username") ? executionData["username"] : currentUsername
-                UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
-                stats["total_executions"]++
-                stats["total_boxes"] += total_boxes
-                stats["total_execution_time"] += execution_time
-                executionTimes.Push(execution_time)
-                if (execution_type == "clear") {
-                    stats["clear_executions_count"]++
-                } else if (execution_type == "json_profile") {
-                    stats["json_profile_executions_count"]++
-                } else {
-                    stats["macro_executions_count"]++
+            }
+
+            ; Apply session filter
+            if (filterSession) {
+                execSessionId := executionData.Has("session_id") ? executionData["session_id"] : sessionId
+                if (execSessionId != targetSessionId) {
+                    continue
                 }
-                if (macro_name != "") {
-                    if (!buttonCount.Has(macro_name)) {
-                        buttonCount[macro_name] := 0
-                    }
-                    buttonCount[macro_name]++
+            }
+
+            ; Apply username filter
+            if (filterUsername != "") {
+                execUsername := executionData.Has("username") ? executionData["username"] : currentUsername
+                if (execUsername != filterUsername) {
+                    continue
                 }
-                if (!layerCount.Has(layer)) {
-                    layerCount[layer] := 0
+            }
+
+            ; Apply button filter
+            if (filterButton != "") {
+                execButton := executionData.Has("button_key") ? executionData["button_key"] : ""
+                if (execButton != filterButton) {
+                    continue
                 }
-                layerCount[layer]++
-                if (execution_type == "json_profile" && severity_level != "") {
-                    switch StrLower(severity_level) {
-                        case "low":
-                            stats["severity_low"]++
-                        case "medium":
-                            stats["severity_medium"]++
-                        case "high":
-                            stats["severity_high"]++
-                    }
+            }
+
+            ; Apply layer filter
+            if (filterLayer > 0) {
+                execLayer := executionData.Has("layer") ? executionData["layer"] : 1
+                if (execLayer != filterLayer) {
+                    continue
                 }
-                smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
-                glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
-                splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
-                partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
-                full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
-                flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
-                rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
-                haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
-                snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
-                clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
-                stats["smudge_total"] += smudge
-                stats["glare_total"] += glare
-                stats["splashes_total"] += splashes
-                stats["partial_blockage_total"] += partial
-                stats["full_blockage_total"] += full
-                stats["light_flare_total"] += flare
-                stats["rain_total"] += rain
-                stats["haze_total"] += haze
-                stats["snow_total"] += snow
-                stats["clear_total"] += clear
-                ; Aggregate degradation counts by execution type
-                if (execution_type == "json_profile") {
-                    ; For JSON profiles, use the individual count fields (already populated)
-                    stats["json_smudge"] += smudge
-                    stats["json_glare"] += glare
-                    stats["json_splashes"] += splashes
-                    stats["json_partial"] += partial
-                    stats["json_full"] += full
-                    stats["json_flare"] += flare
-                    stats["json_rain"] += rain
-                    stats["json_haze"] += haze
-                    stats["json_snow"] += snow
-                    stats["json_clear"] += clear
-                } else if (execution_type == "macro") {
-                    stats["macro_smudge"] += smudge
-                    stats["macro_glare"] += glare
-                    stats["macro_splashes"] += splashes
-                    stats["macro_partial"] += partial
-                    stats["macro_full"] += full
-                    stats["macro_flare"] += flare
-                    stats["macro_rain"] += rain
-                    stats["macro_haze"] += haze
-                    stats["macro_snow"] += snow
-                    stats["macro_clear"] += clear
+            }
+
+            ; Extract execution data
+            execution_type := executionData["execution_type"]
+            macro_name := executionData.Has("button_key") ? executionData["button_key"] : ""
+            layer := executionData.Has("layer") ? executionData["layer"] : 1
+            execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
+            total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
+            severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
+            session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
+            execSessionId := executionData.Has("session_id") ? executionData["session_id"] : sessionId
+            username := executionData.Has("username") ? executionData["username"] : currentUsername
+
+            ; Track maximum active time per session
+            if (!sessionActiveMap.Has(execSessionId) || session_active_time > sessionActiveMap[execSessionId]) {
+                sessionActiveMap[execSessionId] := session_active_time
+            }
+
+            ; Update user summary
+            UpdateUserSummary(stats["user_summary"], username, total_boxes, execSessionId)
+
+            ; Aggregate basic stats
+            stats["total_executions"]++
+            stats["total_boxes"] += total_boxes
+            stats["total_execution_time"] += execution_time
+            executionTimes.Push(execution_time)
+
+            ; Count execution types
+            if (execution_type == "clear") {
+                stats["clear_executions_count"]++
+            } else if (execution_type == "json_profile") {
+                stats["json_profile_executions_count"]++
+            } else {
+                stats["macro_executions_count"]++
+            }
+
+            ; Track button usage
+            if (macro_name != "") {
+                if (!buttonCount.Has(macro_name)) {
+                    buttonCount[macro_name] := 0
                 }
+                buttonCount[macro_name]++
+            }
+
+            ; Track layer usage
+            if (!layerCount.Has(layer)) {
+                layerCount[layer] := 0
+            }
+            layerCount[layer]++
+
+            ; Track severity levels for JSON profiles
+            if (execution_type == "json_profile" && severity_level != "") {
+                switch StrLower(severity_level) {
+                    case "low":
+                        stats["severity_low"]++
+                    case "medium":
+                        stats["severity_medium"]++
+                    case "high":
+                        stats["severity_high"]++
+                }
+            }
+
+            ; Extract degradation counts
+            smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
+            glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
+            splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
+            partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
+            full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
+            flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
+            rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
+            haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
+            snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
+            clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
+
+            ; Aggregate total degradation counts
+            stats["smudge_total"] += smudge
+            stats["glare_total"] += glare
+            stats["splashes_total"] += splashes
+            stats["partial_blockage_total"] += partial
+            stats["full_blockage_total"] += full
+            stats["light_flare_total"] += flare
+            stats["rain_total"] += rain
+            stats["haze_total"] += haze
+            stats["snow_total"] += snow
+            stats["clear_total"] += clear
+
+            ; Aggregate degradation counts by execution type
+            if (execution_type == "json_profile") {
+                stats["json_smudge"] += smudge
+                stats["json_glare"] += glare
+                stats["json_splashes"] += splashes
+                stats["json_partial"] += partial
+                stats["json_full"] += full
+                stats["json_flare"] += flare
+                stats["json_rain"] += rain
+                stats["json_haze"] += haze
+                stats["json_snow"] += snow
+                stats["json_clear"] += clear
+            } else if (execution_type == "macro") {
+                stats["macro_smudge"] += smudge
+                stats["macro_glare"] += glare
+                stats["macro_splashes"] += splashes
+                stats["macro_partial"] += partial
+                stats["macro_full"] += full
+                stats["macro_flare"] += flare
+                stats["macro_rain"] += rain
+                stats["macro_haze"] += haze
+                stats["macro_snow"] += snow
+                stats["macro_clear"] += clear
             }
         } catch {
             continue
         }
     }
+
+    ; Calculate aggregate metrics
     totalSessionActive := 0
     for _, activeMs in sessionActiveMap {
         if (activeMs > 0) {
             totalSessionActive += activeMs
         }
     }
+
     if (sessionActiveMap.Has(sessionId)) {
         stats["current_session_active_time"] := sessionActiveMap[sessionId]
     } else {
         stats["current_session_active_time"] := 0
     }
+
     if (totalSessionActive > 0) {
         stats["session_active_time"] := totalSessionActive
     }
+
+    ; CRITICAL FIX: For "today" filter, include current active session time
+    ; This ensures live time is shown even before first execution today
+    if (dateFilter == "today") {
+        currentLiveTime := GetCurrentSessionActiveTime()
+
+        ; If current session had executions today, its time is already in sessionActiveMap
+        ; But we need to add the delta since last execution
+        if (sessionActiveMap.Has(sessionId)) {
+            ; Add delta since last saved execution in this session
+            timeDelta := currentLiveTime - sessionActiveMap[sessionId]
+            if (timeDelta > 0) {
+                stats["session_active_time"] += timeDelta
+            }
+        } else {
+            ; No executions yet today in current session - add all current time
+            if (currentLiveTime > 0) {
+                stats["session_active_time"] += currentLiveTime
+            }
+        }
+    }
+
     stats["session_active_time_map"] := sessionActiveMap
     stats["distinct_user_count"] := stats["user_summary"].Count
+
     for username, userData in stats["user_summary"] {
         if (userData.Has("sessions")) {
             userData["session_count"] := userData["sessions"].Count
@@ -2509,14 +2678,18 @@ ReadStatsFromMemory(filterBySession := false) {
             userData["session_count"] := 0
         }
     }
+
     if (stats["total_executions"] > 0) {
         stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
     }
+
     if (stats["session_active_time"] > 5000) {
         activeTimeHours := stats["session_active_time"] / 3600000
         stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
         stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
     }
+
+    ; Find most used button and layer
     maxButtonCount := 0
     maxLayerCount := 0
     for button, count in buttonCount {
@@ -2531,131 +2704,40 @@ ReadStatsFromMemory(filterBySession := false) {
             stats["most_active_layer"] := layer
         }
     }
+
+    ; Cache today's stats if applicable
+    if (dateFilter == "today") {
+        global todayStatsCache, todayStatsCacheDate, todayStatsCacheInvalidated
+        todayStatsCache := stats
+        todayStatsCacheDate := today
+        todayStatsCacheInvalidated := false
+    }
+
     return stats
 }
 
-GetTodayStatsFromMemory() {
-    global macroExecutionLog, sessionId, currentUsername
-    stats := Stats_CreateEmptyStatsMap()
-    sessionActiveMap := Map()
-    today := FormatTime(A_Now, "yyyy-MM-dd")
-    for executionData in macroExecutionLog {
-        try {
-            timestamp := executionData.Has("timestamp") ? executionData["timestamp"] : ""
-            if (SubStr(timestamp, 1, 10) = today) {
-                execution_type := executionData["execution_type"]
-                execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
-                total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
-                severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
-                session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
-                stats["total_executions"]++
-                stats["total_boxes"] += total_boxes
-                stats["total_execution_time"] += execution_time
-                if (execution_type == "json_profile") {
-                    stats["json_profile_executions_count"]++
-                } else if (execution_type == "macro") {
-                    stats["macro_executions_count"]++
-                }
-                ; Use stored session_id from execution data, fall back to global if not present
-                sessionKey := executionData.Has("session_id") ? executionData["session_id"] : sessionId
-                if (!sessionActiveMap.Has(sessionKey) || session_active_time > sessionActiveMap[sessionKey]) {
-                    sessionActiveMap[sessionKey] := session_active_time
-                }
-                ; Use stored username from execution data, fall back to current
-                username := executionData.Has("username") ? executionData["username"] : currentUsername
-                UpdateUserSummary(stats["user_summary"], username, total_boxes, sessionKey)
-                if (execution_type == "json_profile" && severity_level != "") {
-                    switch StrLower(severity_level) {
-                        case "low":
-                            stats["severity_low"]++
-                        case "medium":
-                            stats["severity_medium"]++
-                        case "high":
-                            stats["severity_high"]++
-                    }
-                }
-                smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
-                glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
-                splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
-                partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
-                full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
-                flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
-                rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
-                haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
-                snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
-                clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
-                stats["smudge_total"] += smudge
-                stats["glare_total"] += glare
-                stats["splashes_total"] += splashes
-                stats["partial_blockage_total"] += partial
-                stats["full_blockage_total"] += full
-                stats["light_flare_total"] += flare
-                stats["rain_total"] += rain
-                stats["haze_total"] += haze
-                stats["snow_total"] += snow
-                stats["clear_total"] += clear
-                ; Aggregate degradation counts by execution type
-                if (execution_type == "json_profile") {
-                    ; For JSON profiles, use the individual count fields (already populated)
-                    stats["json_smudge"] += smudge
-                    stats["json_glare"] += glare
-                    stats["json_splashes"] += splashes
-                    stats["json_partial"] += partial
-                    stats["json_full"] += full
-                    stats["json_flare"] += flare
-                    stats["json_rain"] += rain
-                    stats["json_haze"] += haze
-                    stats["json_snow"] += snow
-                    stats["json_clear"] += clear
-                } else if (execution_type = "macro") {
-                    stats["macro_smudge"] += smudge
-                    stats["macro_glare"] += glare
-                    stats["macro_splashes"] += splashes
-                    stats["macro_partial"] += partial
-                    stats["macro_full"] += full
-                    stats["macro_flare"] += flare
-                    stats["macro_rain"] += rain
-                    stats["macro_haze"] += haze
-                    stats["macro_snow"] += snow
-                    stats["macro_clear"] += clear
-                }
-            }
-        } catch {
-            continue
-        }
-    }
-    totalSessionActive := 0
-    for _, activeMs in sessionActiveMap {
-        if (activeMs > 0) {
-            totalSessionActive += activeMs
-        }
-    }
-    if (sessionActiveMap.Has(sessionId)) {
-        stats["current_session_active_time"] := sessionActiveMap[sessionId]
+; Invalidate today's stats cache (call after recording new execution)
+InvalidateTodayStatsCache() {
+    global todayStatsCacheInvalidated
+    todayStatsCacheInvalidated := true
+}
+
+; Legacy wrapper - maintained for backward compatibility
+ReadStatsFromMemory(filterBySession := false) {
+    filterOptions := Map()
+    if (filterBySession) {
+        filterOptions["dateFilter"] := "session"
     } else {
-        stats["current_session_active_time"] := 0
+        filterOptions["dateFilter"] := "all"
     }
-    if (totalSessionActive > 0) {
-        stats["session_active_time"] := totalSessionActive
-    }
-    stats["session_active_time_map"] := sessionActiveMap
-    stats["distinct_user_count"] := stats["user_summary"].Count
-    for username, userData in stats["user_summary"] {
-        if (userData.Has("sessions")) {
-            userData["session_count"] := userData["sessions"].Count
-        } else {
-            userData["session_count"] := 0
-        }
-    }
-    if (stats["total_executions"] > 0) {
-        stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
-    }
-    if (stats["session_active_time"] > 5000) {
-        activeTimeHours := stats["session_active_time"] / 3600000
-        stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
-        stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
-    }
-    return stats
+    return QueryUserStats(filterOptions)
+}
+
+; Legacy wrapper for today's stats - uses caching via QueryUserStats
+GetTodayStatsFromMemory() {
+    filterOptions := Map()
+    filterOptions["dateFilter"] := "today"
+    return QueryUserStats(filterOptions)
 }
 
 ProcessDegradationCounts(executionData, degradationString) {
@@ -2818,6 +2900,8 @@ AppendToCSV(executionData) {
     global macroExecutionLog
     try {
         macroExecutionLog.Push(executionData)
+        ; Invalidate today's stats cache when new data is added
+        InvalidateTodayStatsCache()
         return true
     } catch Error as e {
         UpdateStatus("⚠ Stats record error: " . e.Message)
@@ -3102,7 +3186,7 @@ ShowStatsMenu() {
     statsGui.Show("w700 h" . (y + 40))
     statsGuiOpen := true
     UpdateStatsDisplay()
-    SetTimer(UpdateStatsDisplay, 2000)
+    SetTimer(UpdateStatsDisplay, 500)
 }
 
 AddHorizontalStatRowLive(gui, y, label, allKey, todayKey) {
@@ -3143,27 +3227,29 @@ UpdateStatsDisplay() {
         return
     }
     try {
+        ; Query stats - QueryUserStats now handles live time calculation
         allStats := ReadStatsFromMemory(false)
         todayStats := GetTodayStatsFromMemory()
 
-        ; Get current live active time
+        ; Get current live time for all-time stats
         currentActiveTime := GetCurrentSessionActiveTime()
 
-        ; Determine the time accumulated since last execution was saved
-        ; This avoids double-counting when sessions span multiple days
+        ; For ALL-TIME: Add current session's live delta
+        effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
+
+        ; Calculate delta from last saved execution time in current session
         lastExecutionTime := 0
         if (macroExecutionLog.Length > 0) {
             lastExecution := macroExecutionLog[macroExecutionLog.Length]
-            if (lastExecution.Has("session_active_time_ms")) {
-                lastExecutionTime := lastExecution["session_active_time_ms"]
+            if (lastExecution.Has("session_active_time_ms") && lastExecution.Has("session_id")) {
+                ; Only use if it's from current session
+                if (lastExecution["session_id"] == sessionId) {
+                    lastExecutionTime := lastExecution["session_active_time_ms"]
+                }
             }
         }
 
-        ; Calculate live time delta (time since last saved execution)
         liveTimeDelta := (currentActiveTime > lastExecutionTime) ? (currentActiveTime - lastExecutionTime) : 0
-
-        ; For ALL-TIME: Add live delta to recorded total
-        effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
         effectiveAllActiveTime += liveTimeDelta
 
         if (effectiveAllActiveTime > 5000) {
@@ -3173,35 +3259,15 @@ UpdateStatsDisplay() {
         }
         allStats["session_active_time"] := effectiveAllActiveTime
 
-        ; For TODAY: Only add live delta if last execution was from today
+        ; For TODAY: QueryUserStats already includes current session time
+        ; Just recalculate rates if needed
         effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
-
-        ; Check if last execution was today
-        today := FormatTime(A_Now, "yyyy-MM-dd")
-        lastExecutionWasToday := false
-
-        if (macroExecutionLog.Length > 0) {
-            lastExecution := macroExecutionLog[macroExecutionLog.Length]
-            if (lastExecution.Has("timestamp")) {
-                lastTimestamp := lastExecution["timestamp"]
-                lastExecutionWasToday := (SubStr(lastTimestamp, 1, 10) = today)
-            }
-        }
-
-        ; Add live time to today only if last execution was today OR no executions yet
-        if (lastExecutionWasToday) {
-            effectiveTodayActiveTime += liveTimeDelta
-        } else if (macroExecutionLog.Length == 0) {
-            ; No executions yet - all current time belongs to today
-            effectiveTodayActiveTime += currentActiveTime
-        }
 
         if (effectiveTodayActiveTime > 5000) {
             activeTimeHours := effectiveTodayActiveTime / 3600000
             todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
             todayStats["executions_per_hour"] := Round(todayStats["total_executions"] / activeTimeHours, 1)
         }
-        todayStats["session_active_time"] := effectiveTodayActiveTime
         if (statsControls.Has("all_exec"))
             statsControls["all_exec"].Value := allStats["total_executions"]
         if (statsControls.Has("today_exec"))
@@ -3961,9 +4027,22 @@ AssignToButton(buttonName) {
     FlushVizLog()
 
     UpdateButtonAppearance(buttonName)
-    SaveMacroState()
+
+    ; PERFORMANCE: Queue async save instead of blocking here
+    global needsMacroStateSave
+    needsMacroStateSave := true
+    SetTimer(DoSaveMacroStateAsync, -200)
 
     UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
+}
+
+; Async wrapper for SaveMacroState to prevent blocking during assignment
+DoSaveMacroStateAsync() {
+    global needsMacroStateSave
+    if (needsMacroStateSave) {
+        needsMacroStateSave := false
+        SaveMacroState()
+    }
 }
 
 ; ===== MACRO PLAYBACK =====
