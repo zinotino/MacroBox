@@ -4477,6 +4477,13 @@ UpdateButtonAppearance(buttonName) {
             }
 
             if (hbitmap && hbitmap != 0) {
+                ; Check if this HBITMAP is already displayed on this button
+                if (oldHbitmap = hbitmap && oldHbitmapValid) {
+                    VizLog(">>> UpdateButtonAppearance: HBITMAP already displayed, skipping reassignment")
+                    FlushVizLog()
+                    return
+                }
+
                 ; HBITMAP creation succeeded - load directly into picture control
                 VizLog(">>> UpdateButtonAppearance: Assigning HBITMAP to picture control")
                 button.Visible := false
