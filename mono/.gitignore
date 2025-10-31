@@ -11,3 +11,6 @@ vizlog_debug.txt
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Windows artifacts
+nul
