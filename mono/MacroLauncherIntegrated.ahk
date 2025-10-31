@@ -69,12 +69,18 @@ ObjLoad(path) {
 }
 
 ObjToString(value) {
+    ; Check type FIRST to avoid type coercion with loose comparison
+    valueType := Type(value)
+
+    ; Handle numbers before boolean check (prevents 0/1 being coerced to false/true)
+    if (valueType = "Integer" || valueType = "Float")
+        return String(value)
+
+    ; Now safe to check booleans (only true booleans, not coerced numbers)
     if (value == true)
         return "true"
     if (value == false)
         return "false"
-
-    valueType := Type(value)
     if (valueType = "ComValue")
         return "null"
 
@@ -520,6 +526,10 @@ if (result = "Yes") {
 ConfigureWideCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
 
+    ; Set coordinate mode to Screen to properly capture absolute screen coordinates
+    ; This is critical for multi-monitor setups with negative coordinates
+    CoordMode("Mouse", "Screen")
+
     result := MsgBox("Calibrate 16:9 Wide Canvas Area`n`nThis is for WIDE mode recordings (full screen, widescreen).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 16:9 area`n2. Click BOTTOM-RIGHT corner of your 16:9 area", "Wide Canvas Calibration", "OKCancel")
 
     if (result = "Cancel") {
@@ -604,6 +614,10 @@ ConfigureWideCanvasFromSettings(settingsGui) {
 
 ConfigureNarrowCanvasFromSettings(settingsGui) {
     settingsGui.Hide()
+
+    ; Set coordinate mode to Screen to properly capture absolute screen coordinates
+    ; This is critical for multi-monitor setups with negative coordinates
+    CoordMode("Mouse", "Screen")
 
     result := MsgBox("Calibrate 4:3 Narrow Canvas Area`n`nThis is for NARROW mode recordings (constrained, square-ish).`n`nClick OK then:`n1. Click TOP-LEFT corner of your 4:3 area`n2. Click BOTTOM-RIGHT corner of your 4:3 area", "Narrow Canvas Calibration", "OKCancel")
 
@@ -941,23 +955,7 @@ if (isCanvasCalibrated && userCanvasLeft = 0 && userCanvasTop = 0 && userCanvasR
     userCanvasBottom := virtualBottom
 }
 
-if (isWideCanvasCalibrated && wideCanvasLeft = 0 && wideCanvasTop = 0 && wideCanvasRight = defaultScreenWidth && wideCanvasBottom = defaultScreenHeight && (virtualLeft != 0 || virtualTop != 0)) {
-    wideCanvasLeft := virtualLeft
-    wideCanvasTop := virtualTop
-    wideCanvasRight := virtualRight
-    wideCanvasBottom := virtualBottom
-}
-
-if (isNarrowCanvasCalibrated && (virtualLeft != 0 || virtualTop != 0)) {
-    if (narrowCanvasLeft >= 0 && narrowCanvasRight <= defaultScreenWidth) {
-        narrowCanvasLeft += virtualLeft
-        narrowCanvasRight += virtualLeft
-    }
-    if (narrowCanvasTop >= 0 && narrowCanvasBottom <= defaultScreenHeight) {
-        narrowCanvasTop += virtualTop
-        narrowCanvasBottom += virtualTop
-    }
-}
+; DISABLED: Faulty auto-correction logic removed (was causing issues with multi-monitor setups)
 
 if (!isCanvasCalibrated) {
     userCanvasLeft := virtualLeft
@@ -1563,10 +1561,22 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         }
     }
 
+    ; Log canvas selection details for diagnostics
+    VizLog("✓ Canvas selected: " . canvasSource)
+    VizLog("  Bounds: L=" . Round(canvasLeft, 1) . " T=" . Round(canvasTop, 1) . " R=" . Round(canvasRight, 1) . " B=" . Round(canvasBottom, 1))
+    VizLog("  Canvas size: " . Round(canvasW, 1) . "x" . Round(canvasH, 1))
+    VizLog("  Scale: X=" . Round(scaleX, 3) . " Y=" . Round(scaleY, 3))
+    VizLog("  Offset: X=" . Round(offsetX, 1) . " Y=" . Round(offsetY, 1))
+    VizLog("  Button: " . Round(buttonWidth, 1) . "x" . Round(buttonHeight, 1))
+
     ; Validate canvas dimensions
     if (canvasW <= 0 || canvasH <= 0) {
         return
     }
+
+    ; Track boxes drawn vs skipped for diagnostics
+    local boxesDrawn := 0
+    local boxesSkipped := 0
 
     ; Draw boxes with consistent percentage-based scaling
     for box in boxes {
@@ -1577,6 +1587,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         boxBottom := Max(canvasTop, Min(box.bottom, canvasBottom))
 
         if (boxRight <= boxLeft || boxBottom <= boxTop) {
+            boxesSkipped++
+            VizLog("  ⊗ Skipped box (clamped to zero size)")
             continue
         }
 
@@ -1591,6 +1603,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         rawH := rawY2 - rawY1
 
         if (rawW <= 0 || rawH <= 0) {
+            boxesSkipped++
+            VizLog("  ⊗ Skipped box (zero dimensions after scaling)")
             continue
         }
 
@@ -1651,6 +1665,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
 
         ; Skip boxes that are too small to see
         if (w < 1.5 || h < 1.5) {
+            boxesSkipped++
+            VizLog("  ⊗ Skipped box (too small after bounds validation)")
             continue
         }
 
@@ -1689,7 +1705,13 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         ; Reset rendering mode
         DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)
         DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0)
+
+        ; Count this box as successfully drawn
+        boxesDrawn++
     }
+
+    ; Log drawing summary
+    VizLog("✓ Drawing complete: " . boxesDrawn . " drawn, " . boxesSkipped . " skipped")
 }
 
 ; ===== CANVAS TYPE DETECTION =====
@@ -3942,11 +3964,15 @@ PlayEventsOptimized(recordedEvents) {
             Send("{LButton Up}")
         }
         else if (event.type = "keyDown") {
-            Send("{" . event.key . " Down}")
-            Sleep(keyPressDelay)
+            if (event.HasOwnProp("key") && event.key != "") {
+                Send("{" . event.key . " Down}")
+                Sleep(keyPressDelay)
+            }
         }
         else if (event.type = "keyUp") {
-            Send("{" . event.key . " Up}")
+            if (event.HasOwnProp("key") && event.key != "") {
+                Send("{" . event.key . " Up}")
+            }
         }
     }
 
@@ -5877,13 +5903,22 @@ SaveConfig() {
                             eventsStr .= event.type . "," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . degradationType . ",name=" . degradationName . ",tagged=" . isTagged
                         } else {
                             if (eventCount > 1) eventsStr .= "|"
-                            eventsStr .= event.type . "," . (event.HasOwnProp("x") ? event.x : "") . "," . (event.HasOwnProp("y") ? event.y : "")
+                            ; Save key property for keyDown/keyUp events, then x,y coordinates
+                            keyValue := event.HasOwnProp("key") ? event.key : ""
+                            xValue := event.HasOwnProp("x") ? event.x : ""
+                            yValue := event.HasOwnProp("y") ? event.y : ""
+                            eventsStr .= event.type . "," . keyValue . "," . xValue . "," . yValue
                         }
                     }
                     if (eventsStr != "") {
                         ; Add to manual content instead of using IniWrite
                         configContent .= layerMacroName . "=" . eventsStr . "`n"
                         savedMacros++
+
+                        ; Save recordedMode if present
+                        if (macroEvents[layerMacroName].HasOwnProp("recordedMode")) {
+                            configContent .= layerMacroName . "_recordedMode=" . macroEvents[layerMacroName].recordedMode . "`n"
+                        }
                     }
                 }
             }
@@ -6056,6 +6091,16 @@ LoadConfig() {
                         buttonCustomLabels[key] := value
                     }
                 } else if (currentSection = "Macros" && InStr(key, "L") = 1) {
+                    ; Check if this is a recordedMode entry
+                    if (InStr(key, "_recordedMode")) {
+                        macroName := StrReplace(key, "_recordedMode", "")
+                        if (!macroEvents.Has(macroName)) {
+                            macroEvents[macroName] := []
+                        }
+                        macroEvents[macroName].recordedMode := value
+                        continue
+                    }
+
                     ; Parse macro data
                     if (value != "") {
                         macroEvents[key] := []
@@ -6122,8 +6167,10 @@ LoadConfig() {
                                 loadedEvents++
                             } else {
                                 event := {type: parts[1]}
-                                if (parts.Length > 1 && parts[2] != "") event.x := Integer(parts[2])
-                                if (parts.Length > 2 && parts[3] != "") event.y := Integer(parts[3])
+                                if (parts.Length > 1 && parts[2] != "")
+                                    event.x := Integer(parts[2])
+                                if (parts.Length > 2 && parts[3] != "")
+                                    event.y := Integer(parts[3])
                                 macroEvents[key].Push(event)
                                 loadedEvents++
                             }
@@ -6306,7 +6353,7 @@ AnalyzeDegradationPattern(events) {
                 degradationType: 1,
                 assignedBy: "default"
             })
-        } else if (event.type = "keyDown" && IsNumberKey(event.key)) {
+        } else if (event.type = "keyDown" && event.HasOwnProp("key") && IsNumberKey(event.key)) {
             local keyNum := GetNumberFromKey(event.key)
             if (keyNum >= 1 && keyNum <= 9) {
                 keyPresses.Push({
