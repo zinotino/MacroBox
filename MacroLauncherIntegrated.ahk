@@ -1120,40 +1120,44 @@ ExtractBoxEvents(macroEvents) {
 
             ; Only include boxes that are reasonably sized
             if ((right - left) >= 5 && (bottom - top) >= 5) {
-                ; Look for a keypress AFTER this box to determine degradation type
+                ; Check if degradationType is already stored in the event (from config load)
                 degradationType := currentDegradationType
+                if ((Type(event) = "Map" && event.Has("degradationType")) || (IsObject(event) && event.HasOwnProp("degradationType"))) {
+                    degradationType := (Type(event) = "Map") ? event["degradationType"] : event.degradationType
+                    currentDegradationType := degradationType
+                } else {
+                    ; Look ahead for keypress events that assign degradation type
+                    nextIndex := eventIndex + 1
+                    while (nextIndex <= macroEvents.Length) {
+                        nextEvent := macroEvents[nextIndex]
 
-                ; Look ahead for keypress events that assign degradation type
-                nextIndex := eventIndex + 1
-                while (nextIndex <= macroEvents.Length) {
-                    nextEvent := macroEvents[nextIndex]
+                        ; Get next event type (support Map and Object)
+                        nextEventType := ""
+                        if (Type(nextEvent) = "Map") {
+                            nextEventType := nextEvent.Has("type") ? nextEvent["type"] : ""
+                        } else if (IsObject(nextEvent)) {
+                            nextEventType := nextEvent.HasOwnProp("type") ? nextEvent.type : ""
+                        }
 
-                    ; Get next event type (support Map and Object)
-                    nextEventType := ""
-                    if (Type(nextEvent) = "Map") {
-                        nextEventType := nextEvent.Has("type") ? nextEvent["type"] : ""
-                    } else if (IsObject(nextEvent)) {
-                        nextEventType := nextEvent.HasOwnProp("type") ? nextEvent.type : ""
-                    }
+                        ; Stop at next bounding box - keypress should be immediately after current box
+                        if (nextEventType = "boundingBox")
+                            break
 
-                    ; Stop at next bounding box - keypress should be immediately after current box
-                    if (nextEventType = "boundingBox")
-                        break
-
-                    ; Found a keypress after this box - this assigns the degradation type
-                    if (nextEventType = "keyDown") {
-                        nextKey := (Type(nextEvent) = "Map") ? (nextEvent.Has("key") ? nextEvent["key"] : "") : (nextEvent.HasOwnProp("key") ? nextEvent.key : "")
-                        if (RegExMatch(nextKey, "^\d$")) {
-                            keyNumber := Integer(nextKey)
-                            if (keyNumber >= 1 && keyNumber <= 9) {
-                                degradationType := keyNumber
-                                currentDegradationType := keyNumber  ; Update current degradation for subsequent boxes
-                                break
+                        ; Found a keypress after this box - this assigns the degradation type
+                        if (nextEventType = "keyDown") {
+                            nextKey := (Type(nextEvent) = "Map") ? (nextEvent.Has("key") ? nextEvent["key"] : "") : (nextEvent.HasOwnProp("key") ? nextEvent.key : "")
+                            if (RegExMatch(nextKey, "^\d$")) {
+                                keyNumber := Integer(nextKey)
+                                if (keyNumber >= 1 && keyNumber <= 9) {
+                                    degradationType := keyNumber
+                                    currentDegradationType := keyNumber  ; Update current degradation for subsequent boxes
+                                    break
+                                }
                             }
                         }
-                    }
 
-                    nextIndex++
+                        nextIndex++
+                    }
                 }
 
                 box := {
