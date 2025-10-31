@@ -3945,11 +3945,24 @@ AssignToButton(buttonName) {
     }
 
     macroEvents.Delete(currentMacro)
-    
+
     events := macroEvents[layerMacroName]
+
+    ; DEBUG: Verify degradation types before saving
+    VizLog("=== PRE-SAVE CHECK for " . layerMacroName . " ===")
+    local boxCount := 0
+    for evt in events {
+        if (evt.type = "boundingBox") {
+            boxCount++
+            local degType := evt.HasOwnProp("degradationType") ? evt.degradationType : "MISSING"
+            VizLog("  Box #" . boxCount . ": degradationType=" . degType)
+        }
+    }
+    FlushVizLog()
+
     UpdateButtonAppearance(buttonName)
     SaveMacroState()
-    
+
     UpdateStatus("✅ Assigned to " . buttonName . " Layer " . currentLayer . " (" . events.Length . " events)")
 }
 
@@ -6387,13 +6400,22 @@ ImportNewMacroPack() {
 ; ===== ANALYSIS FUNCTIONS =====
 AnalyzeRecordedMacro(macroKey) {
     global macroEvents
-    
-    if (!macroEvents.Has(macroKey))
+
+    VizLog(">>> AnalyzeRecordedMacro called for: " . macroKey)
+    FlushVizLog()
+
+    if (!macroEvents.Has(macroKey)) {
+        VizLog(">>> ERROR: macroKey not found in macroEvents!")
+        FlushVizLog()
         return
-    
+    }
+
     local events := macroEvents[macroKey]
+    VizLog(">>> Events count: " . events.Length)
+    FlushVizLog()
+
     local boundingBoxCount := 0
-    
+
     local degradationAnalysis := AnalyzeDegradationPattern(events)
     
     for event in events {
@@ -6423,7 +6445,7 @@ AnalyzeDegradationPattern(events) {
         if (event.type = "boundingBox") {
             boxes.Push({
                 index: boxes.Length + 1,
-                time: event.time,
+                time: event.HasOwnProp("time") ? event.time : 0,
                 event: event,
                 degradationType: 1,
                 assignedBy: "default"
@@ -6432,14 +6454,22 @@ AnalyzeDegradationPattern(events) {
             local keyNum := GetNumberFromKey(event.key)
             if (keyNum >= 1 && keyNum <= 9) {
                 keyPresses.Push({
-                    time: event.time,
+                    time: event.HasOwnProp("time") ? event.time : 0,
                     degradationType: keyNum,
                     key: event.key
                 })
             }
         }
     }
-    
+
+    ; DEBUG: Log what we found
+    VizLog("=== DEGRADATION ANALYSIS ===")
+    VizLog("Found " . boxes.Length . " boxes and " . keyPresses.Length . " key presses")
+    for kp in keyPresses {
+        VizLog("  KeyPress: deg=" . kp.degradationType . " key=" . kp.key . " time=" . kp.time)
+    }
+    FlushVizLog()
+
     local currentDegradationType := 1
     local degradationCounts := Map()
     
@@ -6451,24 +6481,29 @@ AnalyzeDegradationPattern(events) {
     for boxIndex, box in boxes
     {
         local nextBoxTime := (boxIndex < boxes.Length) ? boxes[boxIndex + 1].time : 999999999
-        
+
+        VizLog("Box #" . boxIndex . ": time=" . box.time . " nextBoxTime=" . nextBoxTime)
+
         local closestKeyPress := ""
         local closestTime := 999999999
-        
+
         for keyPress in keyPresses {
             if (keyPress.time > box.time && keyPress.time < nextBoxTime && keyPress.time < closestTime) {
                 closestKeyPress := keyPress
                 closestTime := keyPress.time
+                VizLog("  MATCHED keyPress deg=" . keyPress.degradationType . " at time=" . keyPress.time)
             }
         }
-        
+
         if (closestKeyPress != "") {
             currentDegradationType := closestKeyPress.degradationType
             box.degradationType := currentDegradationType
             box.assignedBy := "user_selection"
+            VizLog("  ASSIGNED deg=" . currentDegradationType . " (user_selection)")
         } else {
             box.degradationType := currentDegradationType
             box.assignedBy := "auto_default"
+            VizLog("  ASSIGNED deg=" . currentDegradationType . " (auto_default)")
         }
         
         degradationCounts[box.degradationType]++
