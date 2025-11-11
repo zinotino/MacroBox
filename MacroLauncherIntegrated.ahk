@@ -1188,8 +1188,24 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         return
     }
     
-    mode := annotationMode
-    if (mode == "Narrow") {
+    recordedMode := ""
+    recordedCanvas := ""
+    if (IsObject(macroEventsArray)) {
+        if (macroEventsArray.HasOwnProp("recordedMode"))
+            recordedMode := macroEventsArray.recordedMode
+        if (macroEventsArray.HasOwnProp("recordedCanvas"))
+            recordedCanvas := macroEventsArray.recordedCanvas
+    }
+    displayMode := (recordedMode != "" ? recordedMode : annotationMode)
+
+    useRecordedCanvas := IsObject(recordedCanvas) && recordedCanvas.HasOwnProp("left") && recordedCanvas.HasOwnProp("right")
+
+    if (useRecordedCanvas) {
+        canvasLeft := recordedCanvas.left
+        canvasTop := recordedCanvas.top
+        canvasRight := recordedCanvas.right
+        canvasBottom := recordedCanvas.bottom
+    } else if (displayMode == "Narrow") {
         canvasLeft := narrowCanvasLeft
         canvasTop := narrowCanvasTop
         canvasRight := narrowCanvasRight
@@ -1204,7 +1220,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     canvasW := canvasRight - canvasLeft
     canvasH := canvasBottom - canvasTop
     
-    VizLog("DrawMacroBoxesOnButton: mode=" . mode)
+    VizLog("DrawMacroBoxesOnButton: mode=" . displayMode)
     VizLog("  Canvas: L=" . canvasLeft . " T=" . canvasTop . " R=" . canvasRight . " B=" . canvasBottom)
     VizLog("  Canvas size: " . canvasW . "x" . canvasH . " Button: " . buttonWidth . "x" . buttonHeight)
     
@@ -1218,16 +1234,50 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
     DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkBrush)
 
+    letterboxRect := {x:0, y:0, width:buttonWidth, height:buttonHeight}
+    useLetterbox := (displayMode == "Narrow")
+    if (useLetterbox) {
+        desiredRatio := 4.0 / 3.0
+        aspect := buttonWidth / buttonHeight
+        if (aspect > desiredRatio) {
+            letterboxRect.height := buttonHeight - 4
+            letterboxRect.width := Round(letterboxRect.height * desiredRatio)
+        } else {
+            letterboxRect.width := buttonWidth - 4
+            letterboxRect.height := Round(letterboxRect.width / desiredRatio)
+        }
+        if (letterboxRect.width < 16 || letterboxRect.height < 12) {
+            useLetterbox := false
+        } else {
+            letterboxRect.x := Floor((buttonWidth - letterboxRect.width) / 2)
+            letterboxRect.y := Floor((buttonHeight - letterboxRect.height) / 2)
+
+            letterboxBrush := 0
+            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF1E1E1E, "Ptr*", &letterboxBrush)
+            ; Shade left margin
+            if (letterboxRect.x > 0) {
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", letterboxBrush, "Float", 0, "Float", 0, "Float", letterboxRect.x, "Float", buttonHeight)
+            }
+            ; Shade right margin
+            rightMargin := buttonWidth - (letterboxRect.x + letterboxRect.width)
+            if (rightMargin > 0) {
+                DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", letterboxBrush, "Float", letterboxRect.x + letterboxRect.width, "Float", 0, "Float", rightMargin, "Float", buttonHeight)
+            }
+            DllCall("gdiplus\GdipDeleteBrush", "Ptr", letterboxBrush)
+
+        }
+    }
+
     screenScale := A_ScreenDPI / 96.0
     canvasLeftLogical := canvasLeft / screenScale
     canvasTopLogical := canvasTop / screenScale
     canvasWLogical := (canvasRight / screenScale) - canvasLeftLogical
     canvasHLogical := (canvasBottom / screenScale) - canvasTopLogical
 
-    scaleX := buttonWidth / canvasWLogical
-    scaleY := buttonHeight / canvasHLogical
-    offsetX := 0
-    offsetY := 0
+    scaleX := letterboxRect.width / canvasWLogical
+    scaleY := letterboxRect.height / canvasHLogical
+    offsetX := letterboxRect.x
+    offsetY := letterboxRect.y
     
     VizLog("  Uniform scale: X=" . Round(scaleX, 4) . " Y=" . Round(scaleY, 4))
     
@@ -3560,6 +3610,19 @@ AssignToButton(buttonName) {
         FlushVizLog()
     }
 
+    if (macroEvents[currentMacro].HasOwnProp("recordedCanvas")) {
+        rc := macroEvents[currentMacro].recordedCanvas
+        macroEvents[layerMacroName].recordedCanvas := {
+            left: rc.left,
+            top: rc.top,
+            right: rc.right,
+            bottom: rc.bottom,
+            mode: rc.mode
+        }
+        VizLog("COPIED recordedCanvas from " . currentMacro . " to " . layerMacroName)
+        FlushVizLog()
+    }
+
     macroEvents.Delete(currentMacro)
 
     events := macroEvents[layerMacroName]
@@ -3577,6 +3640,7 @@ AssignToButton(buttonName) {
     FlushVizLog()
 
     UpdateButtonAppearance(buttonName)
+    SaveConfig()  ; Immediate persist for new macro assignments
 
     ; PERFORMANCE: Queue async save instead of blocking here
     global needsMacroStateSave
@@ -3591,6 +3655,7 @@ DoSaveMacroStateAsync() {
     global needsMacroStateSave
     if (needsMacroStateSave) {
         needsMacroStateSave := false
+        SaveConfig()
         SaveMacroState()
     }
 }
@@ -5182,7 +5247,7 @@ SaveMacroState() {
     return macroCount
 }
 
-LoadMacroState() {
+LoadMacroState(preserveExisting := false) {
     global macroEvents, buttonThumbnails, configFile
     
     stateFile := StrReplace(configFile, ".ini", "_simple.txt")
@@ -5190,7 +5255,8 @@ LoadMacroState() {
     if !FileExist(stateFile)
         return 0
     
-    macroEvents := Map()
+    if (!preserveExisting)
+        macroEvents := Map()
     buttonThumbnails := Map()
     
     content := FileRead(stateFile)
@@ -5301,16 +5367,16 @@ LoadMacroState() {
                     continue
                 }
 
-                if (event.HasOwnProp("type")) {
-                    if (!macroEvents.Has(macroName)) {
-                        macroEvents[macroName] := []
-                        macroCount++
+                    if (!preserveExisting && event.HasOwnProp("type")) {
+                        if (!macroEvents.Has(macroName)) {
+                            macroEvents[macroName] := []
+                            macroCount++
+                        }
+                        macroEvents[macroName].Push(event)
                     }
-                    macroEvents[macroName].Push(event)
                 }
             }
         }
-    }
 
     return macroCount
 }
@@ -5793,124 +5859,17 @@ LoadConfig() {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
-                } else if (currentSection = "Labels") {
+                } else if (currentSection == "Labels") {
                     if (buttonCustomLabels.Has(key)) {
                         buttonCustomLabels[key] := value
-                    }
-                } else if (currentSection = "Macros" && InStr(key, "L") = 1) {
-                    ; Check if this is a recordedMode entry
-                    if (InStr(key, "_recordedMode")) {
-                        macroName := StrReplace(key, "_recordedMode", "")
-                        if (!macroEvents.Has(macroName)) {
-                            macroEvents[macroName] := []
-                        }
-                        macroEvents[macroName].recordedMode := value
-                        continue
-                    }
-
-                    ; Check if this is a recordedCanvas entry
-                    if (InStr(key, "_recordedCanvas")) {
-                        macroName := StrReplace(key, "_recordedCanvas", "")
-                        if (!macroEvents.Has(macroName)) {
-                            macroEvents[macroName] := []
-                        }
-                        ; Parse canvas bounds: left,top,right,bottom,mode
-                        canvasParts := StrSplit(value, ",")
-                        if (canvasParts.Length >= 5) {
-                            macroEvents[macroName].recordedCanvas := {
-                                left: canvasParts[1] + 0.0,
-                                top: canvasParts[2] + 0.0,
-                                right: canvasParts[3] + 0.0,
-                                bottom: canvasParts[4] + 0.0,
-                                mode: Trim(canvasParts[5])
-                            }
-                        }
-                        continue
-                    }
-
-                    ; Parse macro data
-                    if (value != "") {
-                        macroEvents[key] := []
-                        loadedEvents := 0
-                        
-                        ; Split by | separator (our new format)
-                        eventLines := StrSplit(value, "|")
-                        
-                        for eventLine in eventLines {
-                            if (eventLine == "" || Trim(eventLine) == "")
-                                continue
-                            parts := StrSplit(eventLine, ",")
-                            
-                            if (parts.Length == 0)
-                                continue
-                                
-                            if (parts[1] == "jsonAnnotation") {
-                                mode := StrReplace(parts[2], "mode=", "")
-                                catId := Integer(StrReplace(parts[3], "cat=", ""))
-                                sev := StrReplace(parts[4], "sev=", "")
-                                macroEvents[key].Push({
-                                    type: "jsonAnnotation",
-                                    annotation: BuildJsonAnnotation(mode, catId, sev),
-                                    mode: mode,
-                                    categoryId: catId,
-                                    severity: sev
-                                })
-                                loadedEvents++
-                            } else if (parts[1] == "boundingBox" && parts.Length >= 5) {
-                                event := {
-                                    type: "boundingBox",
-                                    left: Integer(parts[2]),
-                                    top: Integer(parts[3]),
-                                    right: Integer(parts[4]),
-                                    bottom: Integer(parts[5])
-                                }
-                                
-                                ; Load degradation data if present
-                                if (parts.Length >= 6) {
-                                    Loop (parts.Length - 5) {
-                                        i := A_Index + 5
-                                        if (i <= parts.Length) {
-                                            part := parts[i]
-                                            if (InStr(part, "deg=")) {
-                                                event.degradationType := Integer(StrReplace(part, "deg=", ""))
-                                            } else if (InStr(part, "name=")) {
-                                                event.degradationName := StrReplace(part, "name=", "")
-                                            } else if (InStr(part, "tagged=")) {
-                                                event.isTagged := (StrReplace(part, "tagged=", "") == "true")
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                ; Ensure degradation defaults if not loaded
-                                if (!event.HasOwnProp("degradationType"))
-                                    event.degradationType := 1
-                                if (!event.HasOwnProp("degradationName"))
-                                    event.degradationName := "smudge"
-                                if (!event.HasOwnProp("isTagged"))
-                                    event.isTagged := false
-                                
-                                macroEvents[key].Push(event)
-                                loadedEvents++
-                            } else {
-                                event := {type: parts[1]}
-                                if (parts.Length > 1 && parts[2] != "")
-                                    event.x := Integer(parts[2])
-                                if (parts.Length > 2 && parts[3] != "")
-                                    event.y := Integer(parts[3])
-                                macroEvents[key].Push(event)
-                                loadedEvents++
-                            }
-                        }
-                        
-                        if (loadedEvents > 0) {
-                            macrosLoaded++
-                        }
                     }
                 }
             }
         }
         
+        ; Load macros from config file
+        macrosLoaded := ParseMacrosFromConfig()
+
         ; Update mode toggle button to match loaded setting
         if (modeToggleBtn) {
             if (annotationMode == "Narrow") {
@@ -5924,6 +5883,20 @@ LoadConfig() {
             
             ; Force redraw the button
             modeToggleBtn.Redraw()
+        }
+
+        ; Merge legacy metadata (thumbnails/canvas) from simple state file
+        LoadMacroState(true)
+
+        ; Fallback to legacy macro state if nothing restored yet
+        if (macrosLoaded == 0) {
+            legacyLoaded := LoadMacroState()
+            if (legacyLoaded > 0) {
+                macrosLoaded := legacyLoaded
+                SaveConfig()
+                VizLog("Loaded " . macrosLoaded . " macros from legacy state file")
+                FlushVizLog()
+            }
         }
 
         ; Update UI to reflect loaded configuration
@@ -5943,6 +5916,145 @@ LoadConfig() {
     } catch Error as e {
         UpdateStatus("⚠️ Load config failed: " . e.Message)
     }
+}
+
+ParseRecordedCanvasLine(line) {
+    if (!line)
+        return ""
+
+    parts := StrSplit(line, ",")
+    if (parts.Length < 4)
+        return ""
+
+    canvas := {
+        left: parts[1] != "" ? parts[1] + 0.0 : 0.0,
+        top: parts[2] != "" ? parts[2] + 0.0 : 0.0,
+        right: parts[3] != "" ? parts[3] + 0.0 : 0.0,
+        bottom: parts[4] != "" ? parts[4] + 0.0 : 0.0
+    }
+
+    if (parts.Length >= 5) {
+        canvas.mode := Trim(parts[5])
+    }
+
+    return canvas
+}
+
+BuildMacroEventsFromString(serializedEvents) {
+    events := []
+    if (!serializedEvents)
+        return events
+
+    eventLines := StrSplit(serializedEvents, "|")
+    for eventLine in eventLines {
+        eventLine := Trim(eventLine)
+        if (eventLine == "")
+            continue
+
+        parts := StrSplit(eventLine, ",")
+        if (parts.Length == 0)
+            continue
+
+        if (parts[1] == "jsonAnnotation") {
+            mode := StrReplace(parts[2], "mode=", "")
+            catId := Integer(StrReplace(parts[3], "cat=", ""))
+            sev := StrReplace(parts[4], "sev=", "")
+            events.Push({
+                type: "jsonAnnotation",
+                annotation: BuildJsonAnnotation(mode, catId, sev),
+                mode: mode,
+                categoryId: catId,
+                severity: sev
+            })
+            continue
+        }
+
+        if (parts[1] == "boundingBox" && parts.Length >= 5) {
+            event := {
+                type: "boundingBox",
+                left: Integer(parts[2]),
+                top: Integer(parts[3]),
+                right: Integer(parts[4]),
+                bottom: Integer(parts[5])
+            }
+
+            if (parts.Length >= 6) {
+                Loop (parts.Length - 5) {
+                    idx := A_Index + 5
+                    if (idx > parts.Length)
+                        break
+                    extra := parts[idx]
+                    if (InStr(extra, "deg=")) {
+                        event.degradationType := Integer(StrReplace(extra, "deg=", ""))
+                    } else if (InStr(extra, "name=")) {
+                        event.degradationName := StrReplace(extra, "name=", "")
+                    } else if (InStr(extra, "tagged=")) {
+                        event.isTagged := (StrReplace(extra, "tagged=", "") == "true")
+                    }
+                }
+            }
+
+            if (!event.HasOwnProp("degradationType"))
+                event.degradationType := 1
+            if (!event.HasOwnProp("degradationName"))
+                event.degradationName := "smudge"
+            if (!event.HasOwnProp("isTagged"))
+                event.isTagged := false
+
+            events.Push(event)
+            continue
+        }
+
+        event := {type: parts[1]}
+        if (parts.Length > 1 && parts[2] != "")
+            event.key := parts[2]
+        if (parts.Length > 2 && parts[3] != "")
+            event.x := Integer(parts[3])
+        if (parts.Length > 3 && parts[4] != "")
+            event.y := Integer(parts[4])
+
+        events.Push(event)
+    }
+
+    return events
+}
+
+ParseMacrosFromConfig() {
+    global configFile, macroEvents, buttonNames, totalLayers
+
+    macrosLoaded := 0
+    macroEvents := Map()
+
+    Loop totalLayers {
+        layer := A_Index
+        for buttonName in buttonNames {
+            layerMacroName := "L" . layer . "_" . buttonName
+            macroString := IniRead(configFile, "Macros", layerMacroName, "")
+            if (macroString == "")
+                continue
+
+            events := BuildMacroEventsFromString(macroString)
+            if (events.Length == 0)
+                continue
+
+            macroEvents[layerMacroName] := events
+
+            recordedMode := IniRead(configFile, "Macros", layerMacroName . "_recordedMode", "")
+            if (recordedMode != "")
+                macroEvents[layerMacroName].recordedMode := recordedMode
+
+            recordedCanvasLine := IniRead(configFile, "Macros", layerMacroName . "_recordedCanvas", "")
+            if (recordedCanvasLine != "") {
+                canvas := ParseRecordedCanvasLine(recordedCanvasLine)
+                if (canvas)
+                    macroEvents[layerMacroName].recordedCanvas := canvas
+            }
+
+            macrosLoaded++
+        }
+    }
+
+    return macrosLoaded
 }
 
 ; ===== QUICK SAVE/LOAD SLOTS =====
@@ -6230,6 +6342,8 @@ CleanupAndExit() {
             SetTimer(CheckForAssignment, 0)
         }
 
+        SaveConfig()
+        SaveConfig()
         savedMacros := SaveMacroState()
         SaveStatsToJson()
         UpdateStatus("💾 Saved " . savedMacros . " macros")
