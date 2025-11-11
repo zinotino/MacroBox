@@ -1180,550 +1180,100 @@ ExtractBoxEvents(macroEvents) {
 ; Handles canvas detection and scaling logic for drawing boxes on buttons
 
 DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsArray := "") {
-    global degradationColors, annotationMode, userCanvasLeft, userCanvasTop, userCanvasRight, userCanvasBottom, isCanvasCalibrated
-    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
-    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
-    global buttonLetterboxingStates
-
+    global degradationColors, annotationMode
+    global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
+    global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
+    
     if (boxes.Length == 0) {
         return
     }
-
-    ; Get stored recording mode from macro events - SIMPLIFIED
-    storedMode := ""
-    try {
-        if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map") {
-            storedMode := macroEventsArray.recordedMode
-        }
-    } catch {
-        storedMode := ""
-    }
-
-    ; Use stored mode if available, otherwise use current annotation mode
-    ; HOWEVER: If the stored mode's canvas is not configured, fall back to current mode
-    effectiveMode := (storedMode != "" && storedMode != "unknown") ? storedMode : annotationMode
-
-    ; Check if effectiveMode's canvas is actually configured
-    global wideCanvasRight, wideCanvasLeft, narrowCanvasRight, narrowCanvasLeft
-    wideConfiguredCheck := (wideCanvasRight > wideCanvasLeft)
-    narrowConfiguredCheck := (narrowCanvasRight > narrowCanvasLeft)
-
-    ; If stored mode's canvas isn't configured, use current annotation mode instead
-    if (effectiveMode == "Wide" && !wideConfiguredCheck && narrowConfiguredCheck) {
-        VizLog("⚠️ Wide canvas not configured, falling back to Narrow")
-        effectiveMode := "Narrow"
-    } else if (effectiveMode == "Narrow" && !narrowConfiguredCheck && wideConfiguredCheck) {
-        VizLog("⚠️ Narrow canvas not configured, falling back to Wide")
-        effectiveMode := "Wide"
-    }
-
-    recordedCanvas := ""
-    recordedCanvasMode := ""
-    hasRecordedCanvas := false
-    try {
-        if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map" && macroEventsArray.HasOwnProp("recordedCanvas")) {
-            recordedCanvas := macroEventsArray.recordedCanvas
-            if (IsObject(recordedCanvas) && recordedCanvas.HasOwnProp("left") && recordedCanvas.HasOwnProp("right")) {
-                hasRecordedCanvas := true
-                if (recordedCanvas.HasOwnProp("mode")) {
-                    recordedCanvasMode := recordedCanvas.mode
-                }
-            }
-        }
-    } catch {
-        hasRecordedCanvas := false
-    }
-
-    wideConfigured := (wideCanvasRight > wideCanvasLeft && wideCanvasBottom > wideCanvasTop)
-    narrowConfigured := (narrowCanvasRight > narrowCanvasLeft && narrowCanvasBottom > narrowCanvasTop)
-    userConfigured := (isCanvasCalibrated && userCanvasRight > userCanvasLeft && userCanvasBottom > userCanvasTop)
-
-    VizLog("DrawMacroBoxes - effectiveMode: " . effectiveMode . ", boxes: " . boxes.Length)
-    VizLog("  Wide: " . (wideConfigured ? "YES" : "NO") . ", Narrow: " . (narrowConfigured ? "YES" : "NO") . ", User: " . (userConfigured ? "YES" : "NO"))
-
-    ; SAFETY: If NO canvas is configured at all, we'll rely on fallback box derivation
-    if (!wideConfigured && !narrowConfigured && !userConfigured && !hasRecordedCanvas) {
-        VizLog("⚠️ WARNING: No canvas configured at all - will use fallback box derivation")
-    }
-
-    offsetX := 0
-    offsetY := 0
-    scaleX := 1
-    scaleY := 1
-    canvasSource := ""
-    canvasChosen := false
-    useFallbackBoxes := false
-
-    if (!canvasChosen && effectiveMode == "Narrow" && narrowConfigured) {
+    
+    mode := annotationMode
+    if (mode == "Narrow") {
         canvasLeft := narrowCanvasLeft
         canvasTop := narrowCanvasTop
         canvasRight := narrowCanvasRight
         canvasBottom := narrowCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        narrowAspect := 4.0 / 3.0
-        buttonAspect := buttonWidth / buttonHeight
-
-        if (buttonAspect > narrowAspect) {
-            contentHeight := buttonHeight
-            contentWidth := contentHeight * narrowAspect
-        } else {
-            contentWidth := buttonWidth
-            contentHeight := contentWidth / narrowAspect
-        }
-
-        offsetX := (buttonWidth - contentWidth) / 2
-        offsetY := (buttonHeight - contentHeight) / 2
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := contentWidth / safeCanvasW
-        scaleY := contentHeight / safeCanvasH
-        canvasSource := "narrow_calibrated"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && effectiveMode == "Narrow" && hasRecordedCanvas && (recordedCanvasMode == "" || recordedCanvasMode == "Narrow")) {
-        canvasLeft := recordedCanvas.left + 0.0
-        canvasTop := recordedCanvas.top + 0.0
-        canvasRight := recordedCanvas.right + 0.0
-        canvasBottom := recordedCanvas.bottom + 0.0
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        narrowAspect := 4.0 / 3.0
-        buttonAspect := buttonWidth / buttonHeight
-
-        if (buttonAspect > narrowAspect) {
-            contentHeight := buttonHeight
-            contentWidth := contentHeight * narrowAspect
-        } else {
-            contentWidth := buttonWidth
-            contentHeight := contentWidth / narrowAspect
-        }
-
-        offsetX := (buttonWidth - contentWidth) / 2
-        offsetY := (buttonHeight - contentHeight) / 2
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := contentWidth / safeCanvasW
-        scaleY := contentHeight / safeCanvasH
-        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && effectiveMode == "Wide" && wideConfigured) {
+    } else {
         canvasLeft := wideCanvasLeft
         canvasTop := wideCanvasTop
         canvasRight := wideCanvasRight
         canvasBottom := wideCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := buttonWidth / safeCanvasW
-        scaleY := buttonHeight / safeCanvasH
-        canvasSource := "wide_calibrated"
-        canvasChosen := true
     }
-
-    if (!canvasChosen && effectiveMode == "Wide" && hasRecordedCanvas && (recordedCanvasMode == "" || recordedCanvasMode == "Wide")) {
-        canvasLeft := recordedCanvas.left + 0.0
-        canvasTop := recordedCanvas.top + 0.0
-        canvasRight := recordedCanvas.right + 0.0
-        canvasBottom := recordedCanvas.bottom + 0.0
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := buttonWidth / safeCanvasW
-        scaleY := buttonHeight / safeCanvasH
-        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && userConfigured) {
-        canvasLeft := userCanvasLeft
-        canvasTop := userCanvasTop
-        canvasRight := userCanvasRight
-        canvasBottom := userCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := buttonWidth / safeCanvasW
-        scaleY := buttonHeight / safeCanvasH
-        canvasSource := "user_calibrated"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && hasRecordedCanvas) {
-        canvasLeft := recordedCanvas.left + 0.0
-        canvasTop := recordedCanvas.top + 0.0
-        canvasRight := recordedCanvas.right + 0.0
-        canvasBottom := recordedCanvas.bottom + 0.0
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        narrowAspect := 4.0 / 3.0
-        recordedAspect := (canvasH != 0) ? (canvasW / canvasH) : 0
-        buttonAspect := buttonWidth / buttonHeight
-
-        if (recordedAspect > narrowAspect + 0.05) {
-            offsetX := 0
-            offsetY := 0
-            darkGrayBrush := 0
-            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-            DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-            safeCanvasW := canvasW != 0 ? canvasW : 1
-            safeCanvasH := canvasH != 0 ? canvasH : 1
-            scaleX := buttonWidth / safeCanvasW
-            scaleY := buttonHeight / safeCanvasH
-        } else {
-            if (buttonAspect > narrowAspect) {
-                contentHeight := buttonHeight
-                contentWidth := contentHeight * narrowAspect
-            } else {
-                contentWidth := buttonWidth
-                contentHeight := contentWidth / narrowAspect
-            }
-
-            offsetX := (buttonWidth - contentWidth) / 2
-            offsetY := (buttonHeight - contentHeight) / 2
-
-            darkGrayBrush := 0
-            DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-            DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
-            DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-            safeCanvasW := canvasW != 0 ? canvasW : 1
-            safeCanvasH := canvasH != 0 ? canvasH : 1
-            scaleX := contentWidth / safeCanvasW
-            scaleY := contentHeight / safeCanvasH
-        }
-
-        canvasSource := recordedCanvas.HasOwnProp("source") ? recordedCanvas.source : "recorded_canvas"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && narrowConfigured) {
-        canvasLeft := narrowCanvasLeft
-        canvasTop := narrowCanvasTop
-        canvasRight := narrowCanvasRight
-        canvasBottom := narrowCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        narrowAspect := 4.0 / 3.0
-        buttonAspect := buttonWidth / buttonHeight
-
-        if (buttonAspect > narrowAspect) {
-            contentHeight := buttonHeight
-            contentWidth := contentHeight * narrowAspect
-        } else {
-            contentWidth := buttonWidth
-            contentHeight := contentWidth / narrowAspect
-        }
-
-        offsetX := (buttonWidth - contentWidth) / 2
-        offsetY := (buttonHeight - contentHeight) / 2
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", offsetX, "Float", offsetY, "Float", contentWidth, "Float", contentHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := contentWidth / safeCanvasW
-        scaleY := contentHeight / safeCanvasH
-        canvasSource := "narrow_default"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen && wideConfigured) {
-        canvasLeft := wideCanvasLeft
-        canvasTop := wideCanvasTop
-        canvasRight := wideCanvasRight
-        canvasBottom := wideCanvasBottom
-        canvasW := canvasRight - canvasLeft
-        canvasH := canvasBottom - canvasTop
-
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := buttonWidth / safeCanvasW
-        scaleY := buttonHeight / safeCanvasH
-        canvasSource := "wide_default"
-        canvasChosen := true
-    }
-
-    if (!canvasChosen) {
-        VizLog("⚠️ No canvas configured for mode: " . effectiveMode . " - Using fallback box derivation")
-        useFallbackBoxes := true
-    }
-
-    if (useFallbackBoxes) {
-        ; No manual calibration - derive canvas from recorded boxes (FALLBACK)
-        VizLog("Using fallback: deriving canvas from box coordinates")
-        minX := 999999
-        minY := 999999
-        maxX := -999999
-        maxY := -999999
-        hasValidBox := false
-
-        for box in boxes {
-            hasValidBox := true
-
-            if (box.left < minX) {
-                minX := box.left
-            }
-            if (box.top < minY) {
-                minY := box.top
-            }
-            if (box.right > maxX) {
-                maxX := box.right
-            }
-            if (box.bottom > maxY) {
-                maxY := box.bottom
-            }
-        }
-
-        if (!hasValidBox) {
-            return
-        }
-
-        canvasLeft := minX
-        canvasTop := minY
-        canvasRight := maxX
-        canvasBottom := maxY
-        canvasW := maxX - minX
-        canvasH := maxY - minY
-
-        ; Fill background
-        darkGrayBrush := 0
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkGrayBrush)
-        DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkGrayBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
-        DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkGrayBrush)
-
-        safeCanvasW := canvasW != 0 ? canvasW : 1
-        safeCanvasH := canvasH != 0 ? canvasH : 1
-        scaleX := buttonWidth / safeCanvasW
-        scaleY := buttonHeight / safeCanvasH
-        offsetX := 0
-        offsetY := 0
-        canvasSource := hasRecordedCanvas ? "recorded_bounds" : "derived_bounds"
-        canvasChosen := true
-    }
-
-    if (canvasSource == "")
-        canvasSource := "auto"
-
-    if (IsObject(macroEventsArray) && Type(macroEventsArray) != "Map") {
-        macroEventsArray.recordedMode := effectiveMode
-        macroEventsArray.recordedCanvas := {
-            mode: effectiveMode,
-            left: canvasLeft,
-            top: canvasTop,
-            right: canvasRight,
-            bottom: canvasBottom,
-            canvasWidth: canvasW,
-            canvasHeight: canvasH,
-            offsetX: offsetX,
-            offsetY: offsetY,
-            scaleX: scaleX,
-            scaleY: scaleY,
-            source: canvasSource
-        }
-    }
-
-    ; Log canvas selection details for diagnostics
-    VizLog("✓ Canvas selected: " . canvasSource)
-    VizLog("  Bounds: L=" . Round(canvasLeft, 1) . " T=" . Round(canvasTop, 1) . " R=" . Round(canvasRight, 1) . " B=" . Round(canvasBottom, 1))
-    VizLog("  Canvas size: " . Round(canvasW, 1) . "x" . Round(canvasH, 1))
-    VizLog("  Scale: X=" . Round(scaleX, 3) . " Y=" . Round(scaleY, 3))
-    VizLog("  Offset: X=" . Round(offsetX, 1) . " Y=" . Round(offsetY, 1))
-    VizLog("  Button: " . Round(buttonWidth, 1) . "x" . Round(buttonHeight, 1))
-
-    ; Validate canvas dimensions
+    
+    canvasW := canvasRight - canvasLeft
+    canvasH := canvasBottom - canvasTop
+    
+    VizLog("DrawMacroBoxesOnButton: mode=" . mode)
+    VizLog("  Canvas: L=" . canvasLeft . " T=" . canvasTop . " R=" . canvasRight . " B=" . canvasBottom)
+    VizLog("  Canvas size: " . canvasW . "x" . canvasH . " Button: " . buttonWidth . "x" . buttonHeight)
+    
     if (canvasW <= 0 || canvasH <= 0) {
+        VizLog("  ERROR: Invalid canvas")
         return
     }
+    
+    darkBrush := 0
+    DllCall("gdiplus\GdipCreateSolidFill", "UInt", 0xFF2A2A2A, "Ptr*", &darkBrush)
+    DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", darkBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
+    DllCall("gdiplus\GdipDeleteBrush", "Ptr", darkBrush)
 
-    ; Track boxes drawn vs skipped for diagnostics
-    local boxesDrawn := 0
-    local boxesSkipped := 0
+    screenScale := A_ScreenDPI / 96.0
+    canvasLeftLogical := canvasLeft / screenScale
+    canvasTopLogical := canvasTop / screenScale
+    canvasWLogical := (canvasRight / screenScale) - canvasLeftLogical
+    canvasHLogical := (canvasBottom / screenScale) - canvasTopLogical
 
-    ; Draw boxes with consistent percentage-based scaling
+    scaleX := buttonWidth / canvasWLogical
+    scaleY := buttonHeight / canvasHLogical
+    offsetX := 0
+    offsetY := 0
+    
+    VizLog("  Uniform scale: X=" . Round(scaleX, 4) . " Y=" . Round(scaleY, 4))
+    
+    boxCount := 0
     for box in boxes {
-        ; Clamp box coordinates into the active canvas before scaling
-        boxLeft := Max(canvasLeft, Min(box.left, canvasRight))
-        boxTop := Max(canvasTop, Min(box.top, canvasBottom))
-        boxRight := Max(canvasLeft, Min(box.right, canvasRight))
-        boxBottom := Max(canvasTop, Min(box.bottom, canvasBottom))
-
-        if (boxRight <= boxLeft || boxBottom <= boxTop) {
-            boxesSkipped++
-            VizLog("  ⊗ Skipped box (clamped to zero size)")
+        if (box.right <= box.left || box.bottom <= box.top) {
             continue
         }
+        
+        clampedLeft := Max(box.left, canvasLeft)
+        clampedTop := Max(box.top, canvasTop)
+        clampedRight := Min(box.right, canvasRight)
+        clampedBottom := Min(box.bottom, canvasBottom)
 
-        ; Map box coordinates from canvas to button space using percentage scaling
-        rawX1 := ((boxLeft - canvasLeft) * scaleX) + offsetX
-        rawY1 := ((boxTop - canvasTop) * scaleY) + offsetY
-        rawX2 := ((boxRight - canvasLeft) * scaleX) + offsetX
-        rawY2 := ((boxBottom - canvasTop) * scaleY) + offsetY
-
-        ; Calculate dimensions with floating-point precision
-        rawW := rawX2 - rawX1
-        rawH := rawY2 - rawY1
-
-        if (rawW <= 0 || rawH <= 0) {
-            boxesSkipped++
-            VizLog("  ⊗ Skipped box (zero dimensions after scaling)")
-            continue
-        }
-
-        ; INTELLIGENT MINIMUM SIZE: Preserve aspect ratio while ensuring visibility
-        minSize := 2.5
-        originalWidth := boxRight - boxLeft
-        originalHeight := boxBottom - boxTop
-        originalAspect := originalWidth / originalHeight
-
-        if (rawW < minSize || rawH < minSize) {
-            ; Calculate original aspect ratio
-
-            if (rawW < minSize && rawH < minSize) {
-                ; Both dimensions too small - scale proportionally
-                if (originalAspect > 1) {
-                    ; Wider box - set width to minimum, scale height proportionally
-                    w := minSize
-                    h := minSize / originalAspect
-                } else {
-                    ; Taller box - set height to minimum, scale width proportionally
-                    h := minSize
-                    w := minSize * originalAspect
-                }
-            } else if (rawW < minSize) {
-                ; Width too small - adjust while preserving aspect ratio
-                w := minSize
-                h := minSize / originalAspect
-            } else {
-                ; Height too small - adjust while preserving aspect ratio
-                h := minSize
-                w := minSize * originalAspect
-            }
-
-            ; Center the adjusted box on the original position
-            centerX := (rawX1 + rawX2) / 2
-            centerY := (rawY1 + rawY2) / 2
-            x1 := centerX - w / 2
-            y1 := centerY - h / 2
-            x2 := x1 + w
-            y2 := y1 + h
-        } else {
-            ; Use precise floating-point coordinates
-            x1 := rawX1
-            y1 := rawY1
-            x2 := rawX2
-            y2 := rawY2
-            w := rawW
-            h := rawH
-        }
-
-        ; BOUNDS VALIDATION: Ensure coordinates are within button area
-        x1 := Max(0, Min(x1, buttonWidth))
-        y1 := Max(0, Min(y1, buttonHeight))
-        x2 := Max(0, Min(x2, buttonWidth))
-        y2 := Max(0, Min(y2, buttonHeight))
+        x1 := (((clampedLeft / screenScale) - canvasLeftLogical) * scaleX) + offsetX
+        y1 := (((clampedTop / screenScale) - canvasTopLogical) * scaleY) + offsetY
+        x2 := (((clampedRight / screenScale) - canvasLeftLogical) * scaleX) + offsetX
+        y2 := (((clampedBottom / screenScale) - canvasTopLogical) * scaleY) + offsetY
+        
         w := x2 - x1
         h := y2 - y1
 
-        ; Skip boxes that are too small to see
-        if (w < 1.5 || h < 1.5) {
-            boxesSkipped++
-            VizLog("  ⊗ Skipped box (too small after bounds validation)")
+        VizLog("  Box " . A_Index . ": canvas(" . box.left . "," . box.top . "," . box.right . "," . box.bottom . ")")
+        VizLog("    clamped canvas=(" . clampedLeft . "," . clampedTop . "," . clampedRight . "," . clampedBottom . ")")
+        VizLog("    scaled=(" . Round(x1,1) . "," . Round(y1,1) . "," . Round(x2,1) . "," . Round(y2,1) . ") w=" . Round(w,1) . " h=" . Round(h,1))
+
+        if (w <= 0 || h <= 0) {
             continue
         }
-
-        ; Ensure minimum visible size
-        if (w < 2) {
-            w := 2
-            x2 := x1 + w
-        }
-        if (h < 2) {
-            h := 2
-            y2 := y1 + h
-        }
-
-        ; Get degradation type color
-        if (box.HasOwnProp("degradationType") && degradationColors.Has(box.degradationType)) {
-            color := degradationColors[box.degradationType]
-        } else {
-            color := degradationColors[1]
-        }
-
-        ; Draw with sub-pixel precision
-        fillColor := 0xFF000000 | color
-
-        ; Enable high-quality rendering
-        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 4)
-        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 4)
-
-        ; Draw the box
+        
+        degradationType := box.HasOwnProp("degradationType") ? box.degradationType : 1
+        color := degradationColors.Has(degradationType) ? degradationColors[degradationType] : degradationColors[1]
+        fillColor := 0xFF000000 | Integer(color)
+        
         brush := 0
         result := DllCall("gdiplus\GdipCreateSolidFill", "UInt", fillColor, "Ptr*", &brush)
         if (result == 0) {
             DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", brush, "Float", x1, "Float", y1, "Float", w, "Float", h)
             DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
+            boxCount++
+            VizLog("    DRAWN")
         }
-
-        ; Reset rendering mode
-        DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", graphics, "Int", 0)
-        DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", graphics, "Int", 0)
-
-        ; Count this box as successfully drawn
-        boxesDrawn++
     }
-
-    ; Log drawing summary
-    VizLog("✓ Drawing complete: " . boxesDrawn . " drawn, " . boxesSkipped . " skipped")
+    
+    VizLog("  Total drawn: " . boxCount)
+    FlushVizLog()
 }
 
 ; ===== CANVAS TYPE DETECTION =====
