@@ -1791,7 +1791,9 @@ Stats_EnsureStatsFile(filePath, encoding := "") {
 
 Stats_BuildCsvRow(executionData) {
     global currentSessionId, currentUsername
-    row := executionData["timestamp"] . "," . currentSessionId . "," . currentUsername . "," . executionData["execution_type"] . ","
+    sessionIdentifier := executionData.Has("session_id") ? executionData["session_id"] : currentSessionId
+    usernameValue := executionData.Has("username") ? executionData["username"] : currentUsername
+    row := executionData["timestamp"] . "," . sessionIdentifier . "," . usernameValue . "," . executionData["execution_type"] . ","
     row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . "," . executionData["layer"] . "," . executionData["execution_time_ms"] . "," . executionData["total_boxes"] . ","
     row .= (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
     row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
@@ -2318,8 +2320,10 @@ QueryUserStats(filterOptions := "") {
 
 ; Invalidate today's stats cache (call after recording new execution)
 InvalidateTodayStatsCache() {
-    global todayStatsCacheInvalidated
+    global todayStatsCacheInvalidated, todayStatsCache, todayStatsCacheDate
     todayStatsCacheInvalidated := true
+    todayStatsCache := Map()
+    todayStatsCacheDate := ""
 }
 
 ; Legacy wrapper - maintained for backward compatibility
@@ -2497,11 +2501,28 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
 global macroExecutionLog := []
 
 AppendToCSV(executionData) {
-    global macroExecutionLog
+    global macroExecutionLog, masterStatsCSV, permanentStatsFile
     try {
         macroExecutionLog.Push(executionData)
         ; Invalidate today's stats cache when new data is added
         InvalidateTodayStatsCache()
+
+        row := Stats_BuildCsvRow(executionData)
+
+        if (masterStatsCSV != "") {
+            if (!FileExist(masterStatsCSV)) {
+                Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
+            }
+            FileAppend(row, masterStatsCSV, "UTF-8")
+        }
+
+        if (permanentStatsFile != "") {
+            if (!FileExist(permanentStatsFile)) {
+                Stats_EnsureStatsFile(permanentStatsFile, "UTF-8")
+            }
+            FileAppend(row, permanentStatsFile, "UTF-8")
+        }
+
         return true
     } catch Error as e {
         UpdateStatus("⚠ Stats record error: " . e.Message)
@@ -2605,6 +2626,7 @@ LoadStatsFromJson() {
     global macroExecutionLog, workDir
     statsJsonFile := workDir . "\stats_log.json"
     backupFile := workDir . "\stats_log.backup.json"
+    InvalidateTodayStatsCache()
 
     try {
         if (!DirExist(workDir)) {
@@ -2970,6 +2992,7 @@ ResetAllStats() {
     if (result == "Yes") {
         try {
             macroExecutionLog := []
+            InvalidateTodayStatsCache()
             statsJsonFile := workDir . "\stats_log.json"
             if FileExist(statsJsonFile) {
                 FileDelete(statsJsonFile)
@@ -4480,6 +4503,7 @@ ShowClearDialog() {
         global macroEvents, macroExecutionLog
         macroEvents.Clear()
         macroExecutionLog := []
+        InvalidateTodayStatsCache()
         
         for buttonName in buttonNames {
             UpdateButtonAppearance(buttonName)
@@ -5533,6 +5557,7 @@ ResetStatsFromSettings(parentGui) {
     if (MsgBox("Reset all statistics data?`n`nThis will clear execution logs but preserve macros.", "Confirm Stats Reset", "YesNo Icon!") = "Yes") {
         try {
             macroExecutionLog := []
+            InvalidateTodayStatsCache()
 
             statsJsonFile := workDir . "\stats_log.json"
             if FileExist(statsJsonFile) {
