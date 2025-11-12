@@ -382,23 +382,136 @@ global gridOutline := 0
 global jsonAnnotations := Map()
 global annotationMode := "Wide"
 
-; ===== DEGRADATION TYPES WITH COLORS =====
+; ===== LABEL CONFIGURATION SYSTEM =====
+; Centralized label configuration system
+; Each label has: name (internal), displayName (UI), color (hex), statKey (for CSV/stats)
+global degradationConfig := Map(
+    1, {name: "label1", displayName: "Label 1", color: "0xFF8C00", statKey: "label1"},
+    2, {name: "label2", displayName: "Label 2", color: "0xFFFF00", statKey: "label2"},
+    3, {name: "label3", displayName: "Label 3", color: "0x9932CC", statKey: "label3"},
+    4, {name: "label4", displayName: "Label 4", color: "0x32CD32", statKey: "label4"},
+    5, {name: "label5", displayName: "Label 5", color: "0x8B0000", statKey: "label5"},
+    6, {name: "label6", displayName: "Label 6", color: "0xFF0000", statKey: "label6"},
+    7, {name: "label7", displayName: "Label 7", color: "0xFF4500", statKey: "label7"},
+    8, {name: "label8", displayName: "Label 8", color: "0xADFF2F", statKey: "label8"},
+    9, {name: "label9", displayName: "Label 9", color: "0x00FFFF", statKey: "label9"}
+)
+
+; Legacy Maps for backward compatibility (these reference degradationConfig)
 global degradationTypes := Map(
-    1, "smudge", 2, "glare", 3, "splashes", 4, "partial_blockage", 5, "full_blockage",
-    6, "light_flare", 7, "rain", 8, "haze", 9, "snow"
+    1, "label1", 2, "label2", 3, "label3", 4, "label4", 5, "label5",
+    6, "label6", 7, "label7", 8, "label8", 9, "label9"
 )
 
 global degradationColors := Map(
-    1, "0xFF8C00",    ; smudge - orange
-    2, "0xFFFF00",    ; glare - yellow
-    3, "0x9932CC",    ; splashes - purple
-    4, "0x32CD32",    ; partial_blockage - green
-    5, "0x8B0000",    ; full_blockage - darker red
-    6, "0xFF0000",    ; light_flare - very bright red
-    7, "0xFF4500",    ; rain - dark orange
-    8, "0xADFF2F",    ; haze - green/yellow
-    9, "0x00FFFF"     ; snow - cyan (bright blue-green, distinct from yellow-green)
+    1, "0xFF8C00",    ; label1 - orange
+    2, "0xFFFF00",    ; label2 - yellow
+    3, "0x9932CC",    ; label3 - purple
+    4, "0x32CD32",    ; label4 - green
+    5, "0x8B0000",    ; label5 - dark red
+    6, "0xFF0000",    ; label6 - red
+    7, "0xFF4500",    ; label7 - dark orange
+    8, "0xADFF2F",    ; label8 - yellow-green
+    9, "0x00FFFF"     ; label9 - cyan
 )
+
+; ===== DEGRADATION HELPER FUNCTIONS =====
+GetDegradationName(id) {
+    if degradationConfig.Has(id)
+        return degradationConfig[id].name
+    return ""
+}
+
+GetDegradationDisplayName(id) {
+    if degradationConfig.Has(id)
+        return degradationConfig[id].displayName
+    return ""
+}
+
+GetDegradationColor(id) {
+    if degradationConfig.Has(id)
+        return degradationConfig[id].color
+    return "0xFFFFFF"  ; Default white if not found
+}
+
+GetDegradationStatKey(id) {
+    if degradationConfig.Has(id)
+        return degradationConfig[id].statKey
+    return ""
+}
+
+; Get degradation ID from name (reverse lookup)
+GetDegradationIdByName(name) {
+    for id, config in degradationConfig {
+        if (config.name = name)
+            return id
+    }
+    return 0
+}
+
+; Sync legacy Maps with degradationConfig (call after config changes)
+SyncLegacyDegradationMaps() {
+    global degradationTypes, degradationColors, degradationConfig
+
+    degradationTypes := Map()
+    degradationColors := Map()
+
+    for id, config in degradationConfig {
+        degradationTypes[id] := config.name
+        degradationColors[id] := config.color
+    }
+}
+
+; Initialize legacy maps on startup
+SyncLegacyDegradationMaps()
+
+; Validate hex color code
+ValidateHexColor(colorStr) {
+    ; Must match format: 0xRRGGBB (case insensitive)
+    if (!RegExMatch(colorStr, "^0x[0-9A-Fa-f]{6}$"))
+        return false
+    return true
+}
+
+; Validate degradation name (no special chars, reasonable length)
+ValidateDegradationName(name) {
+    ; Must be 1-30 chars, alphanumeric, underscore, hyphen, space allowed
+    if (!RegExMatch(name, "^[A-Za-z0-9_\- ]{1,30}$"))
+        return false
+    return true
+}
+
+; Reset degradation to factory defaults
+ResetDegradationToDefault(id) {
+    global degradationConfig
+
+    ; Factory defaults
+    defaults := Map(
+        1, {name: "label1", displayName: "Label 1", color: "0xFF8C00", statKey: "label1"},
+        2, {name: "label2", displayName: "Label 2", color: "0xFFFF00", statKey: "label2"},
+        3, {name: "label3", displayName: "Label 3", color: "0x9932CC", statKey: "label3"},
+        4, {name: "label4", displayName: "Label 4", color: "0x32CD32", statKey: "label4"},
+        5, {name: "label5", displayName: "Label 5", color: "0x8B0000", statKey: "label5"},
+        6, {name: "label6", displayName: "Label 6", color: "0xFF0000", statKey: "label6"},
+        7, {name: "label7", displayName: "Label 7", color: "0xFF4500", statKey: "label7"},
+        8, {name: "label8", displayName: "Label 8", color: "0xADFF2F", statKey: "label8"},
+        9, {name: "label9", displayName: "Label 9", color: "0x00FFFF", statKey: "label9"}
+    )
+
+    if (defaults.Has(id)) {
+        degradationConfig[id] := defaults[id]
+        return true
+    }
+    return false
+}
+
+; Reset all degradations to factory defaults
+ResetAllDegradationsToDefaults() {
+    Loop 9 {
+        ResetDegradationToDefault(A_Index)
+    }
+    SyncLegacyDegradationMaps()
+}
 
 global severityLevels := ["high", "medium", "low"]
 
@@ -1022,6 +1135,297 @@ ResetHotkeySettings(settingsGui) {
     UpdateStatus("✅ Hotkeys reset to defaults")
 }
 
+; ===== LABEL SETTINGS HANDLERS =====
+
+; Color picker function with common color palette
+PickLabelColor(degId, degEditControls, settingsGui) {
+    controls := degEditControls[degId]
+
+    ; Create color picker dialog as child of settings window
+    colorGui := Gui("+Owner" . settingsGui.Hwnd . " +AlwaysOnTop", "Pick Color for Label " . degId)
+    colorGui.SetFont("s9")
+
+    colorGui.Add("Text", "x10 y10 w280 h20 Center", "Select a color:")
+
+    ; Common color palette
+    colors := [
+        ["Orange", "0xFF8C00"],
+        ["Yellow", "0xFFFF00"],
+        ["Purple", "0x9932CC"],
+        ["Green", "0x32CD32"],
+        ["Dark Red", "0x8B0000"],
+        ["Red", "0xFF0000"],
+        ["Dark Orange", "0xFF4500"],
+        ["Yellow-Green", "0xADFF2F"],
+        ["Cyan", "0x00FFFF"],
+        ["Blue", "0x4169E1"],
+        ["Pink", "0xFF69B4"],
+        ["Lime", "0x00FF00"],
+        ["Magenta", "0xFF00FF"],
+        ["Teal", "0x008080"],
+        ["Brown", "0x8B4513"],
+        ["Gray", "0x808080"]
+    ]
+
+    yPos := 40
+    colCount := 0
+
+    for colorInfo in colors {
+        colorName := colorInfo[1]
+        colorHex := colorInfo[2]
+
+        xPos := 10 + (colCount * 145)
+
+        ; Color preview box
+        colorBox := colorGui.Add("Text", "x" . xPos . " y" . yPos . " w60 h30 Center +Border", "")
+        colorBox.Opt("+Background" . colorHex)
+
+        ; Click handler using a generated closure to freeze arguments per item
+        pickHandler := CreateColorPickHandler(colorGui, colorHex, controls)
+
+        ; Color name button
+        btnColor := colorGui.Add("Button", "x" . (xPos + 65) . " y" . yPos . " w70 h30", colorName)
+        btnColor.OnEvent("Click", pickHandler)
+
+        ; Make the colored swatch clickable too
+        colorBox.OnEvent("Click", pickHandler)
+
+        colCount++
+        if (colCount == 2) {
+            colCount := 0
+            yPos += 35
+        }
+    }
+
+    ; Custom hex input at bottom
+    yPos += 40
+    colorGui.Add("Text", "x10 y" . yPos . " w80 h20", "Custom Hex:")
+    customHexEdit := colorGui.Add("Edit", "x95 y" . (yPos - 2) . " w120 h24", "0x")
+    btnCustom := colorGui.Add("Button", "x220 y" . (yPos - 2) . " w70 h24", "Apply")
+    btnCustom.OnEvent("Click", (*) => SelectCustomColor(colorGui, customHexEdit, controls))
+
+    colorGui.Show("w300 h" . (yPos + 40))
+}
+
+; Apply selected color from palette
+SelectColor(colorGui, colorHex, controls) {
+    VizLog("SelectColor called: colorHex=" . colorHex)
+    controls.currentColor := colorHex
+    controls.colorDisplay.Value := colorHex
+    VizLog("Updated colorDisplay.Value to: " . controls.colorDisplay.Value)
+    ; Force the control to update visually
+    try {
+        controls.colorDisplay.Redraw()
+        VizLog("Redraw successful")
+    } catch as e {
+        VizLog("Redraw failed: " . e.Message)
+    }
+    ; Update live preview swatch if available (no try/catch needed)
+    if (controls.HasOwnProp("preview") && IsObject(controls.preview)) {
+        controls.preview.Opt("+Background" . colorHex)
+        controls.preview.Redraw()
+    }
+    VizLog("Destroying color picker dialog")
+    colorGui.Destroy()
+    FlushVizLog()
+}
+
+; Apply custom hex color
+SelectCustomColor(colorGui, customHexEdit, controls) {
+    customColor := Trim(customHexEdit.Value)
+
+    ; Validate hex color
+    if (!ValidateHexColor(customColor)) {
+        MsgBox("Invalid color format!`n`nPlease use format: 0xRRGGBB`nExample: 0xFF8C00", "Invalid Color", "Icon!")
+        return
+    }
+
+    controls.currentColor := customColor
+    controls.colorDisplay.Value := customColor
+    ; Force the control to update visually
+    try {
+        controls.colorDisplay.Redraw()
+    } catch as e {
+        ; ignore redraw issues
+    }
+    ; Update live preview swatch if available (no try/catch needed)
+    if (controls.HasOwnProp("preview") && IsObject(controls.preview)) {
+        controls.preview.Opt("+Background" . customColor)
+        controls.preview.Redraw()
+    }
+    colorGui.Destroy()
+}
+
+; Generate a per-item click handler that freezes the color and control references
+CreateColorPickHandler(colorGui, colorHex, controls) {
+    return (*) => SelectColor(colorGui, colorHex, controls)
+}
+
+; Freeze degId for "Pick" button handler in Labels tab
+CreatePickLabelHandler(degId, degEditControls, settingsGui) {
+    return (*) => PickLabelColor(degId, degEditControls, settingsGui)
+}
+
+; Freeze degId for hex Edit Change handler in Labels tab
+CreateHexChangeHandler(degId, degEditControls) {
+    return (*) => HandleLabelColorEditChange(degId, degEditControls)
+}
+
+; Live-update handler for hex edit in Labels tab
+HandleLabelColorEditChange(degId, degEditControls) {
+    if (!degEditControls.Has(degId))
+        return
+    controls := degEditControls[degId]
+    value := Trim(controls.colorDisplay.Value)
+    if (ValidateHexColor(value)) {
+        controls.currentColor := value
+        if (controls.HasOwnProp("preview") && IsObject(controls.preview)) {
+            controls.preview.Opt("+Background" . value)
+            controls.preview.Redraw()
+        }
+    } else {
+        ; Show neutral preview when invalid
+        if (controls.HasOwnProp("preview") && IsObject(controls.preview)) {
+            controls.preview.Opt("+Background0xFFFFFF")
+            controls.preview.Redraw()
+        }
+    }
+}
+
+ApplyDegradationSettings(degEditControls, settingsGui) {
+    global degradationConfig
+
+    VizLog("=== ApplyDegradationSettings CALLED ===")
+    FlushVizLog()
+
+    ; Validate and update all labels
+    errorMessages := []
+
+    ; Debug: Track what's being updated
+    updatedCount := 0
+
+    for degId, controls in degEditControls {
+        newName := Trim(controls.name.Value)
+        newColor := Trim(controls.colorDisplay.Value)
+
+        ; Validate name
+        if (StrLen(newName) == 0 || StrLen(newName) > 30) {
+            errorMessages.Push("Label " . degId . ": Name must be 1-30 characters")
+            continue
+        }
+
+        if (!ValidateDegradationName(newName)) {
+            errorMessages.Push("Label " . degId . ": Invalid name '" . newName . "' (use alphanumeric, spaces, hyphens, underscores only)")
+            continue
+        }
+
+        ; Validate color
+        if (!ValidateHexColor(newColor)) {
+            errorMessages.Push("Label " . degId . ": Invalid color '" . newColor . "' (use format 0xRRGGBB)")
+            continue
+        }
+
+        ; Update configuration - use displayName for both name and displayName
+        degradationConfig[degId].displayName := newName
+        degradationConfig[degId].color := newColor
+        ; Keep existing internal name and statKey unchanged for compatibility
+        updatedCount++
+    }
+
+    ; Show validation errors if any
+    if (errorMessages.Length > 0) {
+        errorText := "Validation Errors:`n`n"
+        for msg in errorMessages {
+            errorText .= "• " . msg . "`n"
+        }
+        MsgBox(errorText, "Validation Failed", "Icon! 48")
+        return
+    }
+
+    ; Debug: Log what's in degradationConfig before sync
+    VizLog("=== APPLYING LABEL SETTINGS ===")
+    for id, config in degradationConfig {
+        VizLog("Label " . id . ": name=" . config.name . " displayName=" . config.displayName . " color=" . config.color)
+    }
+
+    ; Sync legacy maps and save config
+    VizLog("=== BEFORE SYNC ===")
+    for id, color in degradationColors {
+        VizLog("degradationColors[" . id . "] = " . color)
+    }
+
+    SyncLegacyDegradationMaps()
+
+    ; Debug: Log what's in degradationColors after sync
+    VizLog("=== AFTER SYNC ===")
+    for id, color in degradationColors {
+        VizLog("degradationColors[" . id . "] = " . color)
+    }
+
+    ; Verify the global is actually updated
+    global degradationColors
+    VizLog("=== VERIFYING GLOBAL degradationColors ===")
+    VizLog("degradationColors type: " . Type(degradationColors))
+    VizLog("degradationColors count: " . degradationColors.Count)
+
+    SaveConfig()
+
+    ; Clear BOTH caches to force complete regeneration with new colors
+    VizLog("=== CLEARING HBITMAP CACHE ===")
+    VizLog("hbitmapCache size before: " . hbitmapCache.Count)
+    CleanupHBITMAPCache()
+    VizLog("hbitmapCache size after: " . hbitmapCache.Count)
+
+    VizLog("=== CLEARING DISPLAYED HBITMAPS ===")
+    VizLog("buttonDisplayedHBITMAPs size before: " . buttonDisplayedHBITMAPs.Count)
+    CleanupButtonDisplayedHBITMAPs()
+    VizLog("buttonDisplayedHBITMAPs size after: " . buttonDisplayedHBITMAPs.Count)
+
+    ; Refresh all button visualizations to show new colors
+    VizLog("=== REFRESHING ALL BUTTONS ===")
+    RefreshAllButtonAppearances()
+    FlushVizLog()
+
+    ; Build a summary of what was updated
+    updateSummary := "degradationConfig:`n"
+    for id, config in degradationConfig {
+        updateSummary .= "  [" . id . "] " . config.displayName . " = " . config.color . "`n"
+    }
+    updateSummary .= "`ndegradationColors after sync:`n"
+    for id, color in degradationColors {
+        updateSummary .= "  [" . id . "] = " . color . "`n"
+    }
+
+    MsgBox("Label settings saved!`n`n" . updatedCount . " labels updated.`n`n" . updateSummary . "`nIf colors don't show, check viz.log for details.", "Settings Updated", "Icon!")
+    UpdateStatus("✅ Label settings applied (" . updatedCount . " labels)")
+}
+
+ResetDegradationSettings(settingsGui) {
+    ; Confirm reset
+    result := MsgBox("Reset all labels to factory defaults?`n`nThis will restore original names and colors.", "Reset Labels", "YesNo Icon?")
+
+    if (result == "No")
+        return
+
+    ; Reset to defaults
+    ResetAllDegradationsToDefaults()
+    SaveConfig()
+
+    ; Clear BOTH caches to force complete regeneration with default colors
+    CleanupHBITMAPCache()
+    CleanupButtonDisplayedHBITMAPs()
+
+    ; Refresh all button visualizations to show default colors
+    RefreshAllButtonAppearances()
+
+    ; Close and reopen settings to show updated values
+    settingsGui.Destroy()
+    ShowSettings()
+
+    MsgBox("Labels have been reset to factory defaults!", "Reset Complete", "Icon!")
+    UpdateStatus("✅ Labels reset to defaults")
+}
+
 ; ===== ASYNC STATS RECORDING - PREVENTS FREEZE =====
 RecordExecutionStatsAsync(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
     global breakMode, recording
@@ -1365,6 +1769,10 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     VizLog("DrawMacroBoxesOnButton: mode=" . displayMode)
     VizLog("  Canvas: L=" . canvasLeft . " T=" . canvasTop . " R=" . canvasRight . " B=" . canvasBottom)
     VizLog("  Canvas size: " . canvasW . "x" . canvasH . " Button: " . buttonWidth . "x" . buttonHeight)
+    VizLog("  degradationColors at draw time:")
+    for id, color in degradationColors {
+        VizLog("    [" . id . "] = " . color)
+    }
     
     if (canvasW <= 0 || canvasH <= 0) {
         VizLog("  ERROR: Invalid canvas")
@@ -1452,6 +1860,7 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
         
         degradationType := box.HasOwnProp("degradationType") ? box.degradationType : 1
         color := degradationColors.Has(degradationType) ? degradationColors[degradationType] : degradationColors[1]
+        VizLog("    degradationType=" . degradationType . " color=" . color)
         fillColor := 0xFF000000 | Integer(color)
         
         brush := 0
@@ -1697,7 +2106,15 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
     cacheKey := ""
     for event in macroEvents {
         if (event.type == "boundingBox") {
-            cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . "|"
+            cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . ","
+            ; Include degradation type and color in cache key
+            if (event.HasOwnProp("degradationType")) {
+                cacheKey .= event.degradationType . ":"
+                if (degradationColors.Has(event.degradationType)) {
+                    cacheKey .= degradationColors[event.degradationType]
+                }
+            }
+            cacheKey .= "|"
         }
     }
     recordedMode := ""
@@ -1914,7 +2331,20 @@ RenderBoxesOnButton(button, bypassData) {
 #Warn VarUnset, Off
 
 Stats_GetCsvHeader() {
-    return "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details`n"
+    global degradationConfig
+
+    ; Base header columns
+    header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,"
+
+    ; Add degradation count columns dynamically
+    for id, config in degradationConfig {
+        header .= config.name . "_count,"
+    }
+
+    ; Add clear_count and remaining columns
+    header .= "clear_count,annotation_details,execution_success,error_details`n"
+
+    return header
 }
 
 Stats_EnsureStatsFile(filePath, encoding := "") {
@@ -1928,20 +2358,28 @@ Stats_EnsureStatsFile(filePath, encoding := "") {
 }
 
 Stats_BuildCsvRow(executionData) {
-    global currentSessionId, currentUsername
+    global currentSessionId, currentUsername, degradationConfig
+
     sessionIdentifier := executionData.Has("session_id") ? executionData["session_id"] : currentSessionId
     usernameValue := executionData.Has("username") ? executionData["username"] : currentUsername
+
+    ; Base columns
     row := executionData["timestamp"] . "," . sessionIdentifier . "," . usernameValue . "," . executionData["execution_type"] . ","
     row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . "," . executionData["layer"] . "," . executionData["execution_time_ms"] . "," . executionData["total_boxes"] . ","
     row .= (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
     row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
-    row .= (executionData.Has("smudge_count") ? executionData["smudge_count"] : 0) . "," . (executionData.Has("glare_count") ? executionData["glare_count"] : 0) . ","
-    row .= (executionData.Has("splashes_count") ? executionData["splashes_count"] : 0) . "," . (executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0) . ","
-    row .= (executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0) . "," . (executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0) . ","
-    row .= (executionData.Has("rain_count") ? executionData["rain_count"] : 0) . "," . (executionData.Has("haze_count") ? executionData["haze_count"] : 0) . ","
-    row .= (executionData.Has("snow_count") ? executionData["snow_count"] : 0) . "," . (executionData.Has("clear_count") ? executionData["clear_count"] : 0) . ","
+
+    ; Add degradation count columns dynamically
+    for id, config in degradationConfig {
+        countFieldName := config.name . "_count"
+        row .= (executionData.Has(countFieldName) ? executionData[countFieldName] : 0) . ","
+    }
+
+    ; Add clear_count and remaining columns
+    row .= (executionData.Has("clear_count") ? executionData["clear_count"] : 0) . ","
     row .= (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . "," . (executionData.Has("execution_success") ? executionData["execution_success"] : "true") . ","
     row .= (executionData.Has("error_details") ? executionData["error_details"] : "") . "`n"
+
     return row
 }
 
@@ -2034,89 +2472,88 @@ Stats_CreateEmptyStatsMap() {
     stats["most_used_button"] := ""
     stats["most_active_layer"] := ""
     stats["degradation_totals"] := Map()
-    stats["smudge_total"] := 0
-    stats["glare_total"] := 0
-    stats["splashes_total"] := 0
-    stats["partial_blockage_total"] := 0
-    stats["full_blockage_total"] := 0
-    stats["light_flare_total"] := 0
-    stats["rain_total"] := 0
-    stats["haze_total"] := 0
-    stats["snow_total"] := 0
+
+    ; Initialize degradation stats dynamically from degradationConfig
+    global degradationConfig
+    for id, config in degradationConfig {
+        ; Total counts (legacy compatibility)
+        stats[config.name . "_total"] := 0
+
+        ; Macro-specific counts
+        stats["macro_" . config.statKey] := 0
+
+        ; JSON-specific counts
+        stats["json_" . config.statKey] := 0
+    }
+
+    ; Clear count (special case, not a degradation type)
     stats["clear_total"] := 0
-    stats["macro_smudge"] := 0
-    stats["macro_glare"] := 0
-    stats["macro_splashes"] := 0
-    stats["macro_partial"] := 0
-    stats["macro_full"] := 0
-    stats["macro_flare"] := 0
-    stats["macro_rain"] := 0
-    stats["macro_haze"] := 0
-    stats["macro_snow"] := 0
     stats["macro_clear"] := 0
-    stats["json_smudge"] := 0
-    stats["json_glare"] := 0
-    stats["json_splashes"] := 0
-    stats["json_partial"] := 0
-    stats["json_full"] := 0
-    stats["json_flare"] := 0
-    stats["json_rain"] := 0
-    stats["json_haze"] := 0
-    stats["json_snow"] := 0
     stats["json_clear"] := 0
+
+    ; Severity levels
     stats["severity_low"] := 0
     stats["severity_medium"] := 0
     stats["severity_high"] := 0
+
     return stats
 }
 
 Stats_IncrementDegradationCount(stats, degradation_name, prefix := "json_") {
-    switch StrLower(degradation_name) {
-        case "smudge", "1":
-            stats[prefix . "smudge"]++
-        case "glare", "2":
-            stats[prefix . "glare"]++
-        case "splashes", "3":
-            stats[prefix . "splashes"]++
-        case "partial_blockage", "4":
-            stats[prefix . "partial"]++
-        case "full_blockage", "5":
-            stats[prefix . "full"]++
-        case "light_flare", "6":
-            stats[prefix . "flare"]++
-        case "rain", "7":
-            stats[prefix . "rain"]++
-        case "haze", "8":
-            stats[prefix . "haze"]++
-        case "snow", "9":
-            stats[prefix . "snow"]++
-        case "clear", "none":
-            stats[prefix . "clear"]++
+    global degradationConfig
+
+    ; Handle clear/none as special case
+    if (StrLower(degradation_name) == "clear" || StrLower(degradation_name) == "none") {
+        stats[prefix . "clear"]++
+        return
+    }
+
+    ; Try as numeric ID first
+    if (IsInteger(degradation_name)) {
+        degId := Integer(degradation_name)
+        if (degradationConfig.Has(degId)) {
+            statKey := degradationConfig[degId].statKey
+            stats[prefix . statKey]++
+            return
+        }
+    }
+
+    ; Try as degradation name
+    for id, config in degradationConfig {
+        if (StrLower(config.name) == StrLower(degradation_name)) {
+            stats[prefix . config.statKey]++
+            return
+        }
     }
 }
 
 Stats_IncrementDegradationCountDirect(executionData, degradation_name) {
-    switch StrLower(degradation_name) {
-        case "smudge", "1":
-            executionData["smudge_count"]++
-        case "glare", "2":
-            executionData["glare_count"]++
-        case "splashes", "3":
-            executionData["splashes_count"]++
-        case "partial_blockage", "4":
-            executionData["partial_blockage_count"]++
-        case "full_blockage", "5":
-            executionData["full_blockage_count"]++
-        case "light_flare", "6":
-            executionData["light_flare_count"]++
-        case "rain", "7":
-            executionData["rain_count"]++
-        case "haze", "8":
-            executionData["haze_count"]++
-        case "snow", "9":
-            executionData["snow_count"]++
-        case "clear", "none":
-            executionData["clear_count"]++
+    global degradationConfig
+
+    ; Handle clear/none as special case
+    if (StrLower(degradation_name) == "clear" || StrLower(degradation_name) == "none") {
+        executionData["clear_count"]++
+        return
+    }
+
+    ; Try as numeric ID first
+    if (IsInteger(degradation_name)) {
+        degId := Integer(degradation_name)
+        if (degradationConfig.Has(degId)) {
+            ; Use full name for direct count field (e.g., "light_flare_count")
+            fieldName := degradationConfig[degId].name . "_count"
+            executionData[fieldName]++
+            return
+        }
+    }
+
+    ; Try as degradation name
+    for id, config in degradationConfig {
+        if (StrLower(config.name) == StrLower(degradation_name)) {
+            fieldName := config.name . "_count"
+            executionData[fieldName]++
+            return
+        }
     }
 }
 
@@ -2928,7 +3365,14 @@ ShowStatsMenu() {
     y += 15
     AddSectionDivider(statsGui, y, "MACRO DEGRADATION BREAKDOWN", 660)
     y += 15
-    degradationTypes := [["Smudge", "smudge"], ["Glare", "glare"], ["Splashes", "splashes"], ["Partial Block", "partial"], ["Full Block", "full"], ["Light Flare", "flare"], ["Rain", "rain"], ["Haze", "haze"], ["Snow", "snow"]]
+
+    ; Build degradation types dynamically from degradationConfig
+    global degradationConfig
+    degradationTypes := []
+    for id, config in degradationConfig {
+        degradationTypes.Push([config.displayName, config.statKey])
+    }
+
     for degInfo in degradationTypes {
         AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_macro_" . degInfo[2], "today_macro_" . degInfo[2])
         y += 12
@@ -4771,7 +5215,7 @@ ShowSettings() {
     settingsGui.SetFont("s10 Bold")
 
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys"])
+    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys", "🎨 Labels"])
 
     ; TAB 1: Essential Configuration
     tabs.UseTab(1)
@@ -5034,6 +5478,76 @@ ShowSettings() {
     hotkeyY += 18
     settingsGui.SetFont("s8")
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h52", "• Click the 'Set' button next to any hotkey field`n• Press your desired key combination (e.g., Ctrl+Alt+K, Shift+F5, etc.)`n• The hotkey will be captured and displayed automatically`n• Click 'Apply Hotkeys' to save and activate all changes immediately")
+    settingsGui.SetFont("s9")
+
+    ; TAB 4: Degradations Configuration
+    tabs.UseTab(4)
+    settingsGui.SetFont("s9")
+
+    ; Header
+    settingsGui.Add("Text", "x30 y75 w480 h20", "🎨 Label Configuration")
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x30 y98 w480 h14 c0x666666", "Customize label names and visualization colors")
+    settingsGui.SetFont("s9")
+
+    ; Create streamlined list of labels
+    global degradationConfig
+    degY := 125
+    degEditControls := Map()  ; Store references to edit controls
+
+    Loop 9 {
+        degId := A_Index
+        config := degradationConfig[degId]
+
+        ; ID number
+        settingsGui.Add("Text", "x30 y" . (degY + 5) . " w20 h20", degId . ":")
+
+        ; Name Edit
+        nameEdit := settingsGui.Add("Edit", "x55 y" . degY . " w240 h26", config.displayName)
+
+        ; Color picker button
+        btnPickColor := settingsGui.Add("Button", "x305 y" . degY . " w80 h26", "🎨 Pick")
+
+    ; Color hex display (editable for manual entry)
+    ; Reduce width slightly to fit live preview swatch
+    colorDisplay := settingsGui.Add("Edit", "x395 y" . degY . " w90 h26 Center", config.color)
+    colorDisplay.SetFont("s8")
+
+    ; Live color preview swatch
+    preview := settingsGui.Add("Text", "x" . (395 + 95) . " y" . (degY + 3) . " w20 h20 +Border", "")
+    preview.Opt("+Background" . config.color)
+
+        ; Store controls reference
+        degEditControls[degId] := {
+            name: nameEdit,
+            colorDisplay: colorDisplay,
+            preview: preview,
+            currentColor: config.color
+        }
+        ; Update preview live when hex edit changes (freeze degId)
+        colorDisplay.OnEvent("Change", CreateHexChangeHandler(degId, degEditControls))
+        ; Open picker for this specific label (freeze degId)
+        btnPickColor.OnEvent("Click", CreatePickLabelHandler(degId, degEditControls, settingsGui))
+
+        degY += 32
+    }
+
+    ; Action buttons
+    degY += 15
+    btnApplyDegradations := settingsGui.Add("Button", "x30 y" . degY . " w180 h30", "✅ Apply All Changes")
+    btnApplyDegradations.OnEvent("Click", (*) => ApplyDegradationSettings(degEditControls, settingsGui))
+
+    btnResetDegradations := settingsGui.Add("Button", "x225 y" . degY . " w150 h30", "🔄 Reset to Defaults")
+    btnResetDegradations.OnEvent("Click", (*) => ResetDegradationSettings(settingsGui))
+
+    degY += 38
+
+    ; Instructions
+    settingsGui.SetFont("s8 Bold c0x0066CC")
+    settingsGui.Add("Text", "x30 y" . degY . " w480 h14", "💡 How to Customize:")
+    degY += 18
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x30 y" . degY . " w480 h40", "• Edit the name field to customize how the label appears`n• Click 🎨 Color to pick a visualization color (common colors available)`n• Click 'Apply All Changes' to save and activate your customizations")
     settingsGui.SetFont("s9")
 
     ; Show settings window
@@ -5781,6 +6295,17 @@ SaveConfig() {
         configContent .= "hotkeySettings=" . hotkeySettings . "`n"
         configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n`n"
 
+        ; Add degradations section
+        global degradationConfig
+        configContent .= "[Degradations]`n"
+        for id, config in degradationConfig {
+            configContent .= "DegradationName_" . id . "=" . config.name . "`n"
+            configContent .= "DegradationDisplayName_" . id . "=" . config.displayName . "`n"
+            configContent .= "DegradationColor_" . id . "=" . config.color . "`n"
+            configContent .= "DegradationStatKey_" . id . "=" . config.statKey . "`n"
+        }
+        configContent .= "`n"
+
         ; Add macros section
         configContent .= "[Macros]`n"
         savedMacros := 0
@@ -5983,6 +6508,36 @@ LoadConfig() {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
+                } else if (currentSection == "Degradations") {
+                    ; Load degradation configuration
+                    global degradationConfig
+
+                    ; Parse degradation settings (DegradationName_1, DegradationColor_1, etc.)
+                    if (RegExMatch(key, "^DegradationName_(\d+)$", &match)) {
+                        degId := Integer(match[1])
+                        if (!degradationConfig.Has(degId)) {
+                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        }
+                        degradationConfig[degId].name := value
+                    } else if (RegExMatch(key, "^DegradationDisplayName_(\d+)$", &match)) {
+                        degId := Integer(match[1])
+                        if (!degradationConfig.Has(degId)) {
+                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        }
+                        degradationConfig[degId].displayName := value
+                    } else if (RegExMatch(key, "^DegradationColor_(\d+)$", &match)) {
+                        degId := Integer(match[1])
+                        if (!degradationConfig.Has(degId)) {
+                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        }
+                        degradationConfig[degId].color := value
+                    } else if (RegExMatch(key, "^DegradationStatKey_(\d+)$", &match)) {
+                        degId := Integer(match[1])
+                        if (!degradationConfig.Has(degId)) {
+                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        }
+                        degradationConfig[degId].statKey := value
+                    }
                 } else if (currentSection == "Labels") {
                     if (buttonCustomLabels.Has(key)) {
                         buttonCustomLabels[key] := value
@@ -5991,6 +6546,9 @@ LoadConfig() {
             }
         }
         
+        ; Sync legacy degradation maps after loading custom config
+        SyncLegacyDegradationMaps()
+
         ; Load macros from config file
         macrosLoaded := ParseMacrosFromConfig()
 
