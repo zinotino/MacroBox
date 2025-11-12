@@ -2409,7 +2409,7 @@ Stats_BuildCsvRow(executionData) {
     ; Base columns
     row := executionData["timestamp"] . "," . sessionIdentifier . "," . usernameValue . "," . executionData["execution_type"] . ","
     row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . "," . executionData["layer"] . "," . executionData["execution_time_ms"] . "," . executionData["total_boxes"] . ","
-    row .= (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : "")) . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
+    row .= (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "")) . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
     row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
 
     ; Add condition count columns dynamically
@@ -6702,10 +6702,39 @@ BuildMacroEventsFromString(serializedEvents) {
                 bottom: Integer(parts[5])
             }
 
+            ; Parse optional key=value attributes saved by SaveConfig
             if (parts.Length >= 6) {
                 Loop (parts.Length - 5) {
                     idx := A_Index + 5
                     if (idx > parts.Length)
+                        break
+                    token := parts[idx]
+                    if (SubStr(token, 1, 4) == "deg=") {
+                        val := SubStr(token, 5)
+                        if (val != "")
+                            event.conditionType := Integer(val)
+                    } else if (SubStr(token, 1, 5) == "name=") {
+                        val := SubStr(token, 6)
+                        if (val != "")
+                            event.conditionName := val
+                    } else if (SubStr(token, 1, 7) == "tagged=") {
+                        val := StrLower(SubStr(token, 8))
+                        event.isTagged := !(val == "" || val == "0" || val == "false" || val == "no" || val == "off")
+                    }
+                }
+            }
+
+            ; Defaults for missing fields
+            if (!event.HasOwnProp("conditionType"))
+                event.conditionType := 1
+            if (!event.HasOwnProp("conditionName"))
+                event.conditionName := "smudge"
+            if (!event.HasOwnProp("isTagged"))
+                event.isTagged := false
+
+            events.Push(event)
+            continue
+        }
                         break
                     extra := parts[idx]
                     if (InStr(extra, "deg=")) {
@@ -7326,3 +7355,4 @@ TestSaveLoad() {
 
 ; ===== START APPLICATION =====
 Main()
+
