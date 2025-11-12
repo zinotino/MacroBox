@@ -27,7 +27,7 @@ FEATURES:
   - Macro recording and playback with optimization
   - HBITMAP visualization thumbnails (Wide/Narrow canvas modes)
   - Stats tracking with JSON persistence and CSV export
-  - Degradation type tracking (10 types: smudge, glare, splashes, etc.)
+  - Condition type tracking (10 types: smudge, glare, splashes, etc.)
   - Dark mode GUI with live auto-refresh
   - Hotkey customization with live re-registration
   - Window scaling with debounced resize handling
@@ -327,7 +327,7 @@ global buttonThumbnails := Map()
 ; ===== ENHANCED STATS SYSTEM =====
 global severityBreakdown := Map()
 
-; ===== DEGRADATION TRACKING =====
+; ===== CONDITION TRACKING =====
 global pendingBoxForTagging := ""
 
 ; ===== TIME TRACKING & BREAK MODE =====
@@ -382,28 +382,66 @@ global gridOutline := 0
 global jsonAnnotations := Map()
 global annotationMode := "Wide"
 
-; ===== LABEL CONFIGURATION SYSTEM =====
-; Centralized label configuration system
-; Each label has: name (internal), displayName (UI), color (hex), statKey (for CSV/stats)
-global degradationConfig := Map(
-    1, {name: "label1", displayName: "Label 1", color: "0xFF8C00", statKey: "label1"},
-    2, {name: "label2", displayName: "Label 2", color: "0xFFFF00", statKey: "label2"},
-    3, {name: "label3", displayName: "Label 3", color: "0x9932CC", statKey: "label3"},
-    4, {name: "label4", displayName: "Label 4", color: "0x32CD32", statKey: "label4"},
-    5, {name: "label5", displayName: "Label 5", color: "0x8B0000", statKey: "label5"},
-    6, {name: "label6", displayName: "Label 6", color: "0xFF0000", statKey: "label6"},
-    7, {name: "label7", displayName: "Label 7", color: "0xFF4500", statKey: "label7"},
-    8, {name: "label8", displayName: "Label 8", color: "0xADFF2F", statKey: "label8"},
-    9, {name: "label9", displayName: "Label 9", color: "0x00FFFF", statKey: "label9"}
+; ===== CONDITION CONFIGURATION SYSTEM =====
+; Centralized condition configuration
+; Each condition has: name (internal), displayName (UI), color (hex), statKey (for CSV/stats)
+global conditionConfig := Map(
+    1, {name: "smudge",            displayName: "Smudge",            color: "0xFF8C00", statKey: "smudge"},
+    2, {name: "glare",             displayName: "Glare",             color: "0xFFFF00", statKey: "glare"},
+    3, {name: "splashes",          displayName: "Splashes",          color: "0x9932CC", statKey: "splashes"},
+    4, {name: "partial_blockage",  displayName: "Partial Blockage",  color: "0x32CD32", statKey: "partial_blockage"},
+    5, {name: "full_blockage",     displayName: "Full Blockage",     color: "0x8B0000", statKey: "full_blockage"},
+    6, {name: "light_flare",       displayName: "Light Flare",       color: "0xFF0000", statKey: "light_flare"},
+    7, {name: "rain",              displayName: "Rain",              color: "0xFF4500", statKey: "rain"},
+    8, {name: "haze",              displayName: "Haze",              color: "0xADFF2F", statKey: "haze"},
+    9, {name: "snow",              displayName: "Snow",              color: "0x00FFFF", statKey: "snow"}
 )
 
-; Legacy Maps for backward compatibility (these reference degradationConfig)
-global degradationTypes := Map(
-    1, "label1", 2, "label2", 3, "label3", 4, "label4", 5, "label5",
-    6, "label6", 7, "label7", 8, "label8", 9, "label9"
+; Legacy name compatibility (old -> id)
+; Supports older logs/inputs that used named conditions or labelN
+global legacyConditionNameToId := Map(
+    "smudge", 1,
+    "glare", 2,
+    "splashes", 3,
+    "partial_blockage", 4,
+    "full_blockage", 5,
+    "light_flare", 6,
+    "flare", 6,
+    "rain", 7,
+    "haze", 8,
+    "snow", 9,
+    "label1", 1,
+    "label2", 2,
+    "label3", 3,
+    "label4", 4,
+    "label5", 5,
+    "label6", 6,
+    "label7", 7,
+    "label8", 8,
+    "label9", 9,
+    "clear", 0
 )
 
-global degradationColors := Map(
+; Legacy per-id count field names used in older executionData
+global legacyConditionCountFieldById := Map(
+    1, "smudge_count",
+    2, "glare_count",
+    3, "splashes_count",
+    4, "partial_blockage_count",
+    5, "full_blockage_count",
+    6, "light_flare_count",
+    7, "rain_count",
+    8, "haze_count",
+    9, "snow_count"
+)
+
+; Legacy Maps for backward compatibility (these reference conditionConfig)
+global conditionTypes := Map(
+    1, "smudge", 2, "glare", 3, "splashes", 4, "partial_blockage", 5, "full_blockage",
+    6, "light_flare", 7, "rain", 8, "haze", 9, "snow"
+)
+
+global conditionColors := Map(
     1, "0xFF8C00",    ; label1 - orange
     2, "0xFFFF00",    ; label2 - yellow
     3, "0x9932CC",    ; label3 - purple
@@ -415,55 +453,55 @@ global degradationColors := Map(
     9, "0x00FFFF"     ; label9 - cyan
 )
 
-; ===== DEGRADATION HELPER FUNCTIONS =====
-GetDegradationName(id) {
-    if degradationConfig.Has(id)
-        return degradationConfig[id].name
+; ===== CONDITION HELPER FUNCTIONS =====
+GetConditionName(id) {
+    if conditionConfig.Has(id)
+        return conditionConfig[id].name
     return ""
 }
 
-GetDegradationDisplayName(id) {
-    if degradationConfig.Has(id)
-        return degradationConfig[id].displayName
+GetConditionDisplayName(id) {
+    if conditionConfig.Has(id)
+        return conditionConfig[id].displayName
     return ""
 }
 
-GetDegradationColor(id) {
-    if degradationConfig.Has(id)
-        return degradationConfig[id].color
+GetConditionColor(id) {
+    if conditionConfig.Has(id)
+        return conditionConfig[id].color
     return "0xFFFFFF"  ; Default white if not found
 }
 
-GetDegradationStatKey(id) {
-    if degradationConfig.Has(id)
-        return degradationConfig[id].statKey
+GetConditionStatKey(id) {
+    if conditionConfig.Has(id)
+        return conditionConfig[id].statKey
     return ""
 }
 
-; Get degradation ID from name (reverse lookup)
-GetDegradationIdByName(name) {
-    for id, config in degradationConfig {
+; Get condition ID from name (reverse lookup)
+GetConditionIdByName(name) {
+    for id, config in conditionConfig {
         if (config.name = name)
             return id
     }
     return 0
 }
 
-; Sync legacy Maps with degradationConfig (call after config changes)
-SyncLegacyDegradationMaps() {
-    global degradationTypes, degradationColors, degradationConfig
+; Sync legacy Maps with conditionConfig (call after config changes)
+SyncLegacyConditionMaps() {
+    global conditionTypes, conditionColors, conditionConfig
 
-    degradationTypes := Map()
-    degradationColors := Map()
+    conditionTypes := Map()
+    conditionColors := Map()
 
-    for id, config in degradationConfig {
-        degradationTypes[id] := config.name
-        degradationColors[id] := config.color
+    for id, config in conditionConfig {
+        conditionTypes[id] := config.name
+        conditionColors[id] := config.color
     }
 }
 
 ; Initialize legacy maps on startup
-SyncLegacyDegradationMaps()
+SyncLegacyConditionMaps()
 
 ; Validate hex color code
 ValidateHexColor(colorStr) {
@@ -473,44 +511,44 @@ ValidateHexColor(colorStr) {
     return true
 }
 
-; Validate degradation name (no special chars, reasonable length)
-ValidateDegradationName(name) {
+; Validate condition name (no special chars, reasonable length)
+ValidateConditionName(name) {
     ; Must be 1-30 chars, alphanumeric, underscore, hyphen, space allowed
     if (!RegExMatch(name, "^[A-Za-z0-9_\- ]{1,30}$"))
         return false
     return true
 }
 
-; Reset degradation to factory defaults
-ResetDegradationToDefault(id) {
-    global degradationConfig
+; Reset condition definitions to factory defaults
+ResetConditionToDefault(id) {
+    global conditionConfig
 
     ; Factory defaults
     defaults := Map(
-        1, {name: "label1", displayName: "Label 1", color: "0xFF8C00", statKey: "label1"},
-        2, {name: "label2", displayName: "Label 2", color: "0xFFFF00", statKey: "label2"},
-        3, {name: "label3", displayName: "Label 3", color: "0x9932CC", statKey: "label3"},
-        4, {name: "label4", displayName: "Label 4", color: "0x32CD32", statKey: "label4"},
-        5, {name: "label5", displayName: "Label 5", color: "0x8B0000", statKey: "label5"},
-        6, {name: "label6", displayName: "Label 6", color: "0xFF0000", statKey: "label6"},
-        7, {name: "label7", displayName: "Label 7", color: "0xFF4500", statKey: "label7"},
-        8, {name: "label8", displayName: "Label 8", color: "0xADFF2F", statKey: "label8"},
-        9, {name: "label9", displayName: "Label 9", color: "0x00FFFF", statKey: "label9"}
+        1, {name: "smudge",            displayName: "Smudge",            color: "0xFF8C00", statKey: "smudge"},
+        2, {name: "glare",             displayName: "Glare",             color: "0xFFFF00", statKey: "glare"},
+        3, {name: "splashes",          displayName: "Splashes",          color: "0x9932CC", statKey: "splashes"},
+        4, {name: "partial_blockage",  displayName: "Partial Blockage",  color: "0x32CD32", statKey: "partial_blockage"},
+        5, {name: "full_blockage",     displayName: "Full Blockage",     color: "0x8B0000", statKey: "full_blockage"},
+        6, {name: "light_flare",       displayName: "Light Flare",       color: "0xFF0000", statKey: "light_flare"},
+        7, {name: "rain",              displayName: "Rain",              color: "0xFF4500", statKey: "rain"},
+        8, {name: "haze",              displayName: "Haze",              color: "0xADFF2F", statKey: "haze"},
+        9, {name: "snow",              displayName: "Snow",              color: "0x00FFFF", statKey: "snow"}
     )
 
     if (defaults.Has(id)) {
-        degradationConfig[id] := defaults[id]
+        conditionConfig[id] := defaults[id]
         return true
     }
     return false
 }
 
-; Reset all degradations to factory defaults
-ResetAllDegradationsToDefaults() {
+; Reset all conditions to factory defaults
+ResetAllConditionsToDefaults() {
     Loop 9 {
-        ResetDegradationToDefault(A_Index)
+        ResetConditionToDefault(A_Index)
     }
-    SyncLegacyDegradationMaps()
+    SyncLegacyConditionMaps()
 }
 
 global severityLevels := ["high", "medium", "low"]
@@ -1135,7 +1173,7 @@ ResetHotkeySettings(settingsGui) {
     UpdateStatus("✅ Hotkeys reset to defaults")
 }
 
-; ===== LABEL SETTINGS HANDLERS =====
+; ===== CONDITION SETTINGS HANDLERS =====
 
 ; Color picker function with common color palette
 PickLabelColor(degId, degEditControls, settingsGui) {
@@ -1261,17 +1299,17 @@ CreateColorPickHandler(colorGui, colorHex, controls) {
     return (*) => SelectColor(colorGui, colorHex, controls)
 }
 
-; Freeze degId for "Pick" button handler in Labels tab
+; Freeze degId for "Pick" button handler in Conditions tab
 CreatePickLabelHandler(degId, degEditControls, settingsGui) {
     return (*) => PickLabelColor(degId, degEditControls, settingsGui)
 }
 
-; Freeze degId for hex Edit Change handler in Labels tab
+; Freeze degId for hex Edit Change handler in Conditions tab
 CreateHexChangeHandler(degId, degEditControls) {
     return (*) => HandleLabelColorEditChange(degId, degEditControls)
 }
 
-; Live-update handler for hex edit in Labels tab
+; Live-update handler for hex edit in Conditions tab
 HandleLabelColorEditChange(degId, degEditControls) {
     if (!degEditControls.Has(degId))
         return
@@ -1292,10 +1330,10 @@ HandleLabelColorEditChange(degId, degEditControls) {
     }
 }
 
-ApplyDegradationSettings(degEditControls, settingsGui) {
-    global degradationConfig
+ApplyConditionSettings(degEditControls, settingsGui) {
+    global conditionConfig
 
-    VizLog("=== ApplyDegradationSettings CALLED ===")
+    VizLog("=== ApplyConditionSettings CALLED ===")
     FlushVizLog()
 
     ; Validate and update all labels
@@ -1314,7 +1352,7 @@ ApplyDegradationSettings(degEditControls, settingsGui) {
             continue
         }
 
-        if (!ValidateDegradationName(newName)) {
+        if (!ValidateConditionName(newName)) {
             errorMessages.Push("Label " . degId . ": Invalid name '" . newName . "' (use alphanumeric, spaces, hyphens, underscores only)")
             continue
         }
@@ -1326,8 +1364,8 @@ ApplyDegradationSettings(degEditControls, settingsGui) {
         }
 
         ; Update configuration - use displayName for both name and displayName
-        degradationConfig[degId].displayName := newName
-        degradationConfig[degId].color := newColor
+        conditionConfig[degId].displayName := newName
+        conditionConfig[degId].color := newColor
         ; Keep existing internal name and statKey unchanged for compatibility
         updatedCount++
     }
@@ -1342,31 +1380,31 @@ ApplyDegradationSettings(degEditControls, settingsGui) {
         return
     }
 
-    ; Debug: Log what's in degradationConfig before sync
-    VizLog("=== APPLYING LABEL SETTINGS ===")
-    for id, config in degradationConfig {
+    ; Debug: Log what's in conditionConfig before sync
+    VizLog("=== APPLYING CONDITION SETTINGS ===")
+    for id, config in conditionConfig {
         VizLog("Label " . id . ": name=" . config.name . " displayName=" . config.displayName . " color=" . config.color)
     }
 
     ; Sync legacy maps and save config
     VizLog("=== BEFORE SYNC ===")
-    for id, color in degradationColors {
-        VizLog("degradationColors[" . id . "] = " . color)
+    for id, color in conditionColors {
+        VizLog("conditionColors[" . id . "] = " . color)
     }
 
-    SyncLegacyDegradationMaps()
+    SyncLegacyConditionMaps()
 
-    ; Debug: Log what's in degradationColors after sync
+    ; Debug: Log what's in conditionColors after sync
     VizLog("=== AFTER SYNC ===")
-    for id, color in degradationColors {
-        VizLog("degradationColors[" . id . "] = " . color)
+    for id, color in conditionColors {
+        VizLog("conditionColors[" . id . "] = " . color)
     }
 
     ; Verify the global is actually updated
-    global degradationColors
-    VizLog("=== VERIFYING GLOBAL degradationColors ===")
-    VizLog("degradationColors type: " . Type(degradationColors))
-    VizLog("degradationColors count: " . degradationColors.Count)
+    global conditionColors
+    VizLog("=== VERIFYING GLOBAL conditionColors ===")
+    VizLog("conditionColors type: " . Type(conditionColors))
+    VizLog("conditionColors count: " . conditionColors.Count)
 
     SaveConfig()
 
@@ -1387,12 +1425,12 @@ ApplyDegradationSettings(degEditControls, settingsGui) {
     FlushVizLog()
 
     ; Build a summary of what was updated
-    updateSummary := "degradationConfig:`n"
-    for id, config in degradationConfig {
+    updateSummary := "conditionConfig:`n"
+    for id, config in conditionConfig {
         updateSummary .= "  [" . id . "] " . config.displayName . " = " . config.color . "`n"
     }
-    updateSummary .= "`ndegradationColors after sync:`n"
-    for id, color in degradationColors {
+    updateSummary .= "`nconditionColors after sync:`n"
+    for id, color in conditionColors {
         updateSummary .= "  [" . id . "] = " . color . "`n"
     }
 
@@ -1400,15 +1438,15 @@ ApplyDegradationSettings(degEditControls, settingsGui) {
     UpdateStatus("✅ Label settings applied (" . updatedCount . " labels)")
 }
 
-ResetDegradationSettings(settingsGui) {
+ResetConditionSettings(settingsGui) {
     ; Confirm reset
-    result := MsgBox("Reset all labels to factory defaults?`n`nThis will restore original names and colors.", "Reset Labels", "YesNo Icon?")
+    result := MsgBox("Reset all conditions to factory defaults?`n`nThis will restore original names and colors.", "Reset Conditions", "YesNo Icon?")
 
     if (result == "No")
         return
 
     ; Reset to defaults
-    ResetAllDegradationsToDefaults()
+    ResetAllConditionsToDefaults()
     SaveConfig()
 
     ; Clear BOTH caches to force complete regeneration with default colors
@@ -1422,8 +1460,8 @@ ResetDegradationSettings(settingsGui) {
     settingsGui.Destroy()
     ShowSettings()
 
-    MsgBox("Labels have been reset to factory defaults!", "Reset Complete", "Icon!")
-    UpdateStatus("✅ Labels reset to defaults")
+    MsgBox("Conditions have been reset to factory defaults!", "Reset Complete", "Icon!")
+    UpdateStatus("✅ Conditions reset to defaults")
 }
 
 ; ===== ASYNC STATS RECORDING - PREVENTS FREEZE =====
@@ -1643,7 +1681,7 @@ ValidateCanvasCalibration() {
 ; ===== BOX EVENT EXTRACTION =====
 ExtractBoxEvents(macroEvents) {
     boxes := []
-    currentDegradationType := 1  ; Default degradation type
+    currentConditionType := 1  ; Default condition type
 
     ; Look for boundingBox events and keypress assignments in MacroLauncherX44 format
     for eventIndex, event in macroEvents {
@@ -1667,13 +1705,13 @@ ExtractBoxEvents(macroEvents) {
 
             ; Only include boxes that are reasonably sized
             if ((right - left) >= 5 && (bottom - top) >= 5) {
-                ; Check if degradationType is already stored in the event (from config load)
-                degradationType := currentDegradationType
-                if ((Type(event) == "Map" && event.Has("degradationType")) || (IsObject(event) && event.HasOwnProp("degradationType"))) {
-                    degradationType := (Type(event) = "Map") ? event["degradationType"] : event.degradationType
-                    currentDegradationType := degradationType
+                ; Check if conditionType is already stored in the event (from config load)
+                conditionType := currentConditionType
+                if ((Type(event) == "Map" && (event.Has("conditionType") || event.Has("conditionType"))) || (IsObject(event) && (event.HasOwnProp("conditionType") || event.HasOwnProp("conditionType")))) {
+                    conditionType := (Type(event) = "Map") ? (event.Has("conditionType") ? event["conditionType"] : event["conditionType"]) : (event.HasOwnProp("conditionType") ? event.conditionType : event.conditionType)
+                    currentConditionType := conditionType
                 } else {
-                    ; Look ahead for keypress events that assign degradation type
+                    ; Look ahead for keypress events that assign condition type
                     nextIndex := eventIndex + 1
                     while (nextIndex <= macroEvents.Length) {
                         nextEvent := macroEvents[nextIndex]
@@ -1690,14 +1728,14 @@ ExtractBoxEvents(macroEvents) {
                         if (nextEventType == "boundingBox")
                             break
 
-                        ; Found a keypress after this box - this assigns the degradation type
+                        ; Found a keypress after this box - this assigns the condition type
                         if (nextEventType == "keyDown") {
                             nextKey := (Type(nextEvent) = "Map") ? (nextEvent.Has("key") ? nextEvent["key"] : "") : (nextEvent.HasOwnProp("key") ? nextEvent.key : "")
                             if (RegExMatch(nextKey, "^\d$")) {
                                 keyNumber := Integer(nextKey)
                                 if (keyNumber >= 1 && keyNumber <= 9) {
-                                    degradationType := keyNumber
-                                    currentDegradationType := keyNumber  ; Update current degradation for subsequent boxes
+                                    conditionType := keyNumber
+                                    currentConditionType := keyNumber  ; Update current condition for subsequent boxes
                                     break
                                 }
                             }
@@ -1712,7 +1750,7 @@ ExtractBoxEvents(macroEvents) {
                     top: top,
                     right: right,
                     bottom: bottom,
-                    degradationType: degradationType
+                    conditionType: conditionType
                 }
                 boxes.Push(box)
             }
@@ -1726,7 +1764,7 @@ ExtractBoxEvents(macroEvents) {
 ; Handles canvas detection and scaling logic for drawing boxes on buttons
 
 DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsArray := "") {
-    global degradationColors, annotationMode
+    global conditionColors, annotationMode
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom
     
@@ -1769,8 +1807,8 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
     VizLog("DrawMacroBoxesOnButton: mode=" . displayMode)
     VizLog("  Canvas: L=" . canvasLeft . " T=" . canvasTop . " R=" . canvasRight . " B=" . canvasBottom)
     VizLog("  Canvas size: " . canvasW . "x" . canvasH . " Button: " . buttonWidth . "x" . buttonHeight)
-    VizLog("  degradationColors at draw time:")
-    for id, color in degradationColors {
+    VizLog("  conditionColors at draw time:")
+    for id, color in conditionColors {
         VizLog("    [" . id . "] = " . color)
     }
     
@@ -1858,9 +1896,9 @@ DrawMacroBoxesOnButton(graphics, buttonWidth, buttonHeight, boxes, macroEventsAr
             continue
         }
         
-        degradationType := box.HasOwnProp("degradationType") ? box.degradationType : 1
-        color := degradationColors.Has(degradationType) ? degradationColors[degradationType] : degradationColors[1]
-        VizLog("    degradationType=" . degradationType . " color=" . color)
+        conditionType := box.HasOwnProp("conditionType") ? box.conditionType : 1
+        color := conditionColors.Has(conditionType) ? conditionColors[conditionType] : conditionColors[1]
+        VizLog("    conditionType=" . conditionType . " color=" . color)
         fillColor := 0xFF000000 | Integer(color)
         
         brush := 0
@@ -1951,7 +1989,7 @@ CreateJsonAnnotationVisual(buttonWidth, buttonHeight, labelText, colorHex, isNar
         DllCall("gdiplus\GdipSetTextRenderingHint", "Ptr", graphics, "Int", 4)
 
         ; Convert color hex string to integer with full alpha
-        ; degradationColors values are like "0xFF8C00" (RGB only)
+        ; conditionColors values are like "0xFF8C00" (RGB only)
         ; We need to ensure it has full alpha: 0xFFFF8C00 (ARGB)
         colorInt := Integer(colorHex)
         ; If the value is less than 0x01000000, it's missing the alpha channel
@@ -1959,7 +1997,7 @@ CreateJsonAnnotationVisual(buttonWidth, buttonHeight, labelText, colorHex, isNar
             colorInt := colorInt | 0xFF000000  ; Add full alpha
         }
 
-        ; Always fill with degradation color first
+        ; Always fill with condition color first
         colorBrush := 0
         DllCall("gdiplus\GdipCreateSolidFill", "UInt", colorInt, "Ptr*", &colorBrush)
         DllCall("gdiplus\GdipFillRectangle", "Ptr", graphics, "Ptr", colorBrush, "Float", 0, "Float", 0, "Float", buttonWidth, "Float", buttonHeight)
@@ -2066,7 +2104,7 @@ CreateJsonAnnotationVisual(buttonWidth, buttonHeight, labelText, colorHex, isNar
 
 CreateHBITMAPVisualization(macroEvents, buttonDims) {
     ; Memory-only visualization using HBITMAP with caching for performance
-    global gdiPlusInitialized, degradationColors, hbitmapCache
+    global gdiPlusInitialized, conditionColors, hbitmapCache
 
     VizLog("=== CreateHBITMAPVisualization START ===")
 
@@ -2107,11 +2145,11 @@ CreateHBITMAPVisualization(macroEvents, buttonDims) {
     for event in macroEvents {
         if (event.type == "boundingBox") {
             cacheKey .= event.left . "," . event.top . "," . event.right . "," . event.bottom . ","
-            ; Include degradation type and color in cache key
-            if (event.HasOwnProp("degradationType")) {
-                cacheKey .= event.degradationType . ":"
-                if (degradationColors.Has(event.degradationType)) {
-                    cacheKey .= degradationColors[event.degradationType]
+            ; Include condition type and color in cache key
+            if (event.HasOwnProp("conditionType")) {
+                cacheKey .= event.conditionType . ":"
+                if (conditionColors.Has(event.conditionType)) {
+                    cacheKey .= conditionColors[event.conditionType]
                 }
             }
             cacheKey .= "|"
@@ -2325,19 +2363,19 @@ RenderBoxesOnButton(button, bypassData) {
 ; ===== STATS DATA MODULE =====
 ; ===============================================================================
 ; Handles statistics persistence, aggregation, and CSV writing
-; Tracks degradations for both macro executions and JSON profile executions
+; Tracks conditions for both macro executions and JSON profile executions
 
 ; Suppress warnings for ObjSave and ObjLoad (defined in ObjPersistence.ahk)
 #Warn VarUnset, Off
 
 Stats_GetCsvHeader() {
-    global degradationConfig
+    global conditionConfig
 
     ; Base header columns
-    header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,"
+    header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,condition_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,"
 
-    ; Add degradation count columns dynamically
-    for id, config in degradationConfig {
+    ; Add condition count columns dynamically
+    for id, config in conditionConfig {
         header .= config.name . "_count,"
     }
 
@@ -2358,7 +2396,7 @@ Stats_EnsureStatsFile(filePath, encoding := "") {
 }
 
 Stats_BuildCsvRow(executionData) {
-    global currentSessionId, currentUsername, degradationConfig
+    global currentSessionId, currentUsername, conditionConfig
 
     sessionIdentifier := executionData.Has("session_id") ? executionData["session_id"] : currentSessionId
     usernameValue := executionData.Has("username") ? executionData["username"] : currentUsername
@@ -2366,11 +2404,11 @@ Stats_BuildCsvRow(executionData) {
     ; Base columns
     row := executionData["timestamp"] . "," . sessionIdentifier . "," . usernameValue . "," . executionData["execution_type"] . ","
     row .= (executionData.Has("button_key") ? executionData["button_key"] : "") . "," . executionData["layer"] . "," . executionData["execution_time_ms"] . "," . executionData["total_boxes"] . ","
-    row .= (executionData.Has("degradation_assignments") ? executionData["degradation_assignments"] : "") . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
+    row .= (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : "")) . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
     row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
 
-    ; Add degradation count columns dynamically
-    for id, config in degradationConfig {
+    ; Add condition count columns dynamically
+    for id, config in conditionConfig {
         countFieldName := config.name . "_count"
         row .= (executionData.Has(countFieldName) ? executionData[countFieldName] : 0) . ","
     }
@@ -2471,11 +2509,11 @@ Stats_CreateEmptyStatsMap() {
     stats["executions_per_hour"] := 0
     stats["most_used_button"] := ""
     stats["most_active_layer"] := ""
-    stats["degradation_totals"] := Map()
+    stats["condition_totals"] := Map()
 
-    ; Initialize degradation stats dynamically from degradationConfig
-    global degradationConfig
-    for id, config in degradationConfig {
+    ; Initialize condition stats dynamically from conditionConfig
+    global conditionConfig
+    for id, config in conditionConfig {
         ; Total counts (legacy compatibility)
         stats[config.name . "_total"] := 0
 
@@ -2486,7 +2524,7 @@ Stats_CreateEmptyStatsMap() {
         stats["json_" . config.statKey] := 0
     }
 
-    ; Clear count (special case, not a degradation type)
+    ; Clear count (special case, not a condition type)
     stats["clear_total"] := 0
     stats["macro_clear"] := 0
     stats["json_clear"] := 0
@@ -2499,58 +2537,81 @@ Stats_CreateEmptyStatsMap() {
     return stats
 }
 
-Stats_IncrementDegradationCount(stats, degradation_name, prefix := "json_") {
-    global degradationConfig
+Stats_IncrementConditionCount(stats, condition_name, prefix := "json_") {
+    global conditionConfig
 
     ; Handle clear/none as special case
-    if (StrLower(degradation_name) == "clear" || StrLower(degradation_name) == "none") {
+    if (StrLower(condition_name) == "clear" || StrLower(condition_name) == "none") {
         stats[prefix . "clear"]++
         return
     }
 
     ; Try as numeric ID first
-    if (IsInteger(degradation_name)) {
-        degId := Integer(degradation_name)
-        if (degradationConfig.Has(degId)) {
-            statKey := degradationConfig[degId].statKey
+    if (IsInteger(condition_name)) {
+        degId := Integer(condition_name)
+        if (conditionConfig.Has(degId)) {
+            statKey := conditionConfig[degId].statKey
             stats[prefix . statKey]++
             return
         }
     }
 
-    ; Try as degradation name
-    for id, config in degradationConfig {
-        if (StrLower(config.name) == StrLower(degradation_name)) {
+    ; Try as condition name
+    for id, config in conditionConfig {
+        if (StrLower(config.name) == StrLower(condition_name)) {
             stats[prefix . config.statKey]++
+            return
+        }
+    }
+
+    ; Legacy alias fallback (e.g., "smudge", "glare", etc.)
+    global legacyConditionNameToId
+    nameLower := StrLower(String(condition_name))
+    if (legacyConditionNameToId.Has(nameLower)) {
+        degId := legacyConditionNameToId[nameLower]
+        if (conditionConfig.Has(degId)) {
+            stats[prefix . conditionConfig[degId].statKey]++
             return
         }
     }
 }
 
-Stats_IncrementDegradationCountDirect(executionData, degradation_name) {
-    global degradationConfig
+Stats_IncrementConditionCountDirect(executionData, condition_name) {
+    global conditionConfig
 
     ; Handle clear/none as special case
-    if (StrLower(degradation_name) == "clear" || StrLower(degradation_name) == "none") {
+    if (StrLower(condition_name) == "clear" || StrLower(condition_name) == "none") {
         executionData["clear_count"]++
         return
     }
 
     ; Try as numeric ID first
-    if (IsInteger(degradation_name)) {
-        degId := Integer(degradation_name)
-        if (degradationConfig.Has(degId)) {
+    if (IsInteger(condition_name)) {
+        degId := Integer(condition_name)
+        if (conditionConfig.Has(degId)) {
             ; Use full name for direct count field (e.g., "light_flare_count")
-            fieldName := degradationConfig[degId].name . "_count"
+            fieldName := conditionConfig[degId].name . "_count"
             executionData[fieldName]++
             return
         }
     }
 
-    ; Try as degradation name
-    for id, config in degradationConfig {
-        if (StrLower(config.name) == StrLower(degradation_name)) {
+    ; Try as condition name
+    for id, config in conditionConfig {
+        if (StrLower(config.name) == StrLower(condition_name)) {
             fieldName := config.name . "_count"
+            executionData[fieldName]++
+            return
+        }
+    }
+
+    ; Legacy alias fallback (e.g., "smudge", "glare", etc.)
+    global legacyConditionNameToId
+    nameLower := StrLower(String(condition_name))
+    if (legacyConditionNameToId.Has(nameLower)) {
+        degId := legacyConditionNameToId[nameLower]
+        if (conditionConfig.Has(degId)) {
+            fieldName := conditionConfig[degId].name . "_count"
             executionData[fieldName]++
             return
         }
@@ -2753,53 +2814,32 @@ QueryUserStats(filterOptions := "") {
                 }
             }
 
-            ; Extract degradation counts
-            smudge := executionData.Has("smudge_count") ? executionData["smudge_count"] : 0
-            glare := executionData.Has("glare_count") ? executionData["glare_count"] : 0
-            splashes := executionData.Has("splashes_count") ? executionData["splashes_count"] : 0
-            partial := executionData.Has("partial_blockage_count") ? executionData["partial_blockage_count"] : 0
-            full := executionData.Has("full_blockage_count") ? executionData["full_blockage_count"] : 0
-            flare := executionData.Has("light_flare_count") ? executionData["light_flare_count"] : 0
-            rain := executionData.Has("rain_count") ? executionData["rain_count"] : 0
-            haze := executionData.Has("haze_count") ? executionData["haze_count"] : 0
-            snow := executionData.Has("snow_count") ? executionData["snow_count"] : 0
+            ; Aggregate condition counts dynamically (with legacy fallback)
+    global conditionConfig, legacyConditionCountFieldById
+            for id, config in conditionConfig {
+                fieldName := config.name . "_count"
+                count := executionData.Has(fieldName) ? executionData[fieldName] : 0
+                if (count = 0 && legacyConditionCountFieldById.Has(id)) {
+                    legacyField := legacyConditionCountFieldById[id]
+                    if (executionData.Has(legacyField)) {
+                        count := executionData[legacyField]
+                    }
+                }
+                stats[config.name . "_total"] := stats[config.name . "_total"] + count
+                if (execution_type == "json_profile") {
+                    stats["json_" . config.statKey] := stats["json_" . config.statKey] + count
+                } else if (execution_type == "macro") {
+                    stats["macro_" . config.statKey] := stats["macro_" . config.statKey] + count
+                }
+            }
+
+            ; Handle clear counts
             clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
-
-            ; Aggregate total degradation counts
-            stats["smudge_total"] += smudge
-            stats["glare_total"] += glare
-            stats["splashes_total"] += splashes
-            stats["partial_blockage_total"] += partial
-            stats["full_blockage_total"] += full
-            stats["light_flare_total"] += flare
-            stats["rain_total"] += rain
-            stats["haze_total"] += haze
-            stats["snow_total"] += snow
-            stats["clear_total"] += clear
-
-            ; Aggregate degradation counts by execution type
+            stats["clear_total"] := stats["clear_total"] + clear
             if (execution_type == "json_profile") {
-                stats["json_smudge"] += smudge
-                stats["json_glare"] += glare
-                stats["json_splashes"] += splashes
-                stats["json_partial"] += partial
-                stats["json_full"] += full
-                stats["json_flare"] += flare
-                stats["json_rain"] += rain
-                stats["json_haze"] += haze
-                stats["json_snow"] += snow
-                stats["json_clear"] += clear
+                stats["json_clear"] := stats["json_clear"] + clear
             } else if (execution_type == "macro") {
-                stats["macro_smudge"] += smudge
-                stats["macro_glare"] += glare
-                stats["macro_splashes"] += splashes
-                stats["macro_partial"] += partial
-                stats["macro_full"] += full
-                stats["macro_flare"] += flare
-                stats["macro_rain"] += rain
-                stats["macro_haze"] += haze
-                stats["macro_snow"] += snow
-                stats["macro_clear"] += clear
+                stats["macro_clear"] := stats["macro_clear"] + clear
             }
         } catch {
             continue
@@ -2919,14 +2959,14 @@ GetTodayStatsFromMemory() {
     return QueryUserStats(filterOptions)
 }
 
-ProcessDegradationCounts(executionData, degradationString) {
-    if (degradationString == "" || degradationString == "none") {
+ProcessConditionCounts(executionData, conditionString) {
+    if (conditionString == "" || conditionString == "none") {
         return
     }
-    degradationTypes := StrSplit(degradationString, ",")
-    for degradationType in degradationTypes {
-        degradationType := Trim(StrReplace(StrReplace(degradationType, Chr(34), ""), Chr(39), ""))
-        Stats_IncrementDegradationCountDirect(executionData, degradationType)
+    conditionTypesArr := StrSplit(conditionString, ",")
+    for condType in conditionTypesArr {
+        condType := Trim(StrReplace(StrReplace(condType, Chr(34), ""), Chr(39), ""))
+        Stats_IncrementConditionCountDirect(executionData, condType)
     }
 }
 
@@ -2969,25 +3009,21 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     executionData["canvas_mode"] := (annotationMode = "Wide" ? "wide" : "narrow")
     executionData["session_active_time_ms"] := current_session_active_time_ms
     executionData["break_mode_active"] := false
-    executionData["smudge_count"] := 0
-    executionData["glare_count"] := 0
-    executionData["splashes_count"] := 0
-    executionData["partial_blockage_count"] := 0
-    executionData["full_blockage_count"] := 0
-    executionData["light_flare_count"] := 0
-    executionData["rain_count"] := 0
-    executionData["haze_count"] := 0
-    executionData["snow_count"] := 0
+    ; Initialize dynamic condition counts based on configuration
+    global conditionConfig
+    for id, config in conditionConfig {
+        executionData[config.name . "_count"] := 0
+    }
     executionData["clear_count"] := 0
     executionData["total_boxes"] := 0
-    executionData["degradation_assignments"] := ""
+    executionData["condition_assignments"] := ""
     executionData["severity_level"] := "medium"
     executionData["annotation_details"] := ""
     executionData["execution_success"] := "true"
     executionData["error_details"] := ""
     if (executionType == "macro") {
         bbox_count := 0
-        degradation_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
+        condition_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
         for event in events {
             eventType := ""
             if (Type(event) == "Map") {
@@ -2999,56 +3035,54 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
                 bbox_count++
                 degType := 0
                 if (Type(event) == "Map") {
-                    degType := event.Has("degradationType") ? event["degradationType"] : 0
-                } else if (event.HasOwnProp("degradationType")) {
-                    degType := event.degradationType
+                    degType := event.Has("conditionType") ? event["conditionType"] : (event.Has("conditionType") ? event["conditionType"] : 0)
+                } else if (event.HasOwnProp("conditionType")) {
+                    degType := event.HasOwnProp("conditionType") ? event.conditionType : event.conditionType
                 }
-                ; Count all degradation types including 0 (clear)
-                if (degradation_counts_map.Has(degType)) {
-                    degradation_counts_map[degType]++
+                ; Count all condition types including 0 (clear)
+                if (condition_counts_map.Has(degType)) {
+                    condition_counts_map[degType]++
                 }
             }
         }
         executionData["total_boxes"] := bbox_count
-        executionData["smudge_count"] := degradation_counts_map[1]
-        executionData["glare_count"] := degradation_counts_map[2]
-        executionData["splashes_count"] := degradation_counts_map[3]
-        executionData["partial_blockage_count"] := degradation_counts_map[4]
-        executionData["full_blockage_count"] := degradation_counts_map[5]
-        executionData["light_flare_count"] := degradation_counts_map[6]
-        executionData["rain_count"] := degradation_counts_map[7]
-        executionData["haze_count"] := degradation_counts_map[8]
-        executionData["snow_count"] := degradation_counts_map[9]
-        executionData["clear_count"] := degradation_counts_map[0]
-        degradation_names := []
-        if (degradation_counts_map[1] > 0) degradation_names.Push("smudge")
-        if (degradation_counts_map[2] > 0) degradation_names.Push("glare")
-        if (degradation_counts_map[3] > 0) degradation_names.Push("splashes")
-        if (degradation_counts_map[4] > 0) degradation_names.Push("partial_blockage")
-        if (degradation_counts_map[5] > 0) degradation_names.Push("full_blockage")
-        if (degradation_counts_map[6] > 0) degradation_names.Push("light_flare")
-        if (degradation_counts_map[7] > 0) degradation_names.Push("rain")
-        if (degradation_counts_map[8] > 0) degradation_names.Push("haze")
-        if (degradation_counts_map[9] > 0) degradation_names.Push("snow")
-        if (degradation_counts_map[0] > 0) degradation_names.Push("clear")
-        if (degradation_names.Length > 0) {
-            degradation_string := ""
-            for i, name in degradation_names {
-                degradation_string .= (i > 1 ? "," : "") . name
+        ; Map counts into executionData using current config names
+        for id, config in conditionConfig {
+            fieldName := config.name . "_count"
+            executionData[fieldName] := condition_counts_map.Has(id) ? condition_counts_map[id] : 0
+        }
+        executionData["clear_count"] := condition_counts_map.Has(0) ? condition_counts_map[0] : 0
+
+        ; Build condition assignment list using current config names
+        condition_names := []
+        for id, config in conditionConfig {
+            if (condition_counts_map.Has(id) && condition_counts_map[id] > 0) {
+                condition_names.Push(config.name)
             }
-            executionData["degradation_assignments"] := degradation_string
+        }
+        if (condition_counts_map.Has(0) && condition_counts_map[0] > 0) {
+            condition_names.Push("clear")
+        }
+        if (condition_names.Length > 0) {
+            condition_string := ""
+            for i, name in condition_names {
+                condition_string .= (i > 1 ? "," : "") . name
+            }
+            executionData["condition_assignments"] := condition_string
         } else {
-            executionData["degradation_assignments"] := "clear"
+            executionData["condition_assignments"] := "clear"
             executionData["clear_count"] := bbox_count > 0 ? bbox_count : 1
         }
     } else if (executionType = "json_profile") {
         executionData["total_boxes"] := 1
         if (IsObject(analysisRecord)) {
-            if (analysisRecord.HasOwnProp("jsonDegradationName") && analysisRecord.jsonDegradationName != "") {
-                executionData["degradation_assignments"] := analysisRecord.jsonDegradationName
-                ProcessDegradationCounts(executionData, analysisRecord.jsonDegradationName)
+            legacyName := analysisRecord.HasOwnProp("jsonDegradationName") ? analysisRecord.jsonDegradationName : ""
+            newName := analysisRecord.HasOwnProp("jsonConditionName") ? analysisRecord.jsonConditionName : legacyName
+            if (newName != "") {
+                executionData["condition_assignments"] := newName
+                ProcessConditionCounts(executionData, newName)
             } else {
-                executionData["degradation_assignments"] := "clear"
+                executionData["condition_assignments"] := "clear"
                 executionData["clear_count"] := 1
             }
             if (analysisRecord.HasOwnProp("severity")) {
@@ -3058,13 +3092,13 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
                 executionData["annotation_details"] := analysisRecord.annotationDetails
             }
         } else {
-            executionData["degradation_assignments"] := "clear"
+            executionData["condition_assignments"] := "clear"
             executionData["clear_count"] := 1
         }
     } else if (executionType = "clear") {
         executionData["total_boxes"] := 1
         executionData["clear_count"] := 1
-        executionData["degradation_assignments"] := "clear"
+        executionData["condition_assignments"] := "clear"
     }
     result := AppendToCSV(executionData)
     if (result) {
@@ -3094,7 +3128,7 @@ SaveSessionEndMarker() {
     executionData["layer"] := 1
     executionData["execution_time_ms"] := 0
     executionData["total_boxes"] := 0
-    executionData["degradation_assignments"] := ""
+    executionData["condition_assignments"] := ""
     executionData["severity_level"] := ""
     executionData["canvas_mode"] := annotationMode
     executionData["session_active_time_ms"] := currentActiveTime
@@ -3102,8 +3136,8 @@ SaveSessionEndMarker() {
     executionData["execution_success"] := true
     executionData["error_details"] := ""
 
-    ; Add degradation counts (all zeros)
-    for i, name in degradationTypes {
+    ; Add condition counts (all zeros)
+    for i, name in conditionTypes {
         executionData[name . "_count"] := 0
     }
 
@@ -3363,24 +3397,24 @@ ShowStatsMenu() {
     y += 12
     AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
     y += 15
-    AddSectionDivider(statsGui, y, "MACRO DEGRADATION BREAKDOWN", 660)
+    AddSectionDivider(statsGui, y, "MACRO CONDITION BREAKDOWN", 660)
     y += 15
 
-    ; Build degradation types dynamically from degradationConfig
-    global degradationConfig
-    degradationTypes := []
-    for id, config in degradationConfig {
-        degradationTypes.Push([config.displayName, config.statKey])
+    ; Build condition types dynamically from conditionConfig
+    global conditionConfig
+    conditionTypes := []
+    for id, config in conditionConfig {
+        conditionTypes.Push([config.displayName, config.statKey])
     }
 
-    for degInfo in degradationTypes {
+    for degInfo in conditionTypes {
         AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_macro_" . degInfo[2], "today_macro_" . degInfo[2])
         y += 12
     }
     y += 10
-    AddSectionDivider(statsGui, y, "JSON DEGRADATION SELECTION COUNT", 660)
+    AddSectionDivider(statsGui, y, "JSON CONDITION SELECTION COUNT", 660)
     y += 15
-    for degInfo in degradationTypes {
+    for degInfo in conditionTypes {
         AddHorizontalStatRowLive(statsGui, y, degInfo[1] . ":", "all_json_" . degInfo[2], "today_json_" . degInfo[2])
         y += 12
     }
@@ -3407,11 +3441,11 @@ ShowStatsMenu() {
     y += 15
     AddSectionDivider(statsGui, y, "DATA FILES", 660)
     y += 15
-    infoText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Display Stats: " . masterStatsCSV)
+    infoText := statsGui.Add("Text", "x" . leftCol . " y" . y . " w860 +Wrap", "Display Stats: " . masterStatsCSV)
     infoText.SetFont("s8")
     infoText.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
     y += 18
-    infoText2 := statsGui.Add("Text", "x" . leftCol . " y" . y . " w660", "Permanent Master: " . permanentStatsFile)
+    infoText2 := statsGui.Add("Text", "x" . leftCol . " y" . y . " w860 +Wrap", "Permanent Master: " . permanentStatsFile)
     infoText2.SetFont("s8")
     infoText2.Opt("c" . (darkMode ? "0x888888" : "0x666666"))
     y += 20
@@ -3424,7 +3458,7 @@ ShowStatsMenu() {
     btnClose := statsGui.Add("Button", "x" . (leftCol + 260) . " y" . y . " w120 h30", "❌ Close")
     btnClose.SetFont("s9")
     btnClose.OnEvent("Click", (*) => CloseStatsMenu())
-    statsGui.Show("w700 h" . (y + 40))
+    statsGui.Show("w960 h" . (y + 60))
     statsGuiOpen := true
     UpdateStatsDisplay()
     SetTimer(UpdateStatsDisplay, 500)
@@ -3533,16 +3567,21 @@ UpdateStatsDisplay() {
             statsControls["all_exec_rate"].Value := allStats["executions_per_hour"]
         if (statsControls.Has("today_exec_rate"))
             statsControls["today_exec_rate"].Value := todayStats["executions_per_hour"]
-        degradationKeys := ["smudge", "glare", "splashes", "partial", "full", "flare", "rain", "haze", "snow"]
-        for key in degradationKeys {
-            if (statsControls.Has("all_macro_" . key))
-                statsControls["all_macro_" . key].Value := allStats["macro_" . key]
-            if (statsControls.Has("today_macro_" . key))
-                statsControls["today_macro_" . key].Value := todayStats["macro_" . key]
-            if (statsControls.Has("all_json_" . key))
-                statsControls["all_json_" . key].Value := allStats["json_" . key]
-            if (statsControls.Has("today_json_" . key))
-                statsControls["today_json_" . key].Value := todayStats["json_" . key]
+        ; Dynamic condition rows: update any controls with matching prefixes
+        for keyName, ctrl in statsControls {
+            if (SubStr(keyName, 1, 10) == "all_macro_") {
+                suffix := SubStr(keyName, 11)
+                ctrl.Value := allStats.Has("macro_" . suffix) ? allStats["macro_" . suffix] : 0
+            } else if (SubStr(keyName, 1, 12) == "today_macro_") {
+                suffix := SubStr(keyName, 13)
+                ctrl.Value := todayStats.Has("macro_" . suffix) ? todayStats["macro_" . suffix] : 0
+            } else if (SubStr(keyName, 1, 9) == "all_json_") {
+                suffix := SubStr(keyName, 10)
+                ctrl.Value := allStats.Has("json_" . suffix) ? allStats["json_" . suffix] : 0
+            } else if (SubStr(keyName, 1, 11) == "today_json_") {
+                suffix := SubStr(keyName, 12)
+                ctrl.Value := todayStats.Has("json_" . suffix) ? todayStats["json_" . suffix] : 0
+            }
         }
         if (statsControls.Has("all_macro_exec"))
             statsControls["all_macro_exec"].Value := allStats["macro_executions_count"]
@@ -3985,39 +4024,39 @@ ExecuteMacro(buttonName) {
     ; Create analysis record for stats tracking
     analysisRecord := {
         boundingBoxCount: 0,
-        degradationAssignments: "",
-        jsonDegradationName: "",
+        conditionAssignments: "",
+        jsonConditionName: "",
         severity: "medium"
     }
 
-    ; Count bounding boxes and extract degradation data for macro executions
+    ; Count bounding boxes and extract condition data for macro executions
     if (events.Length > 1 || (events.Length == 1 && events[1].type != "jsonAnnotation")) {
         bboxCount := 0
-        degradationList := []
+        conditionList := []
 
         for event in events {
             if (event.type == "boundingBox") {
                 bboxCount++
-                ; Extract degradation type if assigned during recording
-                if (event.HasOwnProp("degradationType") && event.degradationType >= 1 && event.degradationType <= 9) {
-                    degradationList.Push(event.degradationType)
+                ; Extract condition type if assigned during recording
+                if (event.HasOwnProp("conditionType") && event.conditionType >= 1 && event.conditionType <= 9) {
+                    conditionList.Push(event.conditionType)
                 }
             }
         }
 
         analysisRecord.boundingBoxCount := bboxCount
-        if (degradationList.Length > 0) {
-            degradationString := ""
-            for i, deg in degradationList {
-                degradationString .= (i > 1 ? "," : "") . deg
+        if (conditionList.Length > 0) {
+            conditionString := ""
+            for i, deg in conditionList {
+                conditionString .= (i > 1 ? "," : "") . deg
             }
-            analysisRecord.degradationAssignments := degradationString
+            analysisRecord.conditionAssignments := conditionString
         }
     } else if (events.Length == 1 && events[1].type == "jsonAnnotation") {
-        ; Extract JSON degradation info for stats tracking
+        ; Extract JSON condition info for stats tracking
         jsonEvent := events[1]
-        if (jsonEvent.HasOwnProp("categoryId") && degradationTypes.Has(jsonEvent.categoryId)) {
-            analysisRecord.jsonDegradationName := degradationTypes[jsonEvent.categoryId]
+        if (jsonEvent.HasOwnProp("categoryId") && conditionTypes.Has(jsonEvent.categoryId)) {
+            analysisRecord.jsonConditionName := conditionTypes[jsonEvent.categoryId]
         }
         if (jsonEvent.HasOwnProp("severity")) {
             analysisRecord.severity := jsonEvent.severity
@@ -4271,14 +4310,14 @@ AssignToButton(buttonName) {
 
     events := macroEvents[layerMacroName]
 
-    ; DEBUG: Verify degradation types before saving
+    ; DEBUG: Verify condition types before saving
     VizLog("=== PRE-SAVE CHECK for " . layerMacroName . " ===")
     local boxCount := 0
     for evt in events {
         if (evt.type == "boundingBox") {
             boxCount++
-            local degType := evt.HasOwnProp("degradationType") ? evt.degradationType : "MISSING"
-            VizLog("  Box #" . boxCount . ": degradationType=" . degType)
+            local degType := evt.HasOwnProp("conditionType") ? evt.conditionType : "MISSING"
+            VizLog("  Box #" . boxCount . ": conditionType=" . degType)
         }
     }
     FlushVizLog()
@@ -4727,7 +4766,7 @@ RefreshAllButtonAppearances() {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, degradationTypes, degradationColors, buttonDisplayedHBITMAPs
+    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, conditionTypes, conditionColors, buttonDisplayedHBITMAPs
 
     if (!buttonGrid.Has(buttonName))
         return
@@ -4751,12 +4790,12 @@ UpdateButtonAppearance(buttonName) {
     if (hasMacro && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
-        typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
+        typeName := StrTitle(conditionTypes[jsonEvent.categoryId])
         ; Remove mode from text - will be shown visually via letterboxing
         jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
 
-        if (degradationColors.Has(jsonEvent.categoryId)) {
-            jsonColor := degradationColors[jsonEvent.categoryId]
+        if (conditionColors.Has(jsonEvent.categoryId)) {
+            jsonColor := conditionColors[jsonEvent.categoryId]
         }
     }
 
@@ -5050,7 +5089,7 @@ GuiResize(thisGui, minMax, width, height) {
 ; ===== LAYER SYSTEM =====
 ; ===== CONTEXT MENUS =====
 ShowContextMenu(buttonName, *) {
-    global currentLayer, degradationTypes, severityLevels
+    global currentLayer, conditionTypes, severityLevels
     
     contextMenu := Menu()
     
@@ -5061,7 +5100,7 @@ ShowContextMenu(buttonName, *) {
     
     jsonMainMenu := Menu()
     
-    for id, typeName in degradationTypes {
+    for id, typeName in conditionTypes {
         typeMenu := Menu()
         
         for severity in severityLevels {
@@ -5215,7 +5254,7 @@ ShowSettings() {
     settingsGui.SetFont("s10 Bold")
 
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys", "🎨 Labels"])
+    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys", "🎨 Conditions"])
 
     ; TAB 1: Essential Configuration
     tabs.UseTab(1)
@@ -5480,7 +5519,7 @@ ShowSettings() {
     settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h52", "• Click the 'Set' button next to any hotkey field`n• Press your desired key combination (e.g., Ctrl+Alt+K, Shift+F5, etc.)`n• The hotkey will be captured and displayed automatically`n• Click 'Apply Hotkeys' to save and activate all changes immediately")
     settingsGui.SetFont("s9")
 
-    ; TAB 4: Degradations Configuration
+    ; TAB 4: Conditions Configuration
     tabs.UseTab(4)
     settingsGui.SetFont("s9")
 
@@ -5491,13 +5530,13 @@ ShowSettings() {
     settingsGui.SetFont("s9")
 
     ; Create streamlined list of labels
-    global degradationConfig
+    global conditionConfig
     degY := 125
     degEditControls := Map()  ; Store references to edit controls
 
     Loop 9 {
         degId := A_Index
-        config := degradationConfig[degId]
+        config := conditionConfig[degId]
 
         ; ID number
         settingsGui.Add("Text", "x30 y" . (degY + 5) . " w20 h20", degId . ":")
@@ -5534,11 +5573,11 @@ ShowSettings() {
 
     ; Action buttons
     degY += 15
-    btnApplyDegradations := settingsGui.Add("Button", "x30 y" . degY . " w180 h30", "✅ Apply All Changes")
-    btnApplyDegradations.OnEvent("Click", (*) => ApplyDegradationSettings(degEditControls, settingsGui))
+    btnApplyConditions := settingsGui.Add("Button", "x30 y" . degY . " w180 h30", "✅ Apply All Changes")
+    btnApplyConditions.OnEvent("Click", (*) => ApplyConditionSettings(degEditControls, settingsGui))
 
-    btnResetDegradations := settingsGui.Add("Button", "x225 y" . degY . " w150 h30", "🔄 Reset to Defaults")
-    btnResetDegradations.OnEvent("Click", (*) => ResetDegradationSettings(settingsGui))
+    btnResetConditions := settingsGui.Add("Button", "x225 y" . degY . " w150 h30", "🔄 Reset to Defaults")
+    btnResetConditions.OnEvent("Click", (*) => ResetConditionSettings(settingsGui))
 
     degY += 38
 
@@ -5647,7 +5686,7 @@ ToggleAnnotationMode() {
 
 ; ===== UPDATE EXISTING JSON MACROS =====
 UpdateExistingJSONMacros(newMode) {
-    global macroEvents, degradationTypes, buttonNames, totalLayers, jsonAnnotations, currentLayer
+    global macroEvents, conditionTypes, buttonNames, totalLayers, jsonAnnotations, currentLayer
     
     updatedCount := 0
     Loop totalLayers {
@@ -5656,7 +5695,7 @@ UpdateExistingJSONMacros(newMode) {
             layerMacroName := "L" . layer . "_" . buttonName
             if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
                 jsonEvent := macroEvents[layerMacroName][1]
-                typeName := StrTitle(degradationTypes[jsonEvent.categoryId])
+                typeName := StrTitle(conditionTypes[jsonEvent.categoryId])
                 presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
                 
                 if (jsonAnnotations.Has(presetName)) {
@@ -5696,7 +5735,7 @@ EditCustomLabel(buttonName) {
 }
 
 AssignJsonAnnotation(buttonName, presetName, *) {
-    global currentLayer, macroEvents, jsonAnnotations, degradationTypes, annotationMode
+    global currentLayer, macroEvents, jsonAnnotations, conditionTypes, annotationMode
     
     layerMacroName := "L" . currentLayer . "_" . buttonName
     
@@ -5713,7 +5752,7 @@ AssignJsonAnnotation(buttonName, presetName, *) {
         severity := StrLower(SubStr(parts[2], 1, -1))
         
         categoryId := 0
-        for id, name in degradationTypes {
+        for id, name in conditionTypes {
             if (StrTitle(name) = typeName) {
                 categoryId := id
                 break
@@ -5770,13 +5809,13 @@ RemoveThumbnail(buttonName) {
 }
 
 InitializeJsonAnnotations() {
-    global jsonAnnotations, degradationTypes, severityLevels
+    global jsonAnnotations, conditionTypes, severityLevels
     
     ; Clear any existing annotations
     jsonAnnotations := Map()
     
-    ; Create annotations for all degradation types and severity levels in both modes
-    for id, typeName in degradationTypes {
+    ; Create annotations for all condition types and severity levels in both modes
+    for id, typeName in conditionTypes {
         for severity in severityLevels {
             presetName := StrTitle(typeName) . " (" . StrTitle(severity) . ")"
             
@@ -6295,14 +6334,14 @@ SaveConfig() {
         configContent .= "hotkeySettings=" . hotkeySettings . "`n"
         configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n`n"
 
-        ; Add degradations section
-        global degradationConfig
-        configContent .= "[Degradations]`n"
-        for id, config in degradationConfig {
-            configContent .= "DegradationName_" . id . "=" . config.name . "`n"
-            configContent .= "DegradationDisplayName_" . id . "=" . config.displayName . "`n"
-            configContent .= "DegradationColor_" . id . "=" . config.color . "`n"
-            configContent .= "DegradationStatKey_" . id . "=" . config.statKey . "`n"
+        ; Add conditions section
+        global conditionConfig
+        configContent .= "[Conditions]`n"
+        for id, config in conditionConfig {
+            configContent .= "ConditionName_" . id . "=" . config.name . "`n"
+            configContent .= "ConditionDisplayName_" . id . "=" . config.displayName . "`n"
+            configContent .= "ConditionColor_" . id . "=" . config.color . "`n"
+            configContent .= "ConditionStatKey_" . id . "=" . config.statKey . "`n"
         }
         configContent .= "`n"
 
@@ -6324,11 +6363,11 @@ SaveConfig() {
                             if (eventCount > 1) eventsStr .= "|"
                             eventsStr .= event.type . ",mode=" . event.mode . ",cat=" . event.categoryId . ",sev=" . event.severity
                         } else if (event.type == "boundingBox") {
-                            degradationType := event.HasOwnProp("degradationType") ? event.degradationType : 1
-                            degradationName := event.HasOwnProp("degradationName") ? event.degradationName : "smudge"
+                            conditionType := event.HasOwnProp("conditionType") ? event.conditionType : 1
+                            conditionName := event.HasOwnProp("conditionName") ? event.conditionName : "smudge"
                             isTagged := event.HasOwnProp("isTagged") ? event.isTagged : false
                             if (eventCount > 1) eventsStr .= "|"
-                            eventsStr .= event.type . "," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . degradationType . ",name=" . degradationName . ",tagged=" . isTagged
+                            eventsStr .= event.type . "," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . conditionType . ",name=" . conditionName . ",tagged=" . isTagged
                         } else {
                             if (eventCount > 1) eventsStr .= "|"
                             ; Save key property for keyDown/keyUp events, then x,y coordinates
@@ -6508,35 +6547,35 @@ LoadConfig() {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
-                } else if (currentSection == "Degradations") {
-                    ; Load degradation configuration
-                    global degradationConfig
+                } else if (currentSection == "conditions" || currentSection == "Conditions") {
+                    ; Load condition configuration (backward compatible with legacy 'conditions')
+                    global conditionConfig
 
-                    ; Parse degradation settings (DegradationName_1, DegradationColor_1, etc.)
-                    if (RegExMatch(key, "^DegradationName_(\d+)$", &match)) {
+                    ; Parse condition settings (ConditionName_1, ConditionColor_1, etc.) and legacy
+                    if (RegExMatch(key, "^(?:condition|Condition)Name_(\d+)$", &match)) {
                         degId := Integer(match[1])
-                        if (!degradationConfig.Has(degId)) {
-                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        if (!conditionConfig.Has(degId)) {
+                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        degradationConfig[degId].name := value
-                    } else if (RegExMatch(key, "^DegradationDisplayName_(\d+)$", &match)) {
+                        conditionConfig[degId].name := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)DisplayName_(\d+)$", &match)) {
                         degId := Integer(match[1])
-                        if (!degradationConfig.Has(degId)) {
-                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        if (!conditionConfig.Has(degId)) {
+                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        degradationConfig[degId].displayName := value
-                    } else if (RegExMatch(key, "^DegradationColor_(\d+)$", &match)) {
+                        conditionConfig[degId].displayName := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)Color_(\d+)$", &match)) {
                         degId := Integer(match[1])
-                        if (!degradationConfig.Has(degId)) {
-                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        if (!conditionConfig.Has(degId)) {
+                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        degradationConfig[degId].color := value
-                    } else if (RegExMatch(key, "^DegradationStatKey_(\d+)$", &match)) {
+                        conditionConfig[degId].color := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)StatKey_(\d+)$", &match)) {
                         degId := Integer(match[1])
-                        if (!degradationConfig.Has(degId)) {
-                            degradationConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        if (!conditionConfig.Has(degId)) {
+                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        degradationConfig[degId].statKey := value
+                        conditionConfig[degId].statKey := value
                     }
                 } else if (currentSection == "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -6546,8 +6585,8 @@ LoadConfig() {
             }
         }
         
-        ; Sync legacy degradation maps after loading custom config
-        SyncLegacyDegradationMaps()
+        ; Sync legacy condition maps after loading custom config
+        SyncLegacyConditionMaps()
 
         ; Load macros from config file
         macrosLoaded := ParseMacrosFromConfig()
@@ -6664,19 +6703,19 @@ BuildMacroEventsFromString(serializedEvents) {
                         break
                     extra := parts[idx]
                     if (InStr(extra, "deg=")) {
-                        event.degradationType := Integer(StrReplace(extra, "deg=", ""))
+                        event.conditionType := Integer(StrReplace(extra, "deg=", ""))
                     } else if (InStr(extra, "name=")) {
-                        event.degradationName := StrReplace(extra, "name=", "")
+                        event.conditionName := StrReplace(extra, "name=", "")
                     } else if (InStr(extra, "tagged=")) {
                         event.isTagged := (StrReplace(extra, "tagged=", "") == "true")
                     }
                 }
             }
 
-            if (!event.HasOwnProp("degradationType"))
-                event.degradationType := 1
-            if (!event.HasOwnProp("degradationName"))
-                event.degradationName := "smudge"
+            if (!event.HasOwnProp("conditionType"))
+                event.conditionType := 1
+            if (!event.HasOwnProp("conditionName"))
+                event.conditionName := "smudge"
             if (!event.HasOwnProp("isTagged"))
                 event.isTagged := false
 
@@ -6844,7 +6883,7 @@ AnalyzeRecordedMacro(macroKey) {
 
     local boundingBoxCount := 0
 
-    local degradationAnalysis := AnalyzeDegradationPattern(events)
+    local conditionAnalysis := AnalyzeconditionPattern(events)
     
     for event in events {
         if (event.type == "boundingBox") {
@@ -6855,16 +6894,16 @@ AnalyzeRecordedMacro(macroKey) {
     if (boundingBoxCount > 0) {
         local statusMsg := "📦 Recorded " . boundingBoxCount . " boxes"
         
-        if (degradationAnalysis.summary != "") {
-            statusMsg .= " | " . degradationAnalysis.summary
+        if (conditionAnalysis.summary != "") {
+            statusMsg .= " | " . conditionAnalysis.summary
         }
         
         UpdateStatus(statusMsg)
     }
 }
 
-AnalyzeDegradationPattern(events) {
-    global degradationTypes
+AnalyzeconditionPattern(events) {
+    global conditionTypes
     
     local boxes := []
     local keyPresses := []
@@ -6875,7 +6914,7 @@ AnalyzeDegradationPattern(events) {
                 index: boxes.Length + 1,
                 time: event.HasOwnProp("time") ? event.time : 0,
                 event: event,
-                degradationType: 1,
+                conditionType: 1,
                 assignedBy: "default"
             })
         } else if (event.type == "keyDown" && event.HasOwnProp("key") && IsNumberKey(event.key)) {
@@ -6883,7 +6922,7 @@ AnalyzeDegradationPattern(events) {
             if (keyNum >= 1 && keyNum <= 9) {
                 keyPresses.Push({
                     time: event.HasOwnProp("time") ? event.time : 0,
-                    degradationType: keyNum,
+                    conditionType: keyNum,
                     key: event.key
                 })
             }
@@ -6891,19 +6930,19 @@ AnalyzeDegradationPattern(events) {
     }
 
     ; DEBUG: Log what we found
-    VizLog("=== DEGRADATION ANALYSIS ===")
+    VizLog("=== condition ANALYSIS ===")
     VizLog("Found " . boxes.Length . " boxes and " . keyPresses.Length . " key presses")
     for kp in keyPresses {
-        VizLog("  KeyPress: deg=" . kp.degradationType . " key=" . kp.key . " time=" . kp.time)
+        VizLog("  KeyPress: deg=" . kp.conditionType . " key=" . kp.key . " time=" . kp.time)
     }
     FlushVizLog()
 
-    local currentDegradationType := 1
-    local degradationCounts := Map()
+    local currentConditionType := 1
+    local conditionCounts := Map()
     
-    for id, typeName in degradationTypes
+    for id, typeName in conditionTypes
     {
-        degradationCounts[id] := 0
+        conditionCounts[id] := 0
     }
     
     for boxIndex, box in boxes
@@ -6919,35 +6958,35 @@ AnalyzeDegradationPattern(events) {
             if (keyPress.time > box.time && keyPress.time < nextBoxTime && keyPress.time < closestTime) {
                 closestKeyPress := keyPress
                 closestTime := keyPress.time
-                VizLog("  MATCHED keyPress deg=" . keyPress.degradationType . " at time=" . keyPress.time)
+                VizLog("  MATCHED keyPress deg=" . keyPress.conditionType . " at time=" . keyPress.time)
             }
         }
 
         if (closestKeyPress != "") {
-            currentDegradationType := closestKeyPress.degradationType
-            box.degradationType := currentDegradationType
+            currentConditionType := closestKeyPress.conditionType
+            box.conditionType := currentConditionType
             box.assignedBy := "user_selection"
-            VizLog("  ASSIGNED deg=" . currentDegradationType . " (user_selection)")
+            VizLog("  ASSIGNED deg=" . currentConditionType . " (user_selection)")
         } else {
-            box.degradationType := currentDegradationType
+            box.conditionType := currentConditionType
             box.assignedBy := "auto_default"
-            VizLog("  ASSIGNED deg=" . currentDegradationType . " (auto_default)")
+            VizLog("  ASSIGNED deg=" . currentConditionType . " (auto_default)")
         }
         
-        degradationCounts[box.degradationType]++
+        conditionCounts[box.conditionType]++
         
-        box.event.degradationType := box.degradationType
-        box.event.degradationName := degradationTypes[box.degradationType]
+        box.event.conditionType := box.conditionType
+        box.event.conditionName := conditionTypes[box.conditionType]
         box.event.assignedBy := box.assignedBy
     }
     
     local totalBoxes := 0
     local summary := []
     
-    for id, count in degradationCounts {
+    for id, count in conditionCounts {
         if (count > 0) {
             totalBoxes += count
-            local typeName := StrTitle(degradationTypes[id])
+            local typeName := StrTitle(conditionTypes[id])
             summary.Push(count . "x" . typeName)
         }
     }
@@ -6955,7 +6994,7 @@ AnalyzeDegradationPattern(events) {
     return {
         totalBoxes: totalBoxes,
         summary: summary.Length > 0 ? JoinArray(summary, ", ") : "",
-        counts: degradationCounts,
+        counts: conditionCounts,
         boxes: boxes
     }
 }
