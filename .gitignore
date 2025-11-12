@@ -1,36 +1,15 @@
-# User config files
+# User-specific configuration and data files
 config.ini
 config_simple.txt
 
-# User data (runtime generated)
-data/
-thumbnails/
+# User data and stats
+data/macro_execution_stats.csv
+data/master_stats_permanent.csv
+data/stats_log.json
+data/stats_log.backup.json
 
-# Debug and log files
-debug_visualization.log
+# Debug logs
 vizlog_debug.txt
-tests/test_log.txt
-*.log
 
-# Temporary files
-nul
-*.tmp
-*.temp
-*.bak
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# CSV exports
-*.csv
-
-# Temporary visualization files (runtime generated)
-src/macro_viz_*.png
-src/json_viz_*.png
-
-# Claude Code local settings
-.claude/settings.local.json
-
-# Archive (legacy code, not for distribution)
-archive/legacy-python/
+# IDE/Editor settings
+.claude/
