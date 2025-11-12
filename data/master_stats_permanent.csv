@@ -1,0 +1,7 @@
+﻿timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,degradation_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
+2025-11-11 18:14:16,sess_20251111_181300,ajnef,macro,Num8,1,2359,4,,medium,wide,76453,false,0,1,1,1,1,0,0,0,0,0,,true,
+2025-11-11 18:14:25,sess_20251111_181300,ajnef,json_profile,Num1,1,328,1,haze,high,wide,85672,false,0,0,0,0,0,0,0,1,0,0,,true,
+2025-11-11 19:15:51,sess_20251111_191542,ajnef,macro,Num7,1,2531,4,,medium,narrow,9000,false,1,0,3,0,0,0,0,0,0,0,,true,
+2025-11-11 19:42:04,sess_20251111_194159,ajnef,json_profile,Num0,1,328,1,partial_blockage,high,wide,4531,false,0,0,0,1,0,0,0,0,0,0,,true,
+2025-11-11 19:54:32,sess_20251111_195406,ajnef,macro,Num6,1,5312,9,,medium,wide,25656,false,1,1,1,1,1,1,1,1,1,0,,true,
+2025-11-11 19:54:40,sess_20251111_195406,ajnef,json_profile,Num1,1,328,1,splashes,medium,wide,33156,false,0,0,1,0,0,0,0,0,0,0,,true,
