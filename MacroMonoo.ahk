@@ -6735,28 +6735,6 @@ BuildMacroEventsFromString(serializedEvents) {
             events.Push(event)
             continue
         }
-                        break
-                    extra := parts[idx]
-                    if (InStr(extra, "deg=")) {
-                        event.conditionType := Integer(StrReplace(extra, "deg=", ""))
-                    } else if (InStr(extra, "name=")) {
-                        event.conditionName := StrReplace(extra, "name=", "")
-                    } else if (InStr(extra, "tagged=")) {
-                        event.isTagged := (StrReplace(extra, "tagged=", "") == "true")
-                    }
-                }
-            }
-
-            if (!event.HasOwnProp("conditionType"))
-                event.conditionType := 1
-            if (!event.HasOwnProp("conditionName"))
-                event.conditionName := "smudge"
-            if (!event.HasOwnProp("isTagged"))
-                event.isTagged := false
-
-            events.Push(event)
-            continue
-        }
 
         event := {type: parts[1]}
         if (parts.Length > 1 && parts[2] != "")
