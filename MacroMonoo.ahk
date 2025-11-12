@@ -1945,14 +1945,19 @@ DetectCanvasType() {
 ; VizLog infrastructure for debugging visualization issues
 global vizLogBuffer := []
 global vizLogPath := A_ScriptDir "\vizlog_debug.txt"
+global vizLoggingEnabled := false  ; Disable verbose viz logging by default to speed startup
 
 VizLog(msg) {
-    global vizLogBuffer
+    global vizLogBuffer, vizLoggingEnabled
+    if (!vizLoggingEnabled)
+        return
     vizLogBuffer.Push(A_Now . " - " . msg)
 }
 
 FlushVizLog() {
-    global vizLogBuffer, vizLogPath
+    global vizLogBuffer, vizLogPath, vizLoggingEnabled
+    if (!vizLoggingEnabled)
+        return
     if (vizLogBuffer.Length > 0) {
         content := ""
         for index, line in vizLogBuffer {
@@ -2444,7 +2449,8 @@ InitializeStatsSystem() {
     sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
     currentSessionId := sessionId
     InitializePermanentStatsFile()
-    LoadStatsFromJson()
+    ; Defer potentially heavy stats JSON load until after UI shows
+    SetTimer(LoadStatsFromJson, -50)
     try {
         UpdateStatus("📊 Stats system initialized")
     } catch {
@@ -3712,8 +3718,8 @@ Main() {
             UpdateStatus("📄 No saved macros")
         }
 
-        ; Refresh all button appearances after loading config
-        RefreshAllButtonAppearances()
+        ; Refresh all button appearances after loading config (deferred to keep startup snappy)
+        SetTimer(RefreshAllButtonAppearances, -100)
 
         ; Setup time tracking and auto-save
         SetTimer(UpdateActiveTime, 5000)  ; Update active time every 5 seconds
