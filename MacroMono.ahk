@@ -3713,7 +3713,7 @@ Main() {
         SetTimer(ShowWelcomeMessage, -2000)
         
     } catch Error as e {
-        MsgBox("Initialization failed: " e.Message, "Startup Error", "Icon!")
+        MsgBox("Initialization failed: " . e.Message, "Startup Error", "Icon!")
         ExitApp
     }
 }
