@@ -13,3 +13,10 @@ vizlog_debug.txt
 
 # IDE/Editor settings
 .claude/
+
+# User documentation
+docs/
+*.docx
+*.pdf
+user_guide.md
+notes.txt
