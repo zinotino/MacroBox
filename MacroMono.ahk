@@ -385,17 +385,23 @@ global annotationMode := "Wide"
 ; ===== CONDITION CONFIGURATION SYSTEM =====
 ; Centralized condition configuration
 ; Each condition has: name (internal), displayName (UI), color (hex), statKey (for CSV/stats)
-global conditionConfig := Map(
-    1, {name: "condition_1",  displayName: "Condition 1",  color: "0xFF8C00", statKey: "condition_1"},
-    2, {name: "condition_2",  displayName: "Condition 2",  color: "0xFFFF00", statKey: "condition_2"},
-    3, {name: "condition_3",  displayName: "Condition 3",  color: "0x9932CC", statKey: "condition_3"},
-    4, {name: "condition_4",  displayName: "Condition 4",  color: "0x32CD32", statKey: "condition_4"},
-    5, {name: "condition_5",  displayName: "Condition 5",  color: "0x8B0000", statKey: "condition_5"},
-    6, {name: "condition_6",  displayName: "Condition 6",  color: "0xFF0000", statKey: "condition_6"},
-    7, {name: "condition_7",  displayName: "Condition 7",  color: "0xFF4500", statKey: "condition_7"},
-    8, {name: "condition_8",  displayName: "Condition 8",  color: "0xADFF2F", statKey: "condition_8"},
-    9, {name: "condition_9",  displayName: "Condition 9",  color: "0x00FFFF", statKey: "condition_9"}
-)
+
+; Factory defaults - single source of truth
+GetDefaultConditionConfig() {
+    return Map(
+        1, {name: "condition_1",  displayName: "Condition 1",  color: "0xFF8C00", statKey: "condition_1"},
+        2, {name: "condition_2",  displayName: "Condition 2",  color: "0xFFFF00", statKey: "condition_2"},
+        3, {name: "condition_3",  displayName: "Condition 3",  color: "0x9932CC", statKey: "condition_3"},
+        4, {name: "condition_4",  displayName: "Condition 4",  color: "0x32CD32", statKey: "condition_4"},
+        5, {name: "condition_5",  displayName: "Condition 5",  color: "0x8B0000", statKey: "condition_5"},
+        6, {name: "condition_6",  displayName: "Condition 6",  color: "0xFF0000", statKey: "condition_6"},
+        7, {name: "condition_7",  displayName: "Condition 7",  color: "0xFF4500", statKey: "condition_7"},
+        8, {name: "condition_8",  displayName: "Condition 8",  color: "0xADFF2F", statKey: "condition_8"},
+        9, {name: "condition_9",  displayName: "Condition 9",  color: "0x00FFFF", statKey: "condition_9"}
+    )
+}
+
+global conditionConfig := GetDefaultConditionConfig()
 
 ; Legacy name compatibility (old -> id)
 ; Supports older logs/inputs that used named conditions or labelN
@@ -523,21 +529,16 @@ ValidateConditionName(name) {
 ResetConditionToDefault(id) {
     global conditionConfig
 
-    ; Factory defaults
-    defaults := Map(
-        1, {name: "condition_1",  displayName: "Condition 1",  color: "0xFF8C00", statKey: "condition_1"},
-        2, {name: "condition_2",  displayName: "Condition 2",  color: "0xFFFF00", statKey: "condition_2"},
-        3, {name: "condition_3",  displayName: "Condition 3",  color: "0x9932CC", statKey: "condition_3"},
-        4, {name: "condition_4",  displayName: "Condition 4",  color: "0x32CD32", statKey: "condition_4"},
-        5, {name: "condition_5",  displayName: "Condition 5",  color: "0x8B0000", statKey: "condition_5"},
-        6, {name: "condition_6",  displayName: "Condition 6",  color: "0xFF0000", statKey: "condition_6"},
-        7, {name: "condition_7",  displayName: "Condition 7",  color: "0xFF4500", statKey: "condition_7"},
-        8, {name: "condition_8",  displayName: "Condition 8",  color: "0xADFF2F", statKey: "condition_8"},
-        9, {name: "condition_9",  displayName: "Condition 9",  color: "0x00FFFF", statKey: "condition_9"}
-    )
+    defaults := GetDefaultConditionConfig()
 
     if (defaults.Has(id)) {
-        conditionConfig[id] := defaults[id]
+        ; Create a copy of the default object to avoid reference issues
+        conditionConfig[id] := {
+            name: defaults[id].name,
+            displayName: defaults[id].displayName,
+            color: defaults[id].color,
+            statKey: defaults[id].statKey
+        }
         return true
     }
     return false
@@ -1176,11 +1177,11 @@ ResetHotkeySettings(settingsGui) {
 ; ===== CONDITION SETTINGS HANDLERS =====
 
 ; Color picker function with common color palette
-PickLabelColor(degId, degEditControls, settingsGui) {
-    controls := degEditControls[degId]
+PickLabelColor(conditionId, conditionEditControls, settingsGui) {
+    controls := conditionEditControls[conditionId]
 
     ; Create color picker dialog as child of settings window
-    colorGui := Gui("+Owner" . settingsGui.Hwnd . " +AlwaysOnTop", "Pick Color for Label " . degId)
+    colorGui := Gui("+Owner" . settingsGui.Hwnd . " +AlwaysOnTop", "Pick Color for Label " . conditionId)
     colorGui.SetFont("s9")
 
     colorGui.Add("Text", "x10 y10 w280 h20 Center", "Select a color:")
@@ -1299,21 +1300,21 @@ CreateColorPickHandler(colorGui, colorHex, controls) {
     return (*) => SelectColor(colorGui, colorHex, controls)
 }
 
-; Freeze degId for "Pick" button handler in Conditions tab
-CreatePickLabelHandler(degId, degEditControls, settingsGui) {
-    return (*) => PickLabelColor(degId, degEditControls, settingsGui)
+; Freeze conditionId for "Pick" button handler in Conditions tab
+CreatePickLabelHandler(conditionId, conditionEditControls, settingsGui) {
+    return (*) => PickLabelColor(conditionId, conditionEditControls, settingsGui)
 }
 
-; Freeze degId for hex Edit Change handler in Conditions tab
-CreateHexChangeHandler(degId, degEditControls) {
-    return (*) => HandleLabelColorEditChange(degId, degEditControls)
+; Freeze conditionId for hex Edit Change handler in Conditions tab
+CreateHexChangeHandler(conditionId, conditionEditControls) {
+    return (*) => HandleLabelColorEditChange(conditionId, conditionEditControls)
 }
 
 ; Live-update handler for hex edit in Conditions tab
-HandleLabelColorEditChange(degId, degEditControls) {
-    if (!degEditControls.Has(degId))
+HandleLabelColorEditChange(conditionId, conditionEditControls) {
+    if (!conditionEditControls.Has(conditionId))
         return
-    controls := degEditControls[degId]
+    controls := conditionEditControls[conditionId]
     value := Trim(controls.colorDisplay.Value)
     if (ValidateHexColor(value)) {
         controls.currentColor := value
@@ -1330,7 +1331,7 @@ HandleLabelColorEditChange(degId, degEditControls) {
     }
 }
 
-ApplyConditionSettings(degEditControls, settingsGui) {
+ApplyConditionSettings(conditionEditControls, settingsGui) {
     global conditionConfig
 
     VizLog("=== ApplyConditionSettings CALLED ===")
@@ -1342,30 +1343,30 @@ ApplyConditionSettings(degEditControls, settingsGui) {
     ; Debug: Track what's being updated
     updatedCount := 0
 
-    for degId, controls in degEditControls {
+    for conditionId, controls in conditionEditControls {
         newName := Trim(controls.name.Value)
         newColor := Trim(controls.colorDisplay.Value)
 
         ; Validate name
         if (StrLen(newName) == 0 || StrLen(newName) > 30) {
-            errorMessages.Push("Label " . degId . ": Name must be 1-30 characters")
+            errorMessages.Push("Label " . conditionId . ": Name must be 1-30 characters")
             continue
         }
 
         if (!ValidateConditionName(newName)) {
-            errorMessages.Push("Label " . degId . ": Invalid name '" . newName . "' (use alphanumeric, spaces, hyphens, underscores only)")
+            errorMessages.Push("Label " . conditionId . ": Invalid name '" . newName . "' (use alphanumeric, spaces, hyphens, underscores only)")
             continue
         }
 
         ; Validate color
         if (!ValidateHexColor(newColor)) {
-            errorMessages.Push("Label " . degId . ": Invalid color '" . newColor . "' (use format 0xRRGGBB)")
+            errorMessages.Push("Label " . conditionId . ": Invalid color '" . newColor . "' (use format 0xRRGGBB)")
             continue
         }
 
         ; Update configuration - use displayName for both name and displayName
-        conditionConfig[degId].displayName := newName
-        conditionConfig[degId].color := newColor
+        conditionConfig[conditionId].displayName := newName
+        conditionConfig[conditionId].color := newColor
         ; Keep existing internal name and statKey unchanged for compatibility
         updatedCount++
     }
@@ -2543,9 +2544,9 @@ Stats_IncrementConditionCount(stats, condition_name, prefix := "json_") {
 
     ; Try as numeric ID first
     if (IsInteger(condition_name)) {
-        degId := Integer(condition_name)
-        if (conditionConfig.Has(degId)) {
-            statKey := conditionConfig[degId].statKey
+        conditionId := Integer(condition_name)
+        if (conditionConfig.Has(conditionId)) {
+            statKey := conditionConfig[conditionId].statKey
             stats[prefix . statKey]++
             return
         }
@@ -2563,9 +2564,9 @@ Stats_IncrementConditionCount(stats, condition_name, prefix := "json_") {
     global legacyConditionNameToId
     nameLower := StrLower(String(condition_name))
     if (legacyConditionNameToId.Has(nameLower)) {
-        degId := legacyConditionNameToId[nameLower]
-        if (conditionConfig.Has(degId)) {
-            stats[prefix . conditionConfig[degId].statKey]++
+        conditionId := legacyConditionNameToId[nameLower]
+        if (conditionConfig.Has(conditionId)) {
+            stats[prefix . conditionConfig[conditionId].statKey]++
             return
         }
     }
@@ -2582,10 +2583,10 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
 
     ; Try as numeric ID first
     if (IsInteger(condition_name)) {
-        degId := Integer(condition_name)
-        if (conditionConfig.Has(degId)) {
+        conditionId := Integer(condition_name)
+        if (conditionConfig.Has(conditionId)) {
             ; Use full name for direct count field (e.g., "light_flare_count")
-            fieldName := conditionConfig[degId].name . "_count"
+            fieldName := conditionConfig[conditionId].name . "_count"
             executionData[fieldName]++
             return
         }
@@ -2604,9 +2605,9 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
     global legacyConditionNameToId
     nameLower := StrLower(String(condition_name))
     if (legacyConditionNameToId.Has(nameLower)) {
-        degId := legacyConditionNameToId[nameLower]
-        if (conditionConfig.Has(degId)) {
-            fieldName := conditionConfig[degId].name . "_count"
+        conditionId := legacyConditionNameToId[nameLower]
+        if (conditionConfig.Has(conditionId)) {
+            fieldName := conditionConfig[conditionId].name . "_count"
             executionData[fieldName]++
             return
         }
@@ -3773,8 +3774,7 @@ SetupHotkeys() {
         Hotkey("CapsLock & f", F9_RecordingOnly, "On")
         Hotkey("CapsLock & Space", (*) => EmergencyStop(), "On")
 
-        ; Debug and utility keys
-        Hotkey("F11", (*) => ShowRecordingDebug())
+        ; Utility keys
         Hotkey("F12", (*) => ShowStatsMenu())
 
         ; Macro execution - EXPLICITLY EXCLUDE F9
@@ -5525,62 +5525,62 @@ ShowSettings() {
 
     ; Create streamlined list of labels
     global conditionConfig
-    degY := 125
-    degEditControls := Map()  ; Store references to edit controls
+    conditionY := 125
+    conditionEditControls := Map()  ; Store references to edit controls
 
     Loop 9 {
-        degId := A_Index
-        config := conditionConfig[degId]
+        conditionId := A_Index
+        config := conditionConfig[conditionId]
 
         ; ID number
-        settingsGui.Add("Text", "x30 y" . (degY + 5) . " w20 h20", degId . ":")
+        settingsGui.Add("Text", "x30 y" . (conditionY + 5) . " w20 h20", conditionId . ":")
 
         ; Name Edit
-        nameEdit := settingsGui.Add("Edit", "x55 y" . degY . " w240 h26", config.displayName)
+        nameEdit := settingsGui.Add("Edit", "x55 y" . conditionY . " w240 h26", config.displayName)
 
         ; Color picker button
-        btnPickColor := settingsGui.Add("Button", "x305 y" . degY . " w80 h26", "🎨 Pick")
+        btnPickColor := settingsGui.Add("Button", "x305 y" . conditionY . " w80 h26", "🎨 Pick")
 
     ; Color hex display (editable for manual entry)
     ; Reduce width slightly to fit live preview swatch
-    colorDisplay := settingsGui.Add("Edit", "x395 y" . degY . " w90 h26 Center", config.color)
+    colorDisplay := settingsGui.Add("Edit", "x395 y" . conditionY . " w90 h26 Center", config.color)
     colorDisplay.SetFont("s8")
 
     ; Live color preview swatch
-    preview := settingsGui.Add("Text", "x" . (395 + 95) . " y" . (degY + 3) . " w20 h20 +Border", "")
+    preview := settingsGui.Add("Text", "x" . (395 + 95) . " y" . (conditionY + 3) . " w20 h20 +Border", "")
     preview.Opt("+Background" . config.color)
 
         ; Store controls reference
-        degEditControls[degId] := {
+        conditionEditControls[conditionId] := {
             name: nameEdit,
             colorDisplay: colorDisplay,
             preview: preview,
             currentColor: config.color
         }
-        ; Update preview live when hex edit changes (freeze degId)
-        colorDisplay.OnEvent("Change", CreateHexChangeHandler(degId, degEditControls))
-        ; Open picker for this specific label (freeze degId)
-        btnPickColor.OnEvent("Click", CreatePickLabelHandler(degId, degEditControls, settingsGui))
+        ; Update preview live when hex edit changes (freeze conditionId)
+        colorDisplay.OnEvent("Change", CreateHexChangeHandler(conditionId, conditionEditControls))
+        ; Open picker for this specific label (freeze conditionId)
+        btnPickColor.OnEvent("Click", CreatePickLabelHandler(conditionId, conditionEditControls, settingsGui))
 
-        degY += 32
+        conditionY += 32
     }
 
     ; Action buttons
-    degY += 15
-    btnApplyConditions := settingsGui.Add("Button", "x30 y" . degY . " w180 h30", "✅ Apply All Changes")
-    btnApplyConditions.OnEvent("Click", (*) => ApplyConditionSettings(degEditControls, settingsGui))
+    conditionY += 15
+    btnApplyConditions := settingsGui.Add("Button", "x30 y" . conditionY . " w180 h30", "✅ Apply All Changes")
+    btnApplyConditions.OnEvent("Click", (*) => ApplyConditionSettings(conditionEditControls, settingsGui))
 
-    btnResetConditions := settingsGui.Add("Button", "x225 y" . degY . " w150 h30", "🔄 Reset to Defaults")
+    btnResetConditions := settingsGui.Add("Button", "x225 y" . conditionY . " w150 h30", "🔄 Reset to Defaults")
     btnResetConditions.OnEvent("Click", (*) => ResetConditionSettings(settingsGui))
 
-    degY += 38
+    conditionY += 38
 
     ; Instructions
     settingsGui.SetFont("s8 Bold c0x0066CC")
-    settingsGui.Add("Text", "x30 y" . degY . " w480 h14", "💡 How to Customize:")
-    degY += 18
+    settingsGui.Add("Text", "x30 y" . conditionY . " w480 h14", "💡 How to Customize:")
+    conditionY += 18
     settingsGui.SetFont("s8")
-    settingsGui.Add("Text", "x30 y" . degY . " w480 h40", "• Edit the name field to customize how the label appears`n• Click 🎨 Color to pick a visualization color (common colors available)`n• Click 'Apply All Changes' to save and activate your customizations")
+    settingsGui.Add("Text", "x30 y" . conditionY . " w480 h40", "• Edit the name field to customize how the label appears`n• Click 🎨 Color to pick a visualization color (common colors available)`n• Click 'Apply All Changes' to save and activate your customizations")
     settingsGui.SetFont("s9")
 
     ; Show settings window
@@ -6457,9 +6457,16 @@ LoadConfig() {
 
                 if (currentSection == "General") {
                     if (key == "CurrentLayer") {
-                        currentLayer := Integer(value)
+                        potentialLayer := Integer(value)
+                        if (potentialLayer >= 1 && potentialLayer <= totalLayers)
+                            currentLayer := potentialLayer
+                        else
+                            currentLayer := 1  ; Reset to default if invalid
                     } else if (key == "AnnotationMode") {
-                        annotationMode := value
+                        if (value == "Wide" || value == "Narrow")
+                            annotationMode := value
+                        else
+                            annotationMode := "Wide"  ; Reset to default if invalid
                     }
                 } else if (currentSection == "Canvas") {
                     ; Load canvas calibration data
@@ -6547,29 +6554,29 @@ LoadConfig() {
 
                     ; Parse condition settings (ConditionName_1, ConditionColor_1, etc.) and legacy
                     if (RegExMatch(key, "^(?:condition|Condition)Name_(\d+)$", &match)) {
-                        degId := Integer(match[1])
-                        if (!conditionConfig.Has(degId)) {
-                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        conditionConfig[degId].name := value
+                        conditionConfig[conditionId].name := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)DisplayName_(\d+)$", &match)) {
-                        degId := Integer(match[1])
-                        if (!conditionConfig.Has(degId)) {
-                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        conditionConfig[degId].displayName := value
+                        conditionConfig[conditionId].displayName := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)Color_(\d+)$", &match)) {
-                        degId := Integer(match[1])
-                        if (!conditionConfig.Has(degId)) {
-                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        conditionConfig[degId].color := value
+                        conditionConfig[conditionId].color := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)StatKey_(\d+)$", &match)) {
-                        degId := Integer(match[1])
-                        if (!conditionConfig.Has(degId)) {
-                            conditionConfig[degId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
                         }
-                        conditionConfig[degId].statKey := value
+                        conditionConfig[conditionId].statKey := value
                     }
                 } else if (currentSection == "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -6842,27 +6849,6 @@ LoadFromSlot(slotNumber) {
         UpdateStatus("⚠️ Load from slot failed: " . e.Message)
         return false
     }
-}
-
-; ===== PLACEHOLDER EXPORT/IMPORT FUNCTIONS =====
-ExportConfiguration() {
-    MsgBox("Export configuration feature is available in the full modular version.", "Feature Notice", "Icon!")
-}
-
-ImportConfiguration() {
-    MsgBox("Import configuration feature is available in the full modular version.", "Feature Notice", "Icon!")
-}
-
-CreateMacroPack() {
-    MsgBox("Macro pack creation is available in the full modular version.", "Feature Notice", "Icon!")
-}
-
-BrowseMacroPacks() {
-    MsgBox("Macro pack browsing is available in the full modular version.", "Feature Notice", "Icon!")
-}
-
-ImportNewMacroPack() {
-    MsgBox("Macro pack import is available in the full modular version.", "Feature Notice", "Icon!")
 }
 
 ; ===== ANALYSIS FUNCTIONS =====
@@ -7227,95 +7213,6 @@ UtilityBackspace() {
     if (browserFocused) {
         Sleep(focusDelay)
         Send("{Backspace}")
-    }
-}
-
-ShowRecordingDebug() {
-    global recording, currentMacro, macroEvents, currentLayer, buttonNames
-    
-    debugInfo := "=== F9 DEBUG INFO ===`n"
-    debugInfo .= "Recording: " . (recording ? "ACTIVE" : "INACTIVE") . "`n"
-    debugInfo .= "Current Macro: " . currentMacro . "`n"
-    debugInfo .= "Layer: " . currentLayer . "`n`n"
-    
-    totalMacros := 0
-    for layer in 1..8 {
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                totalMacros++
-            }
-        }
-    }
-    
-    debugInfo .= "Total Macros: " . totalMacros . "`n"
-    
-    if (macroEvents.Has(currentMacro) && currentMacro != "") {
-        debugInfo .= "Current Recording Events: " . macroEvents[currentMacro].Length . "`n"
-    }
-    
-    MsgBox(debugInfo, "F9 Debug", "Icon!")
-}
-
-TestSaveLoad() {
-    global macroEvents, buttonNames
-    
-    ; Count current macros
-    currentMacros := 0
-    for layer in 1..8 {
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                currentMacros++
-            }
-        }
-    }
-
-    ; Force save
-    SaveConfig()
-
-    ; Clear in-memory macros
-    macroEventsBackup := Map()
-    for layer in 1..8 {
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName)) {
-                macroEventsBackup[layerMacroName] := macroEvents[layerMacroName]
-                macroEvents.Delete(layerMacroName)
-            }
-        }
-    }
-
-    ; Update UI to show cleared state
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-
-    Sleep(1000)
-
-    ; Force load
-    LoadConfig()
-
-    ; Count loaded macros
-    loadedMacros := 0
-    for layer in 1..8 {
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                loadedMacros++
-            }
-        }
-    }
-
-    ; Update UI to show loaded state
-    for buttonName in buttonNames {
-        UpdateButtonAppearance(buttonName)
-    }
-    
-    if (loadedMacros != currentMacros) {
-        MsgBox("Save/Load mismatch!`n`nOriginal: " . currentMacros . " macros`nLoaded: " . loadedMacros . " macros`n`nPress F11 for detailed debug info.", "Save/Load Test Failed", "Icon!")
-    } else {
-        MsgBox("Save/Load test successful!`n`n" . loadedMacros . " macros preserved correctly.", "Save/Load Test Passed", "Icon!")
     }
 }
 
