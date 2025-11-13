@@ -1051,15 +1051,6 @@ CalibrateNarrowCanvasForWizard() {
     }
 }
 
-ManualSaveConfig() {
-    SaveConfig()
-    UpdateStatus("💾 Configuration manually saved")
-}
-
-ManualRestoreConfig() {
-    MsgBox("Configuration restore feature is available in the full modular version.", "Feature Notice", "Icon!")
-}
-
 ; ===== HOTKEY CAPTURE SYSTEM =====
 CaptureHotkey(editControl, hotkeyName) {
     ; Simple prompt for hotkey input
@@ -5284,21 +5275,9 @@ ShowSettings() {
     UpdateCanvasStatusControls(settingsGui)
     settingsGui.SetFont("s9")
 
-    ; System maintenance section
-    settingsGui.Add("Text", "x30 y260 w480 h18", "🔧 System Maintenance")
-
-    btnManualSave := settingsGui.Add("Button", "x40 y283 w120 h28", "💾 Save Now")
-    btnManualSave.OnEvent("Click", (*) => ManualSaveConfig())
-
-    btnManualRestore := settingsGui.Add("Button", "x175 y283 w120 h28", "📤 Restore Backup")
-    btnManualRestore.OnEvent("Click", (*) => ManualRestoreConfig())
-
-    btnClearConfig := settingsGui.Add("Button", "x310 y283 w120 h28", "🗑️ Clear Macros")
-    btnClearConfig.OnEvent("Click", (*) => ClearAllMacros(settingsGui))
-
     ; Stats reset
-    settingsGui.Add("Text", "x30 y328 w480 h18", "📊 Statistics")
-    btnResetStats := settingsGui.Add("Button", "x40 y351 w180 h28", "📊 Reset All Stats")
+    settingsGui.Add("Text", "x30 y260 w480 h18", "📊 Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y283 w180 h28", "📊 Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
 
     ; TAB 2: Execution Settings
@@ -6187,32 +6166,6 @@ ApplyTimingPreset(preset, settingsGui) {
     ShowSettings()
 
     UpdateStatus("🎚️ Applied " . StrTitle(preset) . " timing preset")
-}
-
-ClearAllMacros(parentGui := 0) {
-    global macroEvents, buttonNames, totalLayers, buttonLetterboxingStates
-    
-    result := MsgBox("Clear ALL macros from ALL layers?`n`nThis will permanently delete all recorded macros but preserve stats.", "Confirm Clear All", "YesNo Icon!")
-    
-    if (result == "Yes") {
-        ; Clear all macros
-        macroEvents := Map()
-        buttonLetterboxingStates.Clear()
-        
-        ; Save the cleared state
-        SaveConfig()
-        
-        ; Update all button appearances
-        for buttonName in buttonNames {
-            UpdateButtonAppearance(buttonName)
-        }
-        
-        UpdateStatus("🗑️ All macros cleared from all layers")
-        
-        if (parentGui) {
-            parentGui.Destroy()
-        }
-    }
 }
 
 ResetStatsFromSettings(parentGui) {

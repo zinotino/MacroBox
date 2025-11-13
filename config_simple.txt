@@ -1,8 +1,0 @@
-L1_Num3=recordedMode,Wide
-L1_Num3=recordedCanvas,54.00,196.00,1648.00,1007.00,mode=Wide
-L1_Num3=mouseDown,530,384,left
-L1_Num3=boundingBox,530,384,799,765
-L1_Num3=mouseUp,799,765,left
-L1_Num3=keyDown,1
-L1_Num3=keyUp,1
-L1_NumMult=jsonAnnotation,Wide,9,high
