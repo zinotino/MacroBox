@@ -1,6 +1,0 @@
-﻿timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,condition_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,smudge_count,glare_count,splashes_count,partial_blockage_count,full_blockage_count,light_flare_count,rain_count,haze_count,snow_count,clear_count,annotation_details,execution_success,error_details
-2025-11-12 17:58:39,sess_20251112_175813,ajnef,macro,Num3,1,719,1,smudge,medium,wide,25907,false,1,0,0,0,0,0,0,0,0,0,,true,
-2025-11-12 17:58:45,sess_20251112_175813,ajnef,json_profile,NumMult,1,328,1,snow,high,wide,31735,false,0,0,0,0,0,0,0,0,1,0,,true,
-2025-11-12 19:12:30,sess_20251112_191204,ajnef,macro,Num8,1,2594,4,condition_1,condition_2,condition_4,medium,wide,26734,false,1,1,0,2,0,0,0,0,0,0,,true,
-2025-11-12 19:13:02,sess_20251112_191239,ajnef,macro,Num8,1,2516,4,condition_1,condition_2,condition_4,medium,wide,22735,false,1,1,0,2,0,0,0,0,0,0,,true,
-2025-11-12 19:13:12,sess_20251112_191239,ajnef,macro,Num8,1,2531,4,condition_1,condition_2,condition_4,medium,wide,32610,false,1,1,0,2,0,0,0,0,0,0,,true,
