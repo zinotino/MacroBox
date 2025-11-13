@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 SendMode "Input"
 Persistent
@@ -291,6 +291,7 @@ StrJoin(array, sep) {
 
 ; ===== CORE VARIABLES & CONFIGURATION =====
 global mainGui := 0
+; startupPhase gating removed to ensure full visuals render at startup
 global statusBar := 0
 global layerIndicator := 0
 global modeToggleBtn := 0
@@ -3665,6 +3666,22 @@ Main() {
         
         ; Setup UI and interactions
         InitializeGui()
+        
+        ; FAST PATH: Prime macros directly from config + merge simple state, then draw
+        try {
+            quickFromConfig := 0
+            if (FileExist(configFile)) {
+                quickFromConfig := ParseMacrosFromConfig()
+            }
+            quickFromState := LoadMacroState(true)
+            quickTotal := quickFromConfig + quickFromState
+            if (quickTotal > 0) {
+                RefreshAllButtonAppearances()
+                UpdateStatus("?? Loaded " . quickTotal . " macros (fast)")
+            }
+        } catch {
+        }
+
         SetupHotkeys()
         
         ; Load configuration (after GUI is created so mode toggle button can be updated)
@@ -3698,8 +3715,7 @@ Main() {
             UpdateStatus("📄 No saved macros")
         }
 
-        ; Refresh all button appearances after loading config (deferred to keep startup snappy)
-        SetTimer(RefreshAllButtonAppearances, -100)
+        ; Startup complete
 
         ; Setup time tracking and auto-save
         SetTimer(UpdateActiveTime, 5000)  ; Update active time every 5 seconds
@@ -4310,6 +4326,12 @@ AssignToButton(buttonName) {
     UpdateButtonAppearance(buttonName)
     SaveConfig()  ; Immediate persist for new macro assignments
 
+    ; Persist an on-disk thumbnail so next startup loads visuals instantly
+    try {
+        SaveVisualizationThumbnailForButton(buttonName)
+    } catch {
+    }
+
     ; PERFORMANCE: Queue async save instead of blocking here
     global needsMacroStateSave
     needsMacroStateSave := true
@@ -4348,16 +4370,16 @@ PlayEventsOptimized(recordedEvents) {
             MouseMove(event.left, event.top, 2)
             Sleep(smartBoxClickDelay)  ; Minimal delay for cursor positioning
 
-            ; Step 2: Press mouse button
-            Send("{LButton Down}")
+            ; Step 2: Press mouse button using Click API
+            Click "Down"
             Sleep(mouseClickDelay)  ; Brief pause during click
 
             ; Step 3: Drag to end position (speed 8 for accuracy)
             MouseMove(event.right, event.bottom, 8)
             Sleep(mouseReleaseDelay)  ; Brief pause before release
 
-            ; Step 4: Release mouse button
-            Send("{LButton Up}")
+            ; Step 4: Release mouse button using Click API
+            Click "Up"
 
             ; Step 5: Intelligent delay - optimized single wait period
             ; Wait time accounts for both UI response and preparation for next action
@@ -4370,19 +4392,62 @@ PlayEventsOptimized(recordedEvents) {
             }
         }
         else if (event.type == "mouseDown") {
+            ; If the next recorded event is a boundingBox, skip this mouseDown
+            ; because the boundingBox handler performs its own press/release.
+            nextEvent := (eventIndex < recordedEvents.Length) ? recordedEvents[eventIndex + 1] : ""
+            if (IsObject(nextEvent) && nextEvent.HasOwnProp("type") && nextEvent.type == "boundingBox") {
+                continue
+            }
+
             if (event.HasOwnProp("x") && event.HasOwnProp("y")) {
                 MouseMove(event.x, event.y, 2)
             }
             Sleep(smartBoxClickDelay)
-            Send("{LButton Down}")
+            ; Use Click API for reliability
+            Click event.x, event.y, "Down"
             Sleep(mouseClickDelay)
         }
         else if (event.type == "mouseUp") {
+            ; If the previous recorded event was a boundingBox, skip this mouseUp
+            ; because the boundingBox handler already released the button.
+            prevEvent := (eventIndex > 1) ? recordedEvents[eventIndex - 1] : ""
+            if (IsObject(prevEvent) && prevEvent.HasOwnProp("type") && prevEvent.type == "boundingBox") {
+                continue
+            }
+
             if (event.HasOwnProp("x") && event.HasOwnProp("y")) {
                 MouseMove(event.x, event.y, 2)
             }
             Sleep(mouseReleaseDelay)
-            Send("{LButton Up}")
+            ; Use Click API for reliability
+            Click event.x, event.y, "Up"
+
+            ; Ensure menu-open readiness between a click and the next action.
+            ; Use recorded timing if available, but enforce a minimum smart menu delay.
+            nextEvent := (eventIndex < recordedEvents.Length) ? recordedEvents[eventIndex + 1] : ""
+            if (IsObject(nextEvent)) {
+                try {
+                    minMenuDelay := (smartMenuClickDelay > menuWaitDelay) ? smartMenuClickDelay : menuWaitDelay
+                    if (event.HasOwnProp("time") && nextEvent.HasOwnProp("time")) {
+                        delta := nextEvent.time - event.time
+                        extra := delta - mouseReleaseDelay
+                        if (extra < (minMenuDelay - mouseReleaseDelay))
+                            extra := (minMenuDelay - mouseReleaseDelay)
+                        if (extra > 0)
+                            Sleep(extra)
+                    } else {
+                        Sleep(minMenuDelay)
+                    }
+                } catch {
+                    ; Fallback safety
+                    Sleep(smartMenuClickDelay)
+                }
+            }
+        }
+        else if (event.type == "click") {
+            ; Recorded streams include mouseDown + click + mouseUp for simple clicks.
+            ; The down/up handlers perform the actual click. Ignore this marker to prevent double-clicks.
+            continue
         }
         else if (event.type == "keyDown") {
             if (event.HasOwnProp("key") && event.key != "") {
@@ -4625,9 +4690,14 @@ CreateButtonGrid() {
             picture.OnEvent("Click", HandleButtonClick.Bind(buttonName))
             picture.OnEvent("ContextMenu", HandleContextMenu.Bind(buttonName))
             
-            UpdateButtonAppearance(buttonName)
+            ; FAST INIT - Skip HBITMAP generation at startup
+            button.Visible := true
+            picture.Visible := false
         }
     }
+
+    ; Defer full visualization until after GUI is shown (500ms delay)
+    SetTimer((*) => RefreshAllButtonAppearances(), -500)
 }
 
 ResizeButtonGrid() {
@@ -4750,6 +4820,148 @@ RefreshAllButtonAppearances() {
     FlushVizLog()
 }
 
+; Fast placeholder render (currently unused). Kept for potential future use.
+; Does not create HBITMAPs — only shows simple text/background immediately.
+FastRefreshButtonPlaceholders() {
+    global buttonGrid, buttonPictures, buttonNames, macroEvents, currentLayer, conditionTypes, conditionColors
+
+    for buttonName in buttonNames {
+        try {
+            if (!buttonGrid.Has(buttonName))
+                continue
+
+            layerMacroName := "L" . currentLayer . "_" . buttonName
+            button := buttonGrid[buttonName]
+            picture := buttonPictures[buttonName]
+
+            hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
+            if (!hasMacro) {
+                ; Leave as default empty tile
+                button.Visible := true
+                if (picture)
+                    picture.Visible := false
+                continue
+            }
+
+            events := macroEvents[layerMacroName]
+            if (events.Length == 1 && events[1].type == "jsonAnnotation") {
+                jsonEvent := events[1]
+                typeName := "JSON"
+                try {
+                    if (conditionTypes.Has(jsonEvent.categoryId))
+                        typeName := StrTitle(conditionTypes[jsonEvent.categoryId])
+                } catch {
+                }
+                jsonInfo := typeName
+                try {
+                    if (jsonEvent.HasOwnProp("severity"))
+                        jsonInfo .= " " . StrUpper(jsonEvent.severity)
+                } catch {
+                }
+                jsonColor := "0xFFD700"
+                try {
+                    if (conditionColors.Has(jsonEvent.categoryId))
+                        jsonColor := conditionColors[jsonEvent.categoryId]
+                } catch {
+                }
+
+                if (picture)
+                    picture.Visible := false
+                button.Visible := true
+                button.Opt("+Background" . jsonColor)
+                button.SetFont("s7 bold", "cBlack")
+                button.Text := jsonInfo
+            } else {
+                if (picture)
+                    picture.Visible := false
+                button.Visible := true
+                button.Opt("+Background0x3A3A3A")
+                button.SetFont("s7 bold", "cWhite")
+                button.Text := "MACRO`n" . events.Length . " events"
+            }
+        } catch {
+            ; Ignore individual tile errors in fast path
+        }
+    }
+}
+
+; Persist a PNG thumbnail for a button's current macro visualization to enable
+; instant startup loading without heavy rendering.
+SaveVisualizationThumbnailForButton(buttonName) {
+    global currentLayer, macroEvents, buttonGrid, thumbnailDir, buttonThumbnails
+    global gdiPlusInitialized
+
+    try {
+        if (!gdiPlusInitialized)
+            InitializeVisualizationSystem()
+
+        layerMacroName := "L" . currentLayer . "_" . buttonName
+        if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length = 0)
+            return false
+
+        ; Get button dimensions to generate a correctly sized image
+        if (!buttonGrid.Has(buttonName))
+            return false
+        buttonGrid[buttonName].GetPos(, , &btnW, &btnH)
+        buttonDims := {width: btnW, height: btnH}
+        ; Create an in-memory HBITMAP visualization
+        hbm := CreateHBITMAPVisualization(macroEvents[layerMacroName], buttonDims)
+        if (!hbm)
+            return false
+
+        ; Temporarily increment ref so saving doesn't invalidate cache/active display
+        AddHBITMAPReference(hbm)
+
+        ; Convert HBITMAP -> GDI+ Bitmap (does not take ownership)
+        bitmap := 0
+        DllCall("gdiplus\\GdipCreateBitmapFromHBITMAP", "Ptr", hbm, "Ptr", 0, "Ptr*", &bitmap)
+        if (!bitmap) {
+            RemoveHBITMAPReference(hbm)
+            return false
+        }
+
+        ; Prepare PNG encoder CLSID: 557CF406-1A04-11D3-9A73-0000F81EF32E
+        pngClsid := Buffer(16, 0)
+        NumPut("UInt", 0x557CF406, pngClsid, 0)
+        NumPut("UShort", 0x1A04, pngClsid, 4)
+        NumPut("UShort", 0x11D3, pngClsid, 6)
+        ; Data4 bytes
+        NumPut("UChar", 0x9A, pngClsid, 8)
+        NumPut("UChar", 0x73, pngClsid, 9)
+        NumPut("UChar", 0x00, pngClsid, 10)
+        NumPut("UChar", 0x00, pngClsid, 11)
+        NumPut("UChar", 0xF8, pngClsid, 12)
+        NumPut("UChar", 0x1E, pngClsid, 13)
+        NumPut("UChar", 0xF3, pngClsid, 14)
+        NumPut("UChar", 0x2E, pngClsid, 15)
+
+        ; Ensure thumbnail dir exists
+        try {
+            if !DirExist(thumbnailDir)
+                DirCreate(thumbnailDir)
+        }
+
+        filePath := thumbnailDir . "\\" . layerMacroName . ".png"
+        ; Save bitmap to file
+        res := DllCall("gdiplus\\GdipSaveImageToFile", "Ptr", bitmap, "WStr", filePath, "Ptr", pngClsid, "Ptr", 0)
+
+        ; Cleanup
+        DllCall("gdiplus\\GdipDisposeImage", "Ptr", bitmap)
+        RemoveHBITMAPReference(hbm)
+
+        if (res = 0) {
+            buttonThumbnails[layerMacroName] := filePath
+            ; Persist mapping in simple state for next startup
+            try {
+                SaveMacroState()
+            }
+            return true
+        }
+    } catch {
+    }
+    return false
+}
+
 UpdateButtonAppearance(buttonName) {
     global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, conditionTypes, conditionColors, buttonDisplayedHBITMAPs
 
@@ -4767,6 +4979,14 @@ UpdateButtonAppearance(buttonName) {
     ; Keep simple label - already set during CreateButtonGrid, don't change it
 
     hasThumbnail := buttonThumbnails.Has(layerMacroName) && FileExist(buttonThumbnails[layerMacroName])
+    ; Fallback to default thumbnail path if mapping missing
+    if (!hasThumbnail) {
+        defaultThumb := thumbnailDir . "\\" . layerMacroName . ".png"
+        if (FileExist(defaultThumb)) {
+            hasThumbnail := true
+            buttonThumbnails[layerMacroName] := defaultThumb
+        }
+    }
 
     isJsonAnnotation := false
     jsonInfo := ""
