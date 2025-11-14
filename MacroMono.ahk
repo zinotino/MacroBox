@@ -3667,7 +3667,16 @@ Main() {
         ; Setup UI and interactions
         InitializeGui()
         
+        ; Load configuration FIRST (before visualization rendering)
+        ; This ensures all config settings are available when buttons render
+        isFirstLaunch := !FileExist(configFile)
+        LoadConfig()
+        
+        SetupHotkeys()
+        InitializeWASDHotkeys()
+        
         ; FAST PATH: Prime macros directly from config + merge simple state, then draw
+        ; Config is now loaded, so visualizations will render with correct settings
         try {
             quickFromConfig := 0
             if (FileExist(configFile)) {
@@ -3677,42 +3686,14 @@ Main() {
             quickTotal := quickFromConfig + quickFromState
             if (quickTotal > 0) {
                 RefreshAllButtonAppearances()
-                UpdateStatus("?? Loaded " . quickTotal . " macros (fast)")
+                UpdateStatus("✅ Loaded " . quickTotal . " macros")
             }
         } catch {
         }
-
-        SetupHotkeys()
-        
-        ; Load configuration (after GUI is created so mode toggle button can be updated)
-        isFirstLaunch := !FileExist(configFile)
-        LoadConfig()
 
         ; Show first-launch wizard if this is first run
         if (isFirstLaunch) {
             ShowFirstLaunchWizard()
-        }
-
-        ; SIMPLE, ROBUST RESTORE: do not overwrite rich config with simplified state
-        ; Count macros loaded by LoadConfig() directly to report status
-        loadedMacros := 0
-        try {
-            for macroName, events in macroEvents {
-                if (IsObject(events) && events.Length > 0)
-                    loadedMacros++
-            }
-        } catch {
-            loadedMacros := 0
-        }
-
-        ; Initialize WASD hotkeys
-        InitializeWASDHotkeys()
-
-        ; Status update
-        if (loadedMacros > 0) {
-            UpdateStatus("📄 Loaded " . loadedMacros . " macros")
-        } else {
-            UpdateStatus("📄 No saved macros")
         }
 
         ; Startup complete
@@ -4690,14 +4671,9 @@ CreateButtonGrid() {
             picture.OnEvent("Click", HandleButtonClick.Bind(buttonName))
             picture.OnEvent("ContextMenu", HandleContextMenu.Bind(buttonName))
             
-            ; FAST INIT - Skip HBITMAP generation at startup
-            button.Visible := true
-            picture.Visible := false
+            UpdateButtonAppearance(buttonName)
         }
     }
-
-    ; Defer full visualization until after GUI is shown (500ms delay)
-    SetTimer((*) => RefreshAllButtonAppearances(), -500)
 }
 
 ResizeButtonGrid() {
@@ -7221,7 +7197,6 @@ CleanupAndExit() {
         ; Save final session time marker to preserve active time
         SaveSessionEndMarker()
 
-        SaveConfig()
         SaveConfig()
         savedMacros := SaveMacroState()
         SaveStatsToJson()
