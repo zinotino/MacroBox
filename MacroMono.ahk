@@ -388,25 +388,29 @@ global annotationMode := "Wide"
 ; Each condition has: name (internal), displayName (UI), color (hex), statKey (for CSV/stats)
 
 ; Factory defaults - single source of truth
+; Generic defaults with blank names - users customize on first run
 GetDefaultConditionConfig() {
     return Map(
-        1, {name: "condition_1",  displayName: "Condition 1",  color: "0xFF8C00", statKey: "condition_1"},
-        2, {name: "condition_2",  displayName: "Condition 2",  color: "0xFFFF00", statKey: "condition_2"},
-        3, {name: "condition_3",  displayName: "Condition 3",  color: "0x9932CC", statKey: "condition_3"},
-        4, {name: "condition_4",  displayName: "Condition 4",  color: "0x32CD32", statKey: "condition_4"},
-        5, {name: "condition_5",  displayName: "Condition 5",  color: "0x8B0000", statKey: "condition_5"},
-        6, {name: "condition_6",  displayName: "Condition 6",  color: "0xFF0000", statKey: "condition_6"},
-        7, {name: "condition_7",  displayName: "Condition 7",  color: "0xFF4500", statKey: "condition_7"},
-        8, {name: "condition_8",  displayName: "Condition 8",  color: "0xADFF2F", statKey: "condition_8"},
-        9, {name: "condition_9",  displayName: "Condition 9",  color: "0x00FFFF", statKey: "condition_9"}
+        1, {name: "",  displayName: "Label 1",  color: "0xFF8C00", statKey: "condition_1"},
+        2, {name: "",  displayName: "Label 2",  color: "0xFFFF00", statKey: "condition_2"},
+        3, {name: "",  displayName: "Label 3",  color: "0x9932CC", statKey: "condition_3"},
+        4, {name: "",  displayName: "Label 4",  color: "0x32CD32", statKey: "condition_4"},
+        5, {name: "",  displayName: "Label 5",  color: "0x8B0000", statKey: "condition_5"},
+        6, {name: "",  displayName: "Label 6",  color: "0xFF0000", statKey: "condition_6"},
+        7, {name: "",  displayName: "Label 7",  color: "0xFF4500", statKey: "condition_7"},
+        8, {name: "",  displayName: "Label 8",  color: "0xADFF2F", statKey: "condition_8"},
+        9, {name: "",  displayName: "Label 9",  color: "0x00FFFF", statKey: "condition_9"}
     )
 }
 
 global conditionConfig := GetDefaultConditionConfig()
 
 ; Legacy name compatibility (old -> id)
-; Supports older logs/inputs that used named conditions or labelN
+; This map is kept ONLY for backward compatibility with old user data
+; Users with old CSV files containing legacy terms (smudge, glare, etc.) can still load them
+; New installations start with empty/generic labels
 global legacyConditionNameToId := Map(
+    ; Legacy work-specific terms (kept for backward compatibility only)
     "smudge", 1,
     "glare", 2,
     "splashes", 3,
@@ -417,6 +421,7 @@ global legacyConditionNameToId := Map(
     "rain", 7,
     "haze", 8,
     "snow", 9,
+    ; Generic legacy terms
     "label1", 1,
     "label2", 2,
     "label3", 3,
@@ -430,6 +435,7 @@ global legacyConditionNameToId := Map(
 )
 
 ; Legacy per-id count field names used in older executionData
+; Kept for backward compatibility with old CSV files only
 global legacyConditionCountFieldById := Map(
     1, "smudge_count",
     2, "glare_count",
@@ -443,22 +449,11 @@ global legacyConditionCountFieldById := Map(
 )
 
 ; Legacy Maps for backward compatibility (these reference conditionConfig)
-global conditionTypes := Map(
-    1, "smudge", 2, "glare", 3, "splashes", 4, "partial_blockage", 5, "full_blockage",
-    6, "light_flare", 7, "rain", 8, "haze", 9, "snow"
-)
+; NOTE: These are now synced from conditionConfig and will be empty on fresh install
+global conditionTypes := Map()
 
-global conditionColors := Map(
-    1, "0xFF8C00",    ; label1 - orange
-    2, "0xFFFF00",    ; label2 - yellow
-    3, "0x9932CC",    ; label3 - purple
-    4, "0x32CD32",    ; label4 - green
-    5, "0x8B0000",    ; label5 - dark red
-    6, "0xFF0000",    ; label6 - red
-    7, "0xFF4500",    ; label7 - dark orange
-    8, "0xADFF2F",    ; label8 - yellow-green
-    9, "0x00FFFF"     ; label9 - cyan
-)
+; Legacy color map - now synced from conditionConfig
+global conditionColors := Map()
 
 ; ===== CONDITION HELPER FUNCTIONS =====
 GetConditionName(id) {
@@ -859,9 +854,77 @@ ConfigureNarrowCanvasFromSettings(settingsGui) {
     settingsGui.Show()
 }
 
+; ===== WELCOME SCREEN =====
+ShowWelcomeScreen() {
+    userChoice := "Continue"
+
+    ; Create welcome dialog
+    welcomeGui := Gui("+AlwaysOnTop", "Welcome to MacroMono")
+    welcomeGui.SetFont("s10")
+
+    ; Title
+    welcomeGui.SetFont("s14 Bold")
+    welcomeGui.Add("Text", "x20 y20 w560 Center", "Welcome to Data Labeling Assistant!")
+    welcomeGui.SetFont("s10")
+
+    ; Introduction
+    welcomeGui.Add("Text", "x20 y60 w560", "This tool helps you annotate and label data with customizable categories.")
+
+    ; Getting Started section
+    welcomeGui.SetFont("s11 Bold")
+    welcomeGui.Add("Text", "x20 y95 w560", "Getting Started:")
+    welcomeGui.SetFont("s10")
+
+    welcomeGui.Add("Text", "x40 y120 w540", "1️⃣  Customize Your Labels")
+    welcomeGui.Add("Text", "x60 y140 w520 c0x666666", "• Press Ctrl+K to open Settings → Conditions tab")
+    welcomeGui.Add("Text", "x60 y160 w520 c0x666666", "• Edit label names and pick colors for your categories")
+
+    welcomeGui.Add("Text", "x40 y190 w540", "2️⃣  Calibrate Your Canvas (Next Step)")
+    welcomeGui.Add("Text", "x60 y210 w520 c0x666666", "• Choose Wide (landscape) or Narrow (portrait) mode")
+    welcomeGui.Add("Text", "x60 y230 w520 c0x666666", "• Click corners to define your working area")
+
+    welcomeGui.Add("Text", "x40 y260 w540", "3️⃣  Start Recording")
+    welcomeGui.Add("Text", "x60 y280 w520 c0x666666", "• CapsLock+F to record/stop macro")
+    welcomeGui.Add("Text", "x60 y300 w520 c0x666666", "• Use numpad or WASD keys to assign labels")
+    welcomeGui.Add("Text", "x60 y320 w520 c0x666666", "• Press F12 to view statistics")
+
+    ; Separator
+    welcomeGui.Add("Text", "x20 y355 w560 h1 +0x10")  ; Horizontal line
+
+    ; Tip
+    welcomeGui.SetFont("s9 Italic c0x0066CC")
+    welcomeGui.Add("Text", "x40 y365 w520", "💡 Tip: You can customize all labels to match your workflow - no preset categories!")
+    welcomeGui.SetFont("s10")
+
+    ; Buttons
+    btnContinue := welcomeGui.Add("Button", "x140 y410 w150 h35 Default", "Continue Setup")
+    btnSkip := welcomeGui.Add("Button", "x310 y410 w150 h35", "Skip for Now")
+
+    btnContinue.OnEvent("Click", (*) => WelcomeChoice("Continue"))
+    btnSkip.OnEvent("Click", (*) => WelcomeChoice("Skip"))
+
+    WelcomeChoice(selection) {
+        userChoice := selection
+        welcomeGui.Destroy()
+    }
+
+    welcomeGui.Show("w600 h465")
+    WinWaitClose("ahk_id " . welcomeGui.Hwnd)
+
+    return (userChoice == "Continue")
+}
+
 ; ===== FIRST LAUNCH WIZARD =====
 ShowFirstLaunchWizard() {
     global isWideCanvasCalibrated, isNarrowCanvasCalibrated
+
+    ; Show welcome screen first
+    if (!ShowWelcomeScreen()) {
+        ; User chose to skip entirely
+        UpdateStatus("Welcome screen skipped")
+        SaveConfig()
+        return
+    }
 
     ; Show custom choice dialog with Wide/Narrow/Skip buttons
     choice := ShowCanvasChoiceDialog()
@@ -2361,9 +2424,9 @@ Stats_GetCsvHeader() {
     ; Base header columns
     header := "timestamp,session_id,username,execution_type,button_key,layer,execution_time_ms,total_boxes,condition_assignments,severity_level,canvas_mode,session_active_time_ms,break_mode_active,"
 
-    ; Add condition count columns dynamically
+    ; Add condition count columns dynamically (uses statKey which is condition_1, condition_2, etc.)
     for id, config in conditionConfig {
-        header .= config.name . "_count,"
+        header .= config.statKey . "_count,"
     }
 
     ; Add clear_count and remaining columns
@@ -2394,9 +2457,9 @@ Stats_BuildCsvRow(executionData) {
     row .= (executionData.Has("condition_assignments") ? executionData["condition_assignments"] : "") . "," . executionData["severity_level"] . "," . executionData["canvas_mode"] . "," . executionData["session_active_time_ms"] . ","
     row .= (executionData.Has("break_mode_active") ? (executionData["break_mode_active"] ? "true" : "false") : "false") . ","
 
-    ; Add condition count columns dynamically
+    ; Add condition count columns dynamically (uses statKey which is condition_1, condition_2, etc.)
     for id, config in conditionConfig {
-        countFieldName := config.name . "_count"
+        countFieldName := config.statKey . "_count"
         row .= (executionData.Has(countFieldName) ? executionData[countFieldName] : 0) . ","
     }
 
@@ -2502,8 +2565,8 @@ Stats_CreateEmptyStatsMap() {
     ; Initialize condition stats dynamically from conditionConfig
     global conditionConfig
     for id, config in conditionConfig {
-        ; Total counts (legacy compatibility)
-        stats[config.name . "_total"] := 0
+        ; Total counts
+        stats[config.statKey . "_total"] := 0
 
         ; Macro-specific counts
         stats["macro_" . config.statKey] := 0
@@ -2577,17 +2640,22 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
     if (IsInteger(condition_name)) {
         conditionId := Integer(condition_name)
         if (conditionConfig.Has(conditionId)) {
-            ; Use full name for direct count field (e.g., "light_flare_count")
-            fieldName := conditionConfig[conditionId].name . "_count"
+            ; Use statKey for count field (e.g., "condition_1_count")
+            fieldName := conditionConfig[conditionId].statKey . "_count"
             executionData[fieldName]++
             return
         }
     }
 
-    ; Try as condition name
+    ; Try as condition name (check both name and statKey)
     for id, config in conditionConfig {
-        if (StrLower(config.name) == StrLower(condition_name)) {
-            fieldName := config.name . "_count"
+        if (config.name != "" && StrLower(config.name) == StrLower(condition_name)) {
+            fieldName := config.statKey . "_count"
+            executionData[fieldName]++
+            return
+        }
+        if (StrLower(config.statKey) == StrLower(condition_name)) {
+            fieldName := config.statKey . "_count"
             executionData[fieldName]++
             return
         }
@@ -2599,7 +2667,7 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
     if (legacyConditionNameToId.Has(nameLower)) {
         conditionId := legacyConditionNameToId[nameLower]
         if (conditionConfig.Has(conditionId)) {
-            fieldName := conditionConfig[conditionId].name . "_count"
+            fieldName := conditionConfig[conditionId].statKey . "_count"
             executionData[fieldName]++
             return
         }
@@ -2805,7 +2873,7 @@ QueryUserStats(filterOptions := "") {
             ; Aggregate condition counts dynamically (with legacy fallback)
     global conditionConfig, legacyConditionCountFieldById
             for id, config in conditionConfig {
-                fieldName := config.name . "_count"
+                fieldName := config.statKey . "_count"
                 count := executionData.Has(fieldName) ? executionData[fieldName] : 0
                 if (count = 0 && legacyConditionCountFieldById.Has(id)) {
                     legacyField := legacyConditionCountFieldById[id]
@@ -2813,7 +2881,7 @@ QueryUserStats(filterOptions := "") {
                         count := executionData[legacyField]
                     }
                 }
-                stats[config.name . "_total"] := stats[config.name . "_total"] + count
+                stats[config.statKey . "_total"] := stats[config.statKey . "_total"] + count
                 if (execution_type == "json_profile") {
                     stats["json_" . config.statKey] := stats["json_" . config.statKey] + count
                 } else if (execution_type == "macro") {
@@ -3000,7 +3068,7 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     ; Initialize dynamic condition counts based on configuration
     global conditionConfig
     for id, config in conditionConfig {
-        executionData[config.name . "_count"] := 0
+        executionData[config.statKey . "_count"] := 0
     }
     executionData["clear_count"] := 0
     executionData["total_boxes"] := 0
@@ -3034,18 +3102,20 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
             }
         }
         executionData["total_boxes"] := bbox_count
-        ; Map counts into executionData using current config names
+        ; Map counts into executionData using statKey (condition_1, condition_2, etc.)
         for id, config in conditionConfig {
-            fieldName := config.name . "_count"
+            fieldName := config.statKey . "_count"
             executionData[fieldName] := condition_counts_map.Has(id) ? condition_counts_map[id] : 0
         }
         executionData["clear_count"] := condition_counts_map.Has(0) ? condition_counts_map[0] : 0
 
-        ; Build condition assignment list using current config names
+        ; Build condition assignment list using display names
         condition_names := []
         for id, config in conditionConfig {
             if (condition_counts_map.Has(id) && condition_counts_map[id] > 0) {
-                condition_names.Push(config.name)
+                ; Use displayName if name is blank, otherwise use name
+                nameToUse := (config.name != "") ? config.name : config.displayName
+                condition_names.Push(nameToUse)
             }
         }
         if (condition_counts_map.Has(0) && condition_counts_map[0] > 0) {
@@ -4036,9 +4106,11 @@ ExecuteMacro(buttonName) {
         }
     } else if (events.Length == 1 && events[1].type == "jsonAnnotation") {
         ; Extract JSON condition info for stats tracking
+        global conditionConfig
         jsonEvent := events[1]
-        if (jsonEvent.HasOwnProp("categoryId") && conditionTypes.Has(jsonEvent.categoryId)) {
-            analysisRecord.jsonConditionName := conditionTypes[jsonEvent.categoryId]
+        if (jsonEvent.HasOwnProp("categoryId") && conditionConfig.Has(jsonEvent.categoryId)) {
+            ; Use displayName for the condition name
+            analysisRecord.jsonConditionName := conditionConfig[jsonEvent.categoryId].displayName
         }
         if (jsonEvent.HasOwnProp("severity")) {
             analysisRecord.severity := jsonEvent.severity
@@ -4969,14 +5041,16 @@ UpdateButtonAppearance(buttonName) {
     jsonColor := "0xFFD700"
 
     if (hasMacro && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
+        global conditionConfig
         isJsonAnnotation := true
         jsonEvent := macroEvents[layerMacroName][1]
-        typeName := StrTitle(conditionTypes[jsonEvent.categoryId])
+        ; Use displayName from conditionConfig
+        typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
         ; Remove mode from text - will be shown visually via letterboxing
         jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
 
-        if (conditionColors.Has(jsonEvent.categoryId)) {
-            jsonColor := conditionColors[jsonEvent.categoryId]
+        if (conditionConfig.Has(jsonEvent.categoryId)) {
+            jsonColor := conditionConfig[jsonEvent.categoryId].color
         }
     }
 
@@ -5270,40 +5344,67 @@ GuiResize(thisGui, minMax, width, height) {
 ; ===== LAYER SYSTEM =====
 ; ===== CONTEXT MENUS =====
 ShowContextMenu(buttonName, *) {
-    global currentLayer, conditionTypes, severityLevels
-    
+    global currentLayer, conditionConfig, severityLevels, legacyConditionNameToId
+
     contextMenu := Menu()
-    
-    contextMenu.Add("🎥 Record Macro", (*) => F9_RecordingOnly())  ; Use F9 handler
+
     contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
     contextMenu.Add("🏷️ Edit Label", (*) => EditCustomLabel(buttonName))
     contextMenu.Add()
-    
+
     jsonMainMenu := Menu()
-    
-    for id, typeName in conditionTypes {
+
+    ; Legacy workflow labels as functional defaults
+    ; Shows old workflow names (Smudge, Glare, etc.) but uses actual Label 1-9 presets
+    legacyLabels := [
+        {name: "Smudge", id: 1},
+        {name: "Glare", id: 2},
+        {name: "Splashes", id: 3},
+        {name: "Partial Blockage", id: 4},
+        {name: "Full Blockage", id: 5},
+        {name: "Light Flare", id: 6},
+        {name: "Rain", id: 7},
+        {name: "Haze", id: 8},
+        {name: "Snow", id: 9}
+    ]
+
+    for item in legacyLabels {
         typeMenu := Menu()
-        
+        legacyName := item.name
+        labelId := item.id
+
+        ; Get the actual displayName from config (Label 1, Label 2, etc.)
+        actualLabelName := conditionConfig[labelId].displayName
+
         for severity in severityLevels {
-            presetName := StrTitle(typeName) . " (" . StrTitle(severity) . ")"
+            ; Use the actual label name for the preset (Label 1, Label 2, etc.)
+            presetName := actualLabelName . " (" . StrTitle(severity) . ")"
             typeMenu.Add(StrTitle(severity), AssignJsonAnnotation.Bind(buttonName, presetName))
         }
-        
-        jsonMainMenu.Add("🎨 " . StrTitle(typeName), typeMenu)
+
+        ; Show legacy name in menu, but it functions with the actual label preset
+        jsonMainMenu.Add("🎨 " . legacyName, typeMenu)
     }
-    
+
     contextMenu.Add("🏷️ JSON Profiles", jsonMainMenu)
     contextMenu.Add()
-    
+
     contextMenu.Add("🖼️ Add Thumbnail", (*) => AddThumbnail(buttonName))
     contextMenu.Add("🗑️ Remove Thumbnail", (*) => RemoveThumbnail(buttonName))
-    
+
     contextMenu.Show()
 }
 
 ClearMacro(buttonName) {
     global macroEvents, currentLayer, buttonLetterboxingStates
     layerMacroName := "L" . currentLayer . "_" . buttonName
+
+    ; Check if macro exists before prompting
+    if (!macroEvents.Has(layerMacroName)) {
+        UpdateStatus("⚠️ No macro to clear for " . buttonName)
+        return
+    }
+
     if (MsgBox("Clear macro for " . buttonName . " on Layer " . currentLayer . "?", "Confirm Clear", "YesNo Icon!") = "Yes") {
         macroEvents.Delete(layerMacroName)
         if (buttonLetterboxingStates.Has(layerMacroName))
@@ -5855,8 +5956,8 @@ ToggleAnnotationMode() {
 
 ; ===== UPDATE EXISTING JSON MACROS =====
 UpdateExistingJSONMacros(newMode) {
-    global macroEvents, conditionTypes, buttonNames, totalLayers, jsonAnnotations, currentLayer
-    
+    global macroEvents, conditionConfig, buttonNames, totalLayers, jsonAnnotations, currentLayer
+
     updatedCount := 0
     Loop totalLayers {
         layer := A_Index
@@ -5864,7 +5965,8 @@ UpdateExistingJSONMacros(newMode) {
             layerMacroName := "L" . layer . "_" . buttonName
             if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
                 jsonEvent := macroEvents[layerMacroName][1]
-                typeName := StrTitle(conditionTypes[jsonEvent.categoryId])
+                ; Use displayName from conditionConfig
+                typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
                 presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
                 
                 if (jsonAnnotations.Has(presetName)) {
@@ -5904,30 +6006,31 @@ EditCustomLabel(buttonName) {
 }
 
 AssignJsonAnnotation(buttonName, presetName, *) {
-    global currentLayer, macroEvents, jsonAnnotations, conditionTypes, annotationMode
-    
+    global currentLayer, macroEvents, jsonAnnotations, conditionConfig, annotationMode
+
     layerMacroName := "L" . currentLayer . "_" . buttonName
-    
+
     ; Use current annotation mode
     currentMode := annotationMode
     fullPresetName := presetName . (currentMode = "Narrow" ? " Narrow" : "")
-    
+
     ; Debug logging
     UpdateStatus("🎨 Assigning " . fullPresetName . " in " . currentMode . " mode")
-    
+
     if (jsonAnnotations.Has(fullPresetName)) {
         parts := StrSplit(presetName, " (")
         typeName := parts[1]
         severity := StrLower(SubStr(parts[2], 1, -1))
-        
+
+        ; Find categoryId by matching displayName in conditionConfig
         categoryId := 0
-        for id, name in conditionTypes {
-            if (StrTitle(name) = typeName) {
+        for id, config in conditionConfig {
+            if (config.displayName = typeName) {
                 categoryId := id
                 break
             }
         }
-        
+
         if (categoryId > 0) {
             macroEvents[layerMacroName] := [{
                 type: "jsonAnnotation",
@@ -5944,7 +6047,7 @@ AssignJsonAnnotation(buttonName, presetName, *) {
         }
     } else {
         UpdateStatus("❌ Could not find JSON annotation for " . fullPresetName)
-        
+
         ; Debug: Show what's available
         UpdateStatus("🔍 Available modes: Wide=" . jsonAnnotations.Has(presetName) . ", Narrow=" . jsonAnnotations.Has(presetName . " Narrow"))
     }
@@ -5978,25 +6081,31 @@ RemoveThumbnail(buttonName) {
 }
 
 InitializeJsonAnnotations() {
-    global jsonAnnotations, conditionTypes, severityLevels
-    
+    global jsonAnnotations, conditionConfig, severityLevels
+
     ; Clear any existing annotations
     jsonAnnotations := Map()
-    
+
     ; Create annotations for all condition types and severity levels in both modes
-    for id, typeName in conditionTypes {
+    labelCount := 0
+    for id, config in conditionConfig {
+        ; Use displayName for the preset name (e.g., "Label 1", "Label 2")
+        labelName := config.displayName
+        labelCount++
+
         for severity in severityLevels {
-            presetName := StrTitle(typeName) . " (" . StrTitle(severity) . ")"
-            
+            presetName := labelName . " (" . StrTitle(severity) . ")"
+
             ; Create Wide mode annotation
             jsonAnnotations[presetName] := BuildJsonAnnotation("Wide", id, severity)
-            
-            ; Create Narrow mode annotation  
+
+            ; Create Narrow mode annotation
             jsonAnnotations[presetName . " Narrow"] := BuildJsonAnnotation("Narrow", id, severity)
         }
     }
-    
-    UpdateStatus("📋 JSON annotations initialized for " . jsonAnnotations.Count . " presets")
+
+    ; Should be: 9 labels × 3 severities × 2 modes = 54 presets
+    UpdateStatus("📋 JSON: " . labelCount . " labels × 3 severities × 2 modes = " . jsonAnnotations.Count . " presets")
 }
 
 BuildJsonAnnotation(mode, categoryId, severity) {
