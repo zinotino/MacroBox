@@ -303,9 +303,13 @@ global currentMacro := ""
 global macroEvents := Map()
 global macrosInitialized := false
 global buttonGrid := Map()
-global buttonLabels := Map()
-global buttonPictures := Map()
-global buttonCustomLabels := Map()
+  global buttonLabels := Map()
+  global buttonPictures := Map()
+  global buttonCustomLabels := Map()
+  global loopSettings := Map()       ; Per-macro loop configuration
+  global activeLoops := Map()        ; Currently active loop timers per macro
+  global loopIndicators := Map()     ; Per-button visual indicator for auto mode (border rectangles)
+  global activeAutoByButton := Map() ; Per-button active auto-loop state (for visuals)
 global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
@@ -363,9 +367,9 @@ GetScaleFactor() {
     return Min(scaleX, scaleY)
 }
 
-; ===== LAYER SYSTEM (REMOVED - SINGLE LAYER ONLY) =====
+; ===== MACRO INDEXING (SINGLE LAYER) =====
+; Kept as a variable for backward-compatible macro keys (L1_ButtonName)
 global currentLayer := 1
-global totalLayers := 1
 
 ; ===== TIMING CONFIGURATION =====
 global boxDrawDelay := 50
@@ -4089,7 +4093,7 @@ SafeExecuteMacroByKey(buttonName) {
 }
 
 ExecuteMacro(buttonName) {
-    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay
+    global awaitingAssignment, currentLayer, macroEvents, playback, focusDelay, loopSettings, activeLoops
 
     ; Double-check hotkey protection
     if (buttonName == "CapsLock" || buttonName == "f" || buttonName == "Space") {
@@ -4101,6 +4105,26 @@ ExecuteMacro(buttonName) {
         AssignToButton(buttonName)
         return
     }
+
+    layerMacroName := "L" . currentLayer . "_" . buttonName
+
+    ; If a loop is already active for this macro, treat click as stop
+    if (activeLoops.Has(layerMacroName)) {
+        StopMacroLoop(layerMacroName, buttonName)
+        return
+    }
+
+    ; If loop settings exist for this macro, start loop instead of single run
+    if (loopSettings.Has(layerMacroName)) {
+        StartMacroLoop(layerMacroName, buttonName)
+        return
+    }
+
+    ExecuteMacroOnce(buttonName)
+}
+
+ExecuteMacroOnce(buttonName) {
+    global currentLayer, macroEvents, playback, focusDelay
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
     if (!macroEvents.Has(layerMacroName) || macroEvents[layerMacroName].Length == 0) {
@@ -4722,7 +4746,7 @@ DestroyButtonGrid() {
 }
 
 CreateButtonGrid() {
-    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, windowWidth, windowHeight, gridOutline
+	    global mainGui, buttonGrid, buttonLabels, buttonPictures, buttonNames, darkMode, windowWidth, windowHeight, gridOutline, loopIndicators
 
     ; Calculate scale based on current window size
     scale := GetScaleFactor()
@@ -4743,27 +4767,39 @@ CreateButtonGrid() {
     labelHeight := Round(20 * scale)
     thumbHeight := buttonHeight - labelHeight - Round(1 * scale)
 
-    outlineThickness := Round(2 * scale)
-    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
-                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
-    
-    for row in [0, 1, 2, 3] {
-        for col in [0, 1, 2] {
-            index := row * 3 + col + 1
-            if (index > 12)
-                continue
-
-            buttonName := buttonNames[index]
-            ; Position using simple grid layout
-            x := margin + col * (buttonWidth + padding)
-            y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
-
-            ; NIGHT MODE - dark background for all buttons
-            button := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x201", "")
-            button.Opt("+Background0x2A2A2A")
-            button.SetFont("s" . Round(9 * scale), "cWhite")
-
-            picture := mainGui.Add("Picture", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x10E Hidden")
+	    outlineThickness := Round(2 * scale)
+	    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
+	                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
+	    
+		    for row in [0, 1, 2, 3] {
+		        for col in [0, 1, 2] {
+		        index := row * 3 + col + 1
+		        if (index > 12)
+		            continue
+		
+		        buttonName := buttonNames[index]
+		        ; Position using simple grid layout
+		        x := margin + col * (buttonWidth + padding)
+		        y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
+		
+			        ; Auto-mode border: full tile rectangle behind inner button (hidden by default)
+			        border := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(y) . " w" . Floor(buttonWidth) . " h" . Floor(thumbHeight) . " 0x201", "")
+		        border.BackColor := darkMode ? "0x2A2A2A" : "0xF8F8F8"
+		        border.Visible := false
+		
+		        ; Inner button inset to create a visible ring when border color changes
+		        borderMargin := Max(3, Round(3 * scale))
+		        btnX := x + borderMargin
+		        btnY := y + borderMargin
+		        btnW := buttonWidth - (borderMargin * 2)
+		        btnH := thumbHeight - (borderMargin * 2)
+		
+			        ; NIGHT MODE - dark background for all buttons (no OS border, center text vertically)
+			        button := mainGui.Add("Text", "x" . Floor(btnX) . " y" . Floor(btnY) . " w" . Floor(btnW) . " h" . Floor(btnH) . " 0x201", "")
+			        button.Opt("+Background0x2A2A2A")
+			        button.SetFont("s" . Round(9 * scale), "cWhite")
+		
+			        picture := mainGui.Add("Picture", "x" . Floor(btnX) . " y" . Floor(btnY) . " w" . Floor(btnW) . " h" . Floor(btnH) . " 0x10E Hidden")
 
             ; Label showing both Numpad and CapsLock+key hotkeys
             simpleName := StrReplace(StrReplace(StrReplace(buttonName, "Num", ""), "Dot", "."), "Mult", "*")
@@ -4783,15 +4819,16 @@ CreateButtonGrid() {
                 case "NumDot": wasdKey := "X"
                 case "NumMult": wasdKey := "C"
             }
-            labelText := "Num " . simpleName . " / Caps+" . wasdKey
-            labelY := y + thumbHeight + Round(1 * scale)
-            label := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(labelY) . " w" . Floor(buttonWidth) . " h" . Floor(labelHeight) . " Center BackgroundTrans", labelText)
-            label.Opt("cWhite")
-            label.SetFont("s" . Round(8 * scale) . " bold")
-            
-            buttonGrid[buttonName] := button
-            buttonLabels[buttonName] := label
-            buttonPictures[buttonName] := picture
+				        labelText := "Num " . simpleName . " / Caps+" . wasdKey
+				        labelY := y + thumbHeight + Round(1 * scale)
+				        label := mainGui.Add("Text", "x" . Floor(x) . " y" . Floor(labelY) . " w" . Floor(buttonWidth) . " h" . Floor(labelHeight) . " Center BackgroundTrans", labelText)
+	        label.Opt("cWhite")
+	        label.SetFont("s" . Round(8 * scale) . " bold")
+
+			        buttonGrid[buttonName] := button
+			        buttonLabels[buttonName] := label
+			        buttonPictures[buttonName] := picture
+			        loopIndicators[buttonName] := border
             
             button.OnEvent("Click", HandleButtonClick.Bind(buttonName))
             button.OnEvent("ContextMenu", HandleContextMenu.Bind(buttonName))
@@ -4804,7 +4841,7 @@ CreateButtonGrid() {
 }
 
 ResizeButtonGrid() {
-    global buttonGrid, buttonLabels, buttonPictures, buttonNames, windowWidth, windowHeight, gridOutline, mainGui
+	    global buttonGrid, buttonLabels, buttonPictures, buttonNames, windowWidth, windowHeight, gridOutline, mainGui, loopIndicators
 
     ; Disable redrawing to reduce flicker
     static WM_SETREDRAW := 0x000B
@@ -4823,49 +4860,59 @@ ResizeButtonGrid() {
     gridWidth := windowWidth - (margin * 2)
     gridHeight := windowHeight - toolbarHeight - gridTopPadding - gridBottomPadding - (margin * 2)
 
-    ; Calculate button dimensions from available space
-    buttonWidth := Floor((gridWidth - padding * 2) / 3)
-    buttonHeight := Floor((gridHeight - padding * 3) / 4)
-    labelHeight := Round(20 * scale)
-    thumbHeight := buttonHeight - labelHeight - Round(1 * scale)
+	    ; Calculate button dimensions from available space
+	    buttonWidth := Floor((gridWidth - padding * 2) / 3)
+	    buttonHeight := Floor((gridHeight - padding * 3) / 4)
+	    labelHeight := Round(20 * scale)
+	    thumbHeight := buttonHeight - labelHeight - Round(1 * scale)
 
-    ; Move grid outline
-    outlineThickness := Round(2 * scale)
-    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
-                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
+		    ; Move grid outline
+	    outlineThickness := Round(2 * scale)
+	    gridOutline.Move(margin - outlineThickness, toolbarHeight + gridTopPadding + margin - outlineThickness,
+	                    gridWidth + (outlineThickness * 2), gridHeight + (outlineThickness * 2))
 
-    ; Move and resize existing controls
-    for row in [0, 1, 2, 3] {
-        for col in [0, 1, 2] {
-            index := row * 3 + col + 1
-            if (index > 12)
-                continue
-
-            buttonName := buttonNames[index]
-
-            ; Calculate position (same logic as CreateButtonGrid)
-            x := margin + col * (buttonWidth + padding)
-            y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
-            labelY := y + thumbHeight + Round(1 * scale)
-
-            ; Move existing controls instead of recreating them
-            if (buttonGrid.Has(buttonName)) {
-                buttonGrid[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
-                ; Update font size for the button
-                buttonGrid[buttonName].SetFont("s" . Round(9 * scale))
-            }
-
-            if (buttonPictures.Has(buttonName)) {
-                buttonPictures[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
-            }
-
-            if (buttonLabels.Has(buttonName)) {
-                buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
-                ; Update font size for the label
-                buttonLabels[buttonName].SetFont("s" . Round(8 * scale) . " bold")
-            }
-        }
-    }
+	    ; Move and resize existing controls
+	    for row in [0, 1, 2, 3] {
+	        for col in [0, 1, 2] {
+	            index := row * 3 + col + 1
+	            if (index > 12)
+	                continue
+	
+		        buttonName := buttonNames[index]
+		
+		        ; Calculate position (same logic as CreateButtonGrid)
+		        x := margin + col * (buttonWidth + padding)
+		        y := toolbarHeight + gridTopPadding + margin + row * (buttonHeight + padding)
+		        labelY := y + thumbHeight + Round(1 * scale)
+		
+		        borderMargin := Max(3, Round(3 * scale))
+		        btnX := x + borderMargin
+		        btnY := y + borderMargin
+		        btnW := buttonWidth - (borderMargin * 2)
+		        btnH := thumbHeight - (borderMargin * 2)
+		
+		        ; Move existing controls instead of recreating them
+			        if (loopIndicators.Has(buttonName)) {
+			            loopIndicators[buttonName].Move(Floor(x), Floor(y), Floor(buttonWidth), Floor(thumbHeight))
+			        }
+			
+			        if (buttonGrid.Has(buttonName)) {
+			            buttonGrid[buttonName].Move(Floor(btnX), Floor(btnY), Floor(btnW), Floor(btnH))
+			            ; Update font size for the button
+			            buttonGrid[buttonName].SetFont("s" . Round(9 * scale))
+			        }
+			
+			        if (buttonPictures.Has(buttonName)) {
+			            buttonPictures[buttonName].Move(Floor(btnX), Floor(btnY), Floor(btnW), Floor(btnH))
+			        }
+			
+			        if (buttonLabels.Has(buttonName)) {
+			            buttonLabels[buttonName].Move(Floor(x), Floor(labelY), Floor(buttonWidth), Floor(labelHeight))
+			            ; Update font size for the label
+			            buttonLabels[buttonName].SetFont("s" . Round(8 * scale) . " bold")
+			        }
+	        }
+	    }
 
     ; Re-enable redrawing and force a single refresh
     SendMessage(WM_SETREDRAW, 1, 0, mainGui)
@@ -4891,6 +4938,194 @@ HandleButtonClick(buttonName, *) {
 
 HandleContextMenu(buttonName, *) {
     ShowContextMenu(buttonName)
+}
+
+ShowLoopSettings(buttonName) {
+    global currentLayer, loopSettings
+
+    layerMacroName := "L" . currentLayer . "_" . buttonName
+
+    intervalMs := 5000
+    count := 0
+    isEnabled := loopSettings.Has(layerMacroName)
+
+    if (isEnabled) {
+        settings := loopSettings[layerMacroName]
+        if (settings.HasOwnProp("intervalMs"))
+            intervalMs := settings.intervalMs
+        if (settings.HasOwnProp("count"))
+            count := settings.count
+    }
+
+    intervalSeconds := Round(intervalMs / 1000.0, 1)
+
+    loopGui := Gui("+AlwaysOnTop", "Loop Settings - " . buttonName)
+    loopGui.SetFont("s11")
+
+    enableCheck := loopGui.Add("CheckBox", "w220 h24", "Enable auto mode for this button")
+    enableCheck.Value := isEnabled ? 1 : 0
+
+    loopGui.Add("Text", "y+10", "Interval (seconds, 0.5 - 10):")
+    intervalEdit := loopGui.Add("Edit", "w160 h26", intervalSeconds)
+
+    loopGui.Add("Text", "y+10", "Count (1-999, or 0 for infinite):")
+    countEdit := loopGui.Add("Edit", "w160 h26", count)
+
+    btnSave := loopGui.Add("Button", "Default w90 h28 y+14", "Save")
+    btnCancel := loopGui.Add("Button", "x+10 w90 h28", "Cancel")
+
+    btnSave.OnEvent("Click", (*) => (
+        LoopSettings_Save(loopGui, layerMacroName, intervalEdit, countEdit, buttonName, enableCheck)
+    ))
+    btnCancel.OnEvent("Click", (*) => loopGui.Destroy())
+
+    loopGui.Show()
+}
+
+LoopSettings_Save(loopGui, layerMacroName, intervalEdit, countEdit, buttonName, enableCheck) {
+    global loopSettings, activeLoops
+
+    ; If disabled, remove settings and any active loop for this button
+    if (!enableCheck.Value) {
+        if (activeLoops.Has(layerMacroName)) {
+            StopMacroLoop(layerMacroName, buttonName)
+        }
+                    if (loopSettings.Has(layerMacroName)) {
+                        loopSettings.Delete(layerMacroName)
+                    }
+        SaveConfig()
+        UpdateButtonAppearance(buttonName)
+        loopGui.Destroy()
+        return
+    }
+
+    intervalText := Trim(intervalEdit.Text)
+    countText := Trim(countEdit.Text)
+
+    intervalSec := intervalText != "" ? intervalText + 0.0 : 5.0
+    if (intervalSec < 0.5)
+        intervalSec := 0.5
+    if (intervalSec > 10)
+        intervalSec := 10
+
+    intervalMs := Round(intervalSec * 1000)
+
+    countVal := countText != "" ? Integer(countText) : 0
+    if (countVal < 0)
+        countVal := 0
+    if (countVal > 999)
+        countVal := 999
+
+    if (!loopSettings.Has(layerMacroName)) {
+        loopSettings[layerMacroName] := {intervalMs: intervalMs, count: countVal}
+    } else {
+        loopSettings[layerMacroName].intervalMs := intervalMs
+        loopSettings[layerMacroName].count := countVal
+    }
+
+    SaveConfig()
+    UpdateButtonAppearance(buttonName)
+    loopGui.Destroy()
+}
+
+StartMacroLoop(layerMacroName, buttonName) {
+    global loopSettings, activeLoops
+
+    if (!loopSettings.Has(layerMacroName)) {
+        ExecuteMacroOnce(buttonName)
+        return
+    }
+
+    settings := loopSettings[layerMacroName]
+    intervalMs := settings.HasOwnProp("intervalMs") ? settings.intervalMs : 1000
+    count := settings.HasOwnProp("count") ? settings.count : 0
+
+    if (intervalMs < 500)
+        intervalMs := 500
+    if (intervalMs > 10000)
+        intervalMs := 10000
+
+    loopState := {
+        buttonName: buttonName,
+        remaining: count,
+        timerFunc: 0
+    }
+
+    timerFunc := MacroLoopTick.Bind(layerMacroName)
+    loopState.timerFunc := timerFunc
+    activeLoops[layerMacroName] := loopState
+
+    SetTimer(timerFunc, intervalMs)
+
+    ; Run first execution immediately for responsiveness
+    MacroLoopTick(layerMacroName)
+}
+
+StopMacroLoop(layerMacroName, buttonName := "") {
+    global activeLoops
+
+    if (!activeLoops.Has(layerMacroName))
+        return
+
+    loopState := activeLoops[layerMacroName]
+    if (loopState.HasOwnProp("timerFunc") && loopState.timerFunc) {
+        try SetTimer(loopState.timerFunc, 0)
+    }
+
+    activeLoops.Delete(layerMacroName)
+
+    if (buttonName == "" && loopState.HasOwnProp("buttonName")) {
+        buttonName := loopState.buttonName
+    }
+
+    if (buttonName != "") {
+        UpdateButtonAppearance(buttonName)
+    }
+}
+
+StopAllMacroLoops() {
+    global activeLoops
+
+    for macroKey, loopState in activeLoops {
+        if (loopState.HasOwnProp("timerFunc") && loopState.timerFunc) {
+            try SetTimer(loopState.timerFunc, 0)
+        }
+
+        if (loopState.HasOwnProp("buttonName")) {
+            btnName := loopState.buttonName
+            UpdateButtonAppearance(btnName)
+        }
+    }
+
+    activeLoops.Clear()
+}
+
+MacroLoopTick(layerMacroName) {
+    global activeLoops, loopSettings
+
+    if (!activeLoops.Has(layerMacroName)) {
+        return
+    }
+
+    loopState := activeLoops[layerMacroName]
+
+    if (!loopSettings.Has(layerMacroName)) {
+        StopMacroLoop(layerMacroName, loopState.buttonName)
+        return
+    }
+
+    buttonName := loopState.buttonName
+
+    ExecuteMacroOnce(buttonName)
+
+    if (loopState.remaining > 0) {
+        loopState.remaining -= 1
+        if (loopState.remaining <= 0) {
+            StopMacroLoop(layerMacroName, buttonName)
+            return
+        }
+        activeLoops[layerMacroName] := loopState
+    }
 }
 
 ; ===== BUTTON APPEARANCE =====
@@ -5069,7 +5304,7 @@ SaveVisualizationThumbnailForButton(buttonName) {
 }
 
 UpdateButtonAppearance(buttonName) {
-    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, conditionTypes, conditionColors, buttonDisplayedHBITMAPs
+		    global buttonGrid, buttonPictures, buttonThumbnails, macroEvents, darkMode, currentLayer, conditionTypes, conditionColors, buttonDisplayedHBITMAPs, loopIndicators, loopSettings, buttonLabels
 
     if (!buttonGrid.Has(buttonName))
         return
@@ -5078,17 +5313,45 @@ UpdateButtonAppearance(buttonName) {
     picture := buttonPictures[buttonName]
     oldHbitmap := buttonDisplayedHBITMAPs.Has(buttonName) ? buttonDisplayedHBITMAPs[buttonName] : 0
     oldHbitmapValid := (oldHbitmap && IsHBITMAPValid(oldHbitmap))
-    layerMacroName := "L" . currentLayer . "_" . buttonName
+	    layerMacroName := "L" . currentLayer . "_" . buttonName
 
-    hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
+	    hasMacro := macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0
 
+	    ; ===== AUTO MODE VISUAL INDICATOR (BORDER + LABEL) =====
+	    hasLoopConfig := loopSettings.Has(layerMacroName)
+
+    if (buttonLabels.Has(buttonName)) {
+        try {
+	        if (hasLoopConfig) {
+	            buttonLabels[buttonName].SetFont(, "cFFFF00")
+	        } else {
+	            buttonLabels[buttonName].SetFont(, "cWhite")
+	        }
+        }
+    }
+
+	    if (loopIndicators.Has(buttonName)) {
+	        try {
+	            border := loopIndicators[buttonName]
+
+	            if (hasLoopConfig) {
+	                ; YELLOW ring when auto-mode is configured
+	                border.Opt("+Background0xFFFF00")
+	                border.Visible := true
+	            } else {
+	                ; Auto mode off - hide ring entirely
+	                border.Visible := false
+	            }
+	        }
+	    }
+	
     ; Keep simple label - already set during CreateButtonGrid, don't change it
-
+	
     events := hasMacro ? macroEvents[layerMacroName] : ""
     isJsonAnnotation := hasMacro && IsJsonProfileMacro(events)
     jsonInfo := ""
     jsonColor := "0xFFD700"
-
+	
     if (isJsonAnnotation) {
         global conditionConfig
         jsonEvent := events[1]
@@ -5096,7 +5359,7 @@ UpdateButtonAppearance(buttonName) {
         typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
         ; Remove mode from text - will be shown visually via letterboxing
         jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
-
+	
         if (conditionConfig.Has(jsonEvent.categoryId)) {
             jsonColor := conditionConfig[jsonEvent.categoryId].color
         }
@@ -5295,7 +5558,7 @@ UpdateButtonAppearance(buttonName) {
                     buttonDisplayedHBITMAPs[buttonName] := 0
                 }
             }
-        } else {
+	        } else {
             ; Empty button - no macro assigned
             picture.Visible := false
             button.Visible := true
@@ -5306,12 +5569,12 @@ UpdateButtonAppearance(buttonName) {
                 RemoveHBITMAPReference(oldHbitmap)
                 buttonDisplayedHBITMAPs[buttonName] := 0
             }
-        }
-
-        if (button.Visible)
-            button.Redraw()
-        if (picture.Visible)
-            picture.Redraw()
+	        }
+	
+	        if (button.Visible)
+	            button.Redraw()
+	        if (picture.Visible)
+	            picture.Redraw()
 
     } catch Error as e {
         ; Simple error handling with safety checks
@@ -5371,7 +5634,6 @@ GuiResize(thisGui, minMax, width, height) {
     SetTimer(resizeTimer, -50)
 }
 
-; ===== LAYER SYSTEM =====
 ; ===== CONTEXT MENUS =====
 ShowContextMenu(buttonName, *) {
     global currentLayer, conditionConfig, severityLevels, severityDisplayNames
@@ -5380,6 +5642,7 @@ ShowContextMenu(buttonName, *) {
 
     contextMenu.Add("🗑️ Clear Macro", (*) => ClearMacro(buttonName))
     contextMenu.Add("🏷️ Edit Label", (*) => EditCustomLabel(buttonName))
+    contextMenu.Add("Loop Settings", (*) => ShowLoopSettings(buttonName))
     contextMenu.Add()
 
     jsonMainMenu := Menu()
@@ -6228,35 +6491,33 @@ ToggleAnnotationMode() {
     FlushVizLog()
 }
 
-; ===== UPDATE EXISTING JSON MACROS =====
+; ===== UPDATE EXISTING JSON MACROS (SINGLE LAYER) =====
 UpdateExistingJSONMacros(newMode) {
-    global macroEvents, conditionConfig, buttonNames, totalLayers, jsonAnnotations, currentLayer
-
-    updatedCount := 0
-    Loop totalLayers {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
-                jsonEvent := macroEvents[layerMacroName][1]
-                ; Use displayName from conditionConfig
-                typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
-                presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
-                
-                if (jsonAnnotations.Has(presetName)) {
-                    ; Update the annotation
-                    jsonEvent.annotation := jsonAnnotations[presetName]
-                    jsonEvent.mode := newMode
-                    updatedCount++
-                    
-                    ; Update button appearance if it's on current layer
-                    if (layer == currentLayer) {
-                        UpdateButtonAppearance(buttonName)
-                    }
-                }
-            }
-        }
-    }
+	    global macroEvents, conditionConfig, buttonNames, jsonAnnotations, currentLayer
+	
+	    updatedCount := 0
+	    layer := 1
+	    for buttonName in buttonNames {
+	        layerMacroName := "L" . layer . "_" . buttonName
+	        if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
+	            jsonEvent := macroEvents[layerMacroName][1]
+	            ; Use displayName from conditionConfig
+	            typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
+	            presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
+	            
+	            if (jsonAnnotations.Has(presetName)) {
+	                ; Update the annotation
+	                jsonEvent.annotation := jsonAnnotations[presetName]
+	                jsonEvent.mode := newMode
+	                updatedCount++
+	                
+	                ; Update button appearance (single layer)
+	                if (layer == currentLayer) {
+	                    UpdateButtonAppearance(buttonName)
+	                }
+	            }
+	        }
+	    }
     
     if (updatedCount > 0) {
         SaveConfig()
@@ -6937,9 +7198,10 @@ ResetStatsFromSettings(parentGui) {
 ; ===== CONFIGURATION SAVE/LOAD SYSTEM =====
 SaveConfig() {
     startTick := A_TickCount
-    global currentLayer, macroEvents, configFile, totalLayers, buttonNames, buttonCustomLabels, annotationMode, workDir
+    global currentLayer, macroEvents, configFile, buttonNames, buttonCustomLabels, annotationMode, workDir
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
+    global loopSettings
     
     try {
         ; Ensure directories exist
@@ -6960,7 +7222,6 @@ SaveConfig() {
         
         ; Create manual INI content to avoid encoding issues
         configContent := "[General]`n"
-        configContent .= "CurrentLayer=" . currentLayer . "`n"
         configContent .= "AnnotationMode=" . annotationMode . "`n"
         configContent .= "LastSaved=" . A_Now . "`n`n"
         
@@ -7004,6 +7265,18 @@ SaveConfig() {
         configContent .= "firstBoxDelay=" . firstBoxDelay . "`n"
         configContent .= "menuWaitDelay=" . menuWaitDelay . "`n"
         configContent .= "mouseHoverDelay=" . mouseHoverDelay . "`n`n"
+
+        ; Add loop configuration section (per-macro)
+        if (loopSettings.Count > 0) {
+            configContent .= "[Loop]`n"
+            for macroKey, settings in loopSettings {
+                if (!settings.HasOwnProp("intervalMs") || !settings.HasOwnProp("count"))
+                    continue
+                configContent .= macroKey . "_IntervalMs=" . settings.intervalMs . "`n"
+                configContent .= macroKey . "_Count=" . settings.count . "`n"
+            }
+            configContent .= "`n"
+        }
 
         ; Add hotkeys section
         global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
@@ -7065,49 +7338,47 @@ SaveConfig() {
         configContent .= "[Macros]`n"
         savedMacros := 0
 
-        ; Build macro content manually to avoid encoding issues
-        Loop totalLayers {
-            layer := A_Index
-            for buttonName in buttonNames {
-                layerMacroName := "L" . layer . "_" . buttonName
-                if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                    eventsStr := ""
-                    eventCount := 0
-                    for event in macroEvents[layerMacroName] {
-                        eventCount++
-                        if (event.type == "jsonAnnotation") {
-                            if (eventCount > 1) eventsStr .= "|"
-                            eventsStr .= event.type . ",mode=" . event.mode . ",cat=" . event.categoryId . ",sev=" . event.severity
-                        } else if (event.type == "boundingBox") {
-                            conditionType := event.HasOwnProp("conditionType") ? event.conditionType : 1
-                            conditionName := event.HasOwnProp("conditionName") ? event.conditionName : "condition_1"
-                            isTagged := event.HasOwnProp("isTagged") ? event.isTagged : false
-                            if (eventCount > 1) eventsStr .= "|"
-                            eventsStr .= event.type . "," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . conditionType . ",name=" . conditionName . ",tagged=" . isTagged
-                        } else {
-                            if (eventCount > 1) eventsStr .= "|"
-                            ; Save key property for keyDown/keyUp events, then x,y coordinates
-                            keyValue := event.HasOwnProp("key") ? event.key : ""
-                            xValue := event.HasOwnProp("x") ? event.x : ""
-                            yValue := event.HasOwnProp("y") ? event.y : ""
-                            eventsStr .= event.type . "," . keyValue . "," . xValue . "," . yValue
-                        }
+        ; Build macro content manually to avoid encoding issues (single layer)
+        layer := 1
+        for buttonName in buttonNames {
+            layerMacroName := "L" . layer . "_" . buttonName
+            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
+                eventsStr := ""
+                eventCount := 0
+                for event in macroEvents[layerMacroName] {
+                    eventCount++
+                    if (event.type == "jsonAnnotation") {
+                        if (eventCount > 1) eventsStr .= "|"
+                        eventsStr .= event.type . ",mode=" . event.mode . ",cat=" . event.categoryId . ",sev=" . event.severity
+                    } else if (event.type == "boundingBox") {
+                        conditionType := event.HasOwnProp("conditionType") ? event.conditionType : 1
+                        conditionName := event.HasOwnProp("conditionName") ? event.conditionName : "condition_1"
+                        isTagged := event.HasOwnProp("isTagged") ? event.isTagged : false
+                        if (eventCount > 1) eventsStr .= "|"
+                        eventsStr .= event.type . "," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . conditionType . ",name=" . conditionName . ",tagged=" . isTagged
+                    } else {
+                        if (eventCount > 1) eventsStr .= "|"
+                        ; Save key property for keyDown/keyUp events, then x,y coordinates
+                        keyValue := event.HasOwnProp("key") ? event.key : ""
+                        xValue := event.HasOwnProp("x") ? event.x : ""
+                        yValue := event.HasOwnProp("y") ? event.y : ""
+                        eventsStr .= event.type . "," . keyValue . "," . xValue . "," . yValue
                     }
-                    if (eventsStr != "") {
-                        ; Add to manual content instead of using IniWrite
-                        configContent .= layerMacroName . "=" . eventsStr . "`n"
-                        savedMacros++
+                }
+                if (eventsStr != "") {
+                    ; Add to manual content instead of using IniWrite
+                    configContent .= layerMacroName . "=" . eventsStr . "`n"
+                    savedMacros++
 
-                        ; Save recordedMode if present
-                        if (macroEvents[layerMacroName].HasOwnProp("recordedMode")) {
-                            configContent .= layerMacroName . "_recordedMode=" . macroEvents[layerMacroName].recordedMode . "`n"
-                        }
+                    ; Save recordedMode if present
+                    if (macroEvents[layerMacroName].HasOwnProp("recordedMode")) {
+                        configContent .= layerMacroName . "_recordedMode=" . macroEvents[layerMacroName].recordedMode . "`n"
+                    }
 
-                        ; Save recordedCanvas if present
-                        if (macroEvents[layerMacroName].HasOwnProp("recordedCanvas")) {
-                            rc := macroEvents[layerMacroName].recordedCanvas
-                            configContent .= layerMacroName . "_recordedCanvas=" . rc.left . "," . rc.top . "," . rc.right . "," . rc.bottom . "," . rc.mode . "`n"
-                        }
+                    ; Save recordedCanvas if present
+                    if (macroEvents[layerMacroName].HasOwnProp("recordedCanvas")) {
+                        rc := macroEvents[layerMacroName].recordedCanvas
+                        configContent .= layerMacroName . "_recordedCanvas=" . rc.left . "," . rc.top . "," . rc.right . "," . rc.bottom . "," . rc.mode . "`n"
                     }
                 }
             }
@@ -7115,13 +7386,11 @@ SaveConfig() {
         
         ; Add debug section
         configContent .= "`n[Debug]`n"
-        Loop totalLayers {
-            layer := A_Index
-            for buttonName in buttonNames {
-                layerMacroName := "L" . layer . "_" . buttonName
-                if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
-                    configContent .= layerMacroName . "_Count=" . macroEvents[layerMacroName].Length . "`n"
-                }
+        layer := 1
+        for buttonName in buttonNames {
+            layerMacroName := "L" . layer . "_" . buttonName
+            if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length > 0) {
+                configContent .= layerMacroName . "_Count=" . macroEvents[layerMacroName].Length . "`n"
             }
         }
         
@@ -7139,7 +7408,7 @@ SaveConfig() {
 }
 
 LoadConfig() {
-    global currentLayer, macroEvents, configFile, totalLayers, buttonNames, buttonCustomLabels, annotationMode, modeToggleBtn
+	    global currentLayer, macroEvents, configFile, buttonNames, buttonCustomLabels, annotationMode, modeToggleBtn
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     
@@ -7177,14 +7446,8 @@ LoadConfig() {
                 key := Trim(SubStr(line, 1, equalPos - 1))
                 value := Trim(SubStr(line, equalPos + 1))
 
-                if (currentSection == "General") {
-                    if (key == "CurrentLayer") {
-                        potentialLayer := Integer(value)
-                        if (potentialLayer >= 1 && potentialLayer <= totalLayers)
-                            currentLayer := potentialLayer
-                        else
-                            currentLayer := 1  ; Reset to default if invalid
-                    } else if (key == "AnnotationMode") {
+	                if (currentSection == "General") {
+	                    if (key == "AnnotationMode") {
                         if (value == "Wide" || value == "Narrow")
                             annotationMode := value
                         else
@@ -7227,11 +7490,11 @@ LoadConfig() {
                     } else if (key == "mouseDragDelay") {
                         mouseDragDelay := Integer(value)
                     } else if (key == "mouseReleaseDelay") {
-                        mouseReleaseDelay := Integer(value)
-                    } else if (key == "betweenBoxDelay") {
-                        betweenBoxDelay := Integer(value)
-                    } else if (key == "keyPressDelay") {
-                        keyPressDelay := Integer(value)
+            mouseReleaseDelay := Integer(value)
+        } else if (key == "betweenBoxDelay") {
+            betweenBoxDelay := Integer(value)
+        } else if (key == "keyPressDelay") {
+            keyPressDelay := Integer(value)
                     } else if (key == "focusDelay") {
                         focusDelay := Integer(value)
                     } else if (key == "smartBoxClickDelay") {
@@ -7243,7 +7506,32 @@ LoadConfig() {
                     } else if (key == "menuWaitDelay") {
                         menuWaitDelay := Integer(value)
                     } else if (key == "mouseHoverDelay") {
-                        mouseHoverDelay := Integer(value)
+                    mouseHoverDelay := Integer(value)
+                }
+                } else if (currentSection == "Loop") {
+                    global loopSettings
+                    ; Keys look like: L1_Num7_IntervalMs or L1_Num7_Count
+                    if (RegExMatch(key, "^(L\d+_[A-Za-z0-9]+)_(IntervalMs|Count)$", &match)) {
+                        macroKey := match[1]
+                        settingType := match[2]
+                        if (!loopSettings.Has(macroKey)) {
+                            loopSettings[macroKey] := {intervalMs: 1000, count: 0}
+                        }
+                        if (settingType == "IntervalMs") {
+                            interval := Integer(value)
+                            if (interval < 500)
+                                interval := 500
+                            if (interval > 10000)
+                                interval := 10000
+                            loopSettings[macroKey].intervalMs := interval
+                        } else if (settingType == "Count") {
+                            count := Integer(value)
+                            if (count < 0)
+                                count := 0
+                            if (count > 999)
+                                count := 999
+                            loopSettings[macroKey].count := count
+                        }
                     }
                 } else if (currentSection == "Hotkeys") {
                     ; Load hotkey configuration
@@ -7516,42 +7804,40 @@ BuildMacroEventsFromString(serializedEvents) {
 }
 
 ParseMacrosFromConfig() {
-    global configFile, macroEvents, buttonNames, totalLayers, macrosInitialized
-
-    macrosLoaded := 0
-    macroEvents := Map()
-
-    Loop totalLayers {
-        layer := A_Index
-        for buttonName in buttonNames {
-            layerMacroName := "L" . layer . "_" . buttonName
-            macroString := IniRead(configFile, "Macros", layerMacroName, "")
-            if (macroString == "")
-                continue
-
-            events := BuildMacroEventsFromString(macroString)
-            if (events.Length == 0)
-                continue
-
-            macroEvents[layerMacroName] := events
-
-            recordedMode := IniRead(configFile, "Macros", layerMacroName . "_recordedMode", "")
-            if (recordedMode != "")
-                macroEvents[layerMacroName].recordedMode := recordedMode
-
-            recordedCanvasLine := IniRead(configFile, "Macros", layerMacroName . "_recordedCanvas", "")
-            if (recordedCanvasLine != "") {
-                canvas := ParseRecordedCanvasLine(recordedCanvasLine)
-                if (canvas)
-                    macroEvents[layerMacroName].recordedCanvas := canvas
-            }
-
-            macrosLoaded++
-        }
-    }
-
-    return macrosLoaded
-}
+	    global configFile, macroEvents, buttonNames, macrosInitialized
+	
+	    macrosLoaded := 0
+	    macroEvents := Map()
+	
+	    layer := 1
+	    for buttonName in buttonNames {
+	        layerMacroName := "L" . layer . "_" . buttonName
+	        macroString := IniRead(configFile, "Macros", layerMacroName, "")
+	        if (macroString == "")
+	            continue
+	
+	        events := BuildMacroEventsFromString(macroString)
+	        if (events.Length == 0)
+	            continue
+	
+	        macroEvents[layerMacroName] := events
+	
+	        recordedMode := IniRead(configFile, "Macros", layerMacroName . "_recordedMode", "")
+	        if (recordedMode != "")
+	            macroEvents[layerMacroName].recordedMode := recordedMode
+	
+	        recordedCanvasLine := IniRead(configFile, "Macros", layerMacroName . "_recordedCanvas", "")
+	        if (recordedCanvasLine != "") {
+	            canvas := ParseRecordedCanvasLine(recordedCanvasLine)
+	            if (canvas)
+	                macroEvents[layerMacroName].recordedCanvas := canvas
+	        }
+	
+	        macrosLoaded++
+	    }
+	
+	    return macrosLoaded
+	}
 
 ; ===== QUICK SAVE/LOAD SLOTS =====
 SaveToSlot(slotNumber) {
@@ -7899,6 +8185,7 @@ EmergencyStop() {
     recording := false
     playback := false
     awaitingAssignment := false
+    StopAllMacroLoops()
     
     try {
         SafeUninstallMouseHook()
@@ -8046,3 +8333,8 @@ InitializeJsonAnnotationsEx() {
 
 ; ===== START APPLICATION =====
 Main()
+
+
+
+
+
