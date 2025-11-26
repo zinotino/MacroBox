@@ -301,6 +301,7 @@ global awaitingAssignment := false
 global needsMacroStateSave := false
 global currentMacro := ""
 global macroEvents := Map()
+global macrosInitialized := false
 global buttonGrid := Map()
 global buttonLabels := Map()
 global buttonPictures := Map()
@@ -309,6 +310,11 @@ global mouseHook := 0
 global keyboardHook := 0
 global darkMode := true
 global resizeTimer := 0  ; Timer for debouncing resize events
+; Manual and macro click tracking
+global manualClickCount := 0              ; Global left-clicks outside macro playback/recording (this run)
+global manualClicksSinceLastFlush := 0    ; Manual clicks already recorded into stats (baseline)
+; Stats UI refresh interval (ms) – controls how often the Stats window recomputes aggregates
+global statsRefreshIntervalMs := 500
 ; ===== STATS SYSTEM GLOBALS =====
 global masterStatsCSV := ""
 global permanentStatsFile := ""
@@ -389,17 +395,27 @@ global annotationMode := "Wide"
 
 ; Factory defaults - single source of truth
 ; Generic defaults with blank names - users customize on first run
+; Each condition also has per-severity JSON templates (high/medium/low)
 GetDefaultConditionConfig() {
     return Map(
-        1, {name: "",  displayName: "Label 1",  color: "0xFF8C00", statKey: "condition_1"},
-        2, {name: "",  displayName: "Label 2",  color: "0xFFFF00", statKey: "condition_2"},
-        3, {name: "",  displayName: "Label 3",  color: "0x9932CC", statKey: "condition_3"},
-        4, {name: "",  displayName: "Label 4",  color: "0x32CD32", statKey: "condition_4"},
-        5, {name: "",  displayName: "Label 5",  color: "0x8B0000", statKey: "condition_5"},
-        6, {name: "",  displayName: "Label 6",  color: "0xFF0000", statKey: "condition_6"},
-        7, {name: "",  displayName: "Label 7",  color: "0xFF4500", statKey: "condition_7"},
-        8, {name: "",  displayName: "Label 8",  color: "0xADFF2F", statKey: "condition_8"},
-        9, {name: "",  displayName: "Label 9",  color: "0x00FFFF", statKey: "condition_9"}
+        1, {name: "",  displayName: "Condition 1",  color: "0xFF8C00", statKey: "condition_1"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        2, {name: "",  displayName: "Condition 2",  color: "0xFFFF00", statKey: "condition_2"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        3, {name: "",  displayName: "Condition 3",  color: "0x9932CC", statKey: "condition_3"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        4, {name: "",  displayName: "Condition 4",  color: "0x32CD32", statKey: "condition_4"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        5, {name: "",  displayName: "Condition 5",  color: "0x8B0000", statKey: "condition_5"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        6, {name: "",  displayName: "Condition 6",  color: "0xFF0000", statKey: "condition_6"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        7, {name: "",  displayName: "Condition 7",  color: "0xFF4500", statKey: "condition_7"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        8, {name: "",  displayName: "Condition 8",  color: "0xADFF2F", statKey: "condition_8"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" },
+        9, {name: "",  displayName: "Condition 9",  color: "0x00FFFF", statKey: "condition_9"
+           , jsonHigh: "", jsonMedium: "", jsonLow: "" }
     )
 }
 
@@ -409,44 +425,7 @@ global conditionConfig := GetDefaultConditionConfig()
 ; This map is kept ONLY for backward compatibility with old user data
 ; Users with old CSV files containing legacy terms (smudge, glare, etc.) can still load them
 ; New installations start with empty/generic labels
-global legacyConditionNameToId := Map(
-    ; Legacy work-specific terms (kept for backward compatibility only)
-    "smudge", 1,
-    "glare", 2,
-    "splashes", 3,
-    "partial_blockage", 4,
-    "full_blockage", 5,
-    "light_flare", 6,
-    "flare", 6,
-    "rain", 7,
-    "haze", 8,
-    "snow", 9,
-    ; Generic legacy terms
-    "label1", 1,
-    "label2", 2,
-    "label3", 3,
-    "label4", 4,
-    "label5", 5,
-    "label6", 6,
-    "label7", 7,
-    "label8", 8,
-    "label9", 9,
-    "clear", 0
-)
-
-; Legacy per-id count field names used in older executionData
-; Kept for backward compatibility with old CSV files only
-global legacyConditionCountFieldById := Map(
-    1, "smudge_count",
-    2, "glare_count",
-    3, "splashes_count",
-    4, "partial_blockage_count",
-    5, "full_blockage_count",
-    6, "light_flare_count",
-    7, "rain_count",
-    8, "haze_count",
-    9, "snow_count"
-)
+; Legacy condition alias maps removed – new installs use only generic condition names and statKeys
 
 ; Legacy Maps for backward compatibility (these reference conditionConfig)
 ; NOTE: These are now synced from conditionConfig and will be empty on fresh install
@@ -549,14 +528,51 @@ ResetAllConditionsToDefaults() {
 }
 
 global severityLevels := ["high", "medium", "low"]
+global severityDisplayNames := Map("high", "High", "medium", "Medium", "low", "Low")
+; Global enable/disable for each severity level (applies to all conditions)
+global severityGlobalEnabled := Map("high", true, "medium", true, "low", true)
+; Per-condition enable/disable flags for each severity (high/medium/low)
+; Keys: conditionId (Integer) -> Map(severity -> Bool)
+global conditionSeverityEnabled := Map()
+
+EnsureConditionSeverityMap(conditionId) {
+    global conditionSeverityEnabled, severityLevels
+
+    if (!conditionSeverityEnabled.Has(conditionId)) {
+        severityMap := Map()
+        for sev in severityLevels {
+            severityMap[sev] := true
+        }
+        conditionSeverityEnabled[conditionId] := severityMap
+    }
+}
+
+IsSeverityEnabled(conditionId, severity) {
+    global conditionSeverityEnabled, severityGlobalEnabled
+
+    ; First honor global enable/disable for this severity
+    if (IsObject(severityGlobalEnabled) && severityGlobalEnabled.Has(severity) && !severityGlobalEnabled[severity])
+        return false
+
+    if (!conditionSeverityEnabled.Has(conditionId))
+        return true
+    sevMap := conditionSeverityEnabled[conditionId]
+    return (sevMap.Has(severity) ? !!sevMap[severity] : true)
+}
+
+SetSeverityEnabled(conditionId, severity, enabled) {
+    EnsureConditionSeverityMap(conditionId)
+    sevMap := conditionSeverityEnabled[conditionId]
+    sevMap[severity] := !!enabled
+}
 
 ; ===== INTELLIGENT TIMING SYSTEM - UNIQUE DELAYS =====
-global smartBoxClickDelay := 45    ; Optimized for fast box drawing in intelligent system
-global smartMenuClickDelay := 100  ; Optimized for accurate menu selections in intelligent system
+global smartBoxClickDelay := 30    ; Optimized for faster box drawing
+global smartMenuClickDelay := 80   ; Optimized for quicker menu selections
 global mouseHoverDelay := 30
 global menuClickDelay := 120       ; Menu click delay for settings
-global firstBoxDelay := 180        ; Extra delay after first box in macro for UI stabilization
-global menuWaitDelay := 50         ; Wait time for dropdown menus (kept for reference)
+global firstBoxDelay := 120        ; Reduced extra delay after first box
+global menuWaitDelay := 40         ; Reduced wait time for dropdown menus
 
 ; ===== HOTKEY SETTINGS =====
 global hotkeyRecordToggle := "CapsLock & f"
@@ -1726,13 +1742,14 @@ ValidateCanvasCalibration() {
 ; ===== BOX EVENT EXTRACTION =====
 ExtractBoxEvents(macroEvents) {
     boxes := []
-    currentConditionType := 1  ; Default condition type
+    if (!IsObject(macroEvents))
+        return boxes
 
-    ; Look for boundingBox events and keypress assignments in MacroLauncherX44 format
-    for eventIndex, event in macroEvents {
-        ; Handle both Map and Object types
+    ; Trust conditionType stored on each boundingBox event (set during recording/load).
+    for event in macroEvents {
         eventType := ""
         hasProps := false
+
         if (Type(event) = "Map") {
             eventType := event.Has("type") ? event["type"] : ""
             hasProps := event.Has("left") && event.Has("top") && event.Has("right") && event.Has("bottom")
@@ -1742,52 +1759,19 @@ ExtractBoxEvents(macroEvents) {
         }
 
         if (eventType == "boundingBox" && hasProps) {
-            ; Calculate box dimensions (support both Map and Object)
             left := (Type(event) = "Map") ? event["left"] : event.left
             top := (Type(event) = "Map") ? event["top"] : event.top
             right := (Type(event) = "Map") ? event["right"] : event.right
             bottom := (Type(event) = "Map") ? event["bottom"] : event.bottom
 
-            ; Only include boxes that are reasonably sized
             if ((right - left) >= 5 && (bottom - top) >= 5) {
-                ; Check if conditionType is already stored in the event (from config load)
-                conditionType := currentConditionType
-                if ((Type(event) == "Map" && (event.Has("conditionType") || event.Has("conditionType"))) || (IsObject(event) && (event.HasOwnProp("conditionType") || event.HasOwnProp("conditionType")))) {
-                    conditionType := (Type(event) = "Map") ? (event.Has("conditionType") ? event["conditionType"] : event["conditionType"]) : (event.HasOwnProp("conditionType") ? event.conditionType : event.conditionType)
-                    currentConditionType := conditionType
-                } else {
-                    ; Look ahead for keypress events that assign condition type
-                    nextIndex := eventIndex + 1
-                    while (nextIndex <= macroEvents.Length) {
-                        nextEvent := macroEvents[nextIndex]
-
-                        ; Get next event type (support Map and Object)
-                        nextEventType := ""
-                if (Type(nextEvent) == "Map") {
-                            nextEventType := nextEvent.Has("type") ? nextEvent["type"] : ""
-                        } else if (IsObject(nextEvent)) {
-                            nextEventType := nextEvent.HasOwnProp("type") ? nextEvent.type : ""
-                        }
-
-                        ; Stop at next bounding box - keypress should be immediately after current box
-                        if (nextEventType == "boundingBox")
-                            break
-
-                        ; Found a keypress after this box - this assigns the condition type
-                        if (nextEventType == "keyDown") {
-                            nextKey := (Type(nextEvent) = "Map") ? (nextEvent.Has("key") ? nextEvent["key"] : "") : (nextEvent.HasOwnProp("key") ? nextEvent.key : "")
-                            if (RegExMatch(nextKey, "^\d$")) {
-                                keyNumber := Integer(nextKey)
-                                if (keyNumber >= 1 && keyNumber <= 9) {
-                                    conditionType := keyNumber
-                                    currentConditionType := keyNumber  ; Update current condition for subsequent boxes
-                                    break
-                                }
-                            }
-                        }
-
-                        nextIndex++
-                    }
+                cond := 1
+                if (Type(event) = "Map") {
+                    if (event.Has("conditionType"))
+                        cond := event["conditionType"]
+                } else if (IsObject(event)) {
+                    if (event.HasOwnProp("conditionType"))
+                        cond := event.conditionType
                 }
 
                 box := {
@@ -1795,7 +1779,7 @@ ExtractBoxEvents(macroEvents) {
                     top: top,
                     right: right,
                     bottom: bottom,
-                    conditionType: conditionType
+                    conditionType: cond
                 }
                 boxes.Push(box)
             }
@@ -1991,6 +1975,20 @@ DetectCanvasType() {
 global vizLogBuffer := []
 global vizLogPath := A_ScriptDir "\vizlog_debug.txt"
 global vizLoggingEnabled := false  ; Disable verbose viz logging by default to speed startup
+
+; Lightweight performance log (always enabled) for profiling startup/shutdown
+; Written as a plain text file in the same folder as this script.
+global perfLogPath := (A_ScriptDir "\perf_timing.txt")
+
+PerfLog(label, durationMs) {
+    global perfLogPath
+    line := A_Now . " | " . label . " | " . durationMs . " ms`n"
+    try {
+        FileAppend(line, perfLogPath, "UTF-8")
+    } catch {
+        ; ignore logging failures
+    }
+}
 
 VizLog(msg) {
     global vizLogBuffer, vizLoggingEnabled
@@ -2429,8 +2427,8 @@ Stats_GetCsvHeader() {
         header .= config.statKey . "_count,"
     }
 
-    ; Add clear_count and remaining columns
-    header .= "clear_count,annotation_details,execution_success,error_details`n"
+    ; Add clear_count, click counts, and remaining columns
+    header .= "clear_count,macro_clicks,manual_clicks,annotation_details,execution_success,error_details`n"
 
     return header
 }
@@ -2463,8 +2461,10 @@ Stats_BuildCsvRow(executionData) {
         row .= (executionData.Has(countFieldName) ? executionData[countFieldName] : 0) . ","
     }
 
-    ; Add clear_count and remaining columns
+    ; Add clear_count, click counts, and remaining columns
     row .= (executionData.Has("clear_count") ? executionData["clear_count"] : 0) . ","
+    row .= (executionData.Has("macro_clicks") ? executionData["macro_clicks"] : 0) . ","
+    row .= (executionData.Has("manual_clicks") ? executionData["manual_clicks"] : 0) . ","
     row .= (executionData.Has("annotation_details") ? executionData["annotation_details"] : "") . "," . (executionData.Has("execution_success") ? executionData["execution_success"] : "true") . ","
     row .= (executionData.Has("error_details") ? executionData["error_details"] : "") . "`n"
 
@@ -2494,8 +2494,8 @@ InitializeStatsSystem() {
     sessionId := "sess_" . FormatTime(A_Now, "yyyyMMdd_HHmmss")
     currentSessionId := sessionId
     InitializePermanentStatsFile()
-    ; Defer potentially heavy stats JSON load until after UI shows
-    SetTimer(LoadStatsFromJson, -50)
+    ; IMPORTANT: Do NOT load stats JSON here.
+    ; We keep startup fast and only load stats on demand (e.g., when opening the Stats menu).
     try {
         UpdateStatus("📊 Stats system initialized")
     } catch {
@@ -2558,8 +2558,10 @@ Stats_CreateEmptyStatsMap() {
     stats["user_summary"] := Map()
     stats["distinct_user_count"] := 0
     stats["executions_per_hour"] := 0
-    stats["most_used_button"] := ""
-    stats["most_active_layer"] := ""
+    stats["macro_clicks"] := 0
+    stats["manual_clicks"] := 0
+    stats["macro_clicks_per_hour"] := 0
+    stats["manual_clicks_per_hour"] := 0
     stats["condition_totals"] := Map()
 
     ; Initialize condition stats dynamically from conditionConfig
@@ -2614,17 +2616,6 @@ Stats_IncrementConditionCount(stats, condition_name, prefix := "json_") {
             return
         }
     }
-
-    ; Legacy alias fallback (e.g., "smudge", "glare", etc.)
-    global legacyConditionNameToId
-    nameLower := StrLower(String(condition_name))
-    if (legacyConditionNameToId.Has(nameLower)) {
-        conditionId := legacyConditionNameToId[nameLower]
-        if (conditionConfig.Has(conditionId)) {
-            stats[prefix . conditionConfig[conditionId].statKey]++
-            return
-        }
-    }
 }
 
 Stats_IncrementConditionCountDirect(executionData, condition_name) {
@@ -2647,7 +2638,7 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
         }
     }
 
-    ; Try as condition name (check both name and statKey)
+    ; Try as condition name (check internal name, statKey, and displayName)
     for id, config in conditionConfig {
         if (config.name != "" && StrLower(config.name) == StrLower(condition_name)) {
             fieldName := config.statKey . "_count"
@@ -2659,15 +2650,8 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
             executionData[fieldName]++
             return
         }
-    }
-
-    ; Legacy alias fallback (e.g., "smudge", "glare", etc.)
-    global legacyConditionNameToId
-    nameLower := StrLower(String(condition_name))
-    if (legacyConditionNameToId.Has(nameLower)) {
-        conditionId := legacyConditionNameToId[nameLower]
-        if (conditionConfig.Has(conditionId)) {
-            fieldName := conditionConfig[conditionId].statKey . "_count"
+        if (config.HasOwnProp("displayName") && StrLower(config.displayName) == StrLower(condition_name)) {
+            fieldName := config.statKey . "_count"
             executionData[fieldName]++
             return
         }
@@ -2753,8 +2737,6 @@ QueryUserStats(filterOptions := "") {
     stats := Stats_CreateEmptyStatsMap()
     sessionActiveMap := Map()
     executionTimes := []
-    buttonCount := Map()
-    layerCount := Map()
 
     ; Determine date filter
     dateFilter := filterOptions.Has("dateFilter") ? filterOptions["dateFilter"] : "all"
@@ -2820,6 +2802,8 @@ QueryUserStats(filterOptions := "") {
             session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
             execSessionId := executionData.Has("session_id") ? executionData["session_id"] : sessionId
             username := executionData.Has("username") ? executionData["username"] : currentUsername
+            macro_clicks := executionData.Has("macro_clicks") ? executionData["macro_clicks"] : 0
+            manual_clicks := executionData.Has("manual_clicks") ? executionData["manual_clicks"] : 0
 
             ; Track maximum active time per session
             if (!sessionActiveMap.Has(execSessionId) || session_active_time > sessionActiveMap[execSessionId]) {
@@ -2829,11 +2813,13 @@ QueryUserStats(filterOptions := "") {
             ; Update user summary
             UpdateUserSummary(stats["user_summary"], username, total_boxes, execSessionId)
 
-            ; Aggregate basic stats
-            stats["total_executions"]++
-            stats["total_boxes"] += total_boxes
-            stats["total_execution_time"] += execution_time
-            executionTimes.Push(execution_time)
+            ; Aggregate basic stats (ignore session_end-only markers for execution counts)
+            if (execution_type != "session_end") {
+                stats["total_executions"]++
+                stats["total_boxes"] += total_boxes
+                stats["total_execution_time"] += execution_time
+                executionTimes.Push(execution_time)
+            }
 
             ; Count execution types
             if (execution_type == "clear") {
@@ -2844,19 +2830,15 @@ QueryUserStats(filterOptions := "") {
                 stats["macro_executions_count"]++
             }
 
-            ; Track button usage
-            if (macro_name != "") {
-                if (!buttonCount.Has(macro_name)) {
-                    buttonCount[macro_name] := 0
-                }
-                buttonCount[macro_name]++
+            ; Track macro clicks (per execution) for click-rate stats
+            if (macro_clicks > 0) {
+                stats["macro_clicks"] += macro_clicks
             }
 
-            ; Track layer usage
-            if (!layerCount.Has(layer)) {
-                layerCount[layer] := 0
+            ; Track manual clicks (per execution/session) for click-rate stats
+            if (manual_clicks > 0) {
+                stats["manual_clicks"] += manual_clicks
             }
-            layerCount[layer]++
 
             ; Track severity levels for JSON profiles
             if (execution_type == "json_profile" && severity_level != "") {
@@ -2871,16 +2853,10 @@ QueryUserStats(filterOptions := "") {
             }
 
             ; Aggregate condition counts dynamically (with legacy fallback)
-    global conditionConfig, legacyConditionCountFieldById
+    global conditionConfig
             for id, config in conditionConfig {
                 fieldName := config.statKey . "_count"
                 count := executionData.Has(fieldName) ? executionData[fieldName] : 0
-                if (count = 0 && legacyConditionCountFieldById.Has(id)) {
-                    legacyField := legacyConditionCountFieldById[id]
-                    if (executionData.Has(legacyField)) {
-                        count := executionData[legacyField]
-                    }
-                }
                 stats[config.statKey . "_total"] := stats[config.statKey . "_total"] + count
                 if (execution_type == "json_profile") {
                     stats["json_" . config.statKey] := stats["json_" . config.statKey] + count
@@ -2962,22 +2938,6 @@ QueryUserStats(filterOptions := "") {
         stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
     }
 
-    ; Find most used button and layer
-    maxButtonCount := 0
-    maxLayerCount := 0
-    for button, count in buttonCount {
-        if (count > maxButtonCount) {
-            maxButtonCount := count
-            stats["most_used_button"] := button
-        }
-    }
-    for layer, count in layerCount {
-        if (count > maxLayerCount) {
-            maxLayerCount := count
-            stats["most_active_layer"] := layer
-        }
-    }
-
     ; Cache today's stats if applicable
     if (dateFilter == "today") {
         global todayStatsCache, todayStatsCacheDate, todayStatsCacheInvalidated
@@ -3046,6 +3006,7 @@ UpdateUserSummary(userSummaryMap, username, totalBoxes, sessionId) {
 
 RecordExecutionStats(macroKey, executionStartTime, executionType, events, analysisRecord := "") {
     global breakMode, recording, annotationMode, totalActiveTime, lastActiveTime, sessionId, currentUsername
+    global manualClickCount, manualClicksSinceLastFlush
     eventCount := (IsObject(events) ? events.Length : 0)
     if (breakMode || recording) {
         return
@@ -3077,8 +3038,11 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
     executionData["annotation_details"] := ""
     executionData["execution_success"] := "true"
     executionData["error_details"] := ""
+    executionData["macro_clicks"] := 0
+    executionData["manual_clicks"] := 0
     if (executionType == "macro") {
         bbox_count := 0
+        macro_clicks := 0
         condition_counts_map := Map(1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 0, 0)
         for event in events {
             eventType := ""
@@ -3099,9 +3063,12 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
                 if (condition_counts_map.Has(degType)) {
                     condition_counts_map[degType]++
                 }
+            } else if (eventType == "mouseDown" || eventType == "mouseUp" || eventType == "click") {
+                macro_clicks++
             }
         }
         executionData["total_boxes"] := bbox_count
+        executionData["macro_clicks"] := macro_clicks
         ; Map counts into executionData using statKey (condition_1, condition_2, etc.)
         for id, config in conditionConfig {
             fieldName := config.statKey . "_count"
@@ -3157,6 +3124,20 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         executionData["clear_count"] := 1
         executionData["condition_assignments"] := "clear"
     }
+
+    ; Attach manual click delta since last stats flush so manual click tracking persists across sessions
+    try {
+        deltaManual := manualClickCount - manualClicksSinceLastFlush
+        if (deltaManual < 0) {
+            deltaManual := 0
+        }
+        if (deltaManual > 0) {
+            executionData["manual_clicks"] := deltaManual
+            manualClicksSinceLastFlush := manualClickCount
+        }
+    } catch {
+        ; Ignore any issues with manual click tracking to avoid impacting core stats
+    }
     result := AppendToCSV(executionData)
     if (result) {
         SaveStatsToJson()
@@ -3168,6 +3149,7 @@ global macroExecutionLog := []
 
 SaveSessionEndMarker() {
     global sessionId, currentUsername, annotationMode
+    global manualClickCount, manualClicksSinceLastFlush
 
     ; Only save if there's active time to preserve
     currentActiveTime := GetCurrentSessionActiveTime()
@@ -3193,6 +3175,20 @@ SaveSessionEndMarker() {
     executionData["execution_success"] := true
     executionData["error_details"] := ""
 
+    ; Flush any remaining manual clicks into this session-end marker
+    try {
+        deltaManual := manualClickCount - manualClicksSinceLastFlush
+        if (deltaManual < 0) {
+            deltaManual := 0
+        }
+        if (deltaManual > 0) {
+            executionData["manual_clicks"] := deltaManual
+            manualClicksSinceLastFlush := manualClickCount
+        }
+    } catch {
+        ; Safe-guard: don't let manual click tracking break session end saving
+    }
+
     ; Add condition counts (all zeros)
     for i, name in conditionTypes {
         executionData[name . "_count"] := 0
@@ -3204,20 +3200,13 @@ SaveSessionEndMarker() {
 }
 
 AppendToCSV(executionData) {
-    global macroExecutionLog, masterStatsCSV, permanentStatsFile
+    global macroExecutionLog, permanentStatsFile
     try {
         macroExecutionLog.Push(executionData)
         ; Invalidate today's stats cache when new data is added
         InvalidateTodayStatsCache()
 
         row := Stats_BuildCsvRow(executionData)
-
-        if (masterStatsCSV != "") {
-            if (!FileExist(masterStatsCSV)) {
-                Stats_EnsureStatsFile(masterStatsCSV, "UTF-8")
-            }
-            FileAppend(row, masterStatsCSV, "UTF-8")
-        }
 
         if (permanentStatsFile != "") {
             if (!FileExist(permanentStatsFile)) {
@@ -3419,6 +3408,13 @@ global statsControls := Map()
 
 ShowStatsMenu() {
     global masterStatsCSV, darkMode, currentSessionId, permanentStatsFile, statsGui, statsGuiOpen, statsControls
+    global macroExecutionLog
+
+    ; Ensure stats are loaded on-demand (lazy and only once per run)
+    if (!IsObject(macroExecutionLog) || macroExecutionLog.Length = 0) {
+        LoadStatsFromJson()
+    }
+
     if (statsGuiOpen) {
         CloseStatsMenu()
         return
@@ -3442,17 +3438,28 @@ ShowStatsMenu() {
     y += 15
     AddSectionDivider(statsGui, y, "GENERAL STATISTICS", 660)
     y += 15
-    AddHorizontalStatRowLive(statsGui, y, "Executions:", "all_exec", "today_exec")
-    y += 18
-    AddHorizontalStatRowLive(statsGui, y, "Boxes:", "all_boxes", "today_boxes")
-    y += 18
+    ; Reorganized: Active time and averages first, then counts
     AddHorizontalStatRowLive(statsGui, y, "Active Time:", "all_active_time", "today_active_time")
     y += 18
     AddHorizontalStatRowLive(statsGui, y, "Avg Time:", "all_avg_time", "today_avg_time")
     y += 18
-    AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
-    y += 12
+    AddHorizontalStatRowLive(statsGui, y, "Executions:", "all_exec", "today_exec")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Boxes:", "all_boxes", "today_boxes")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Manual Clicks:", "all_manual_clicks", "today_manual_clicks")
+    y += 18
+    AddHorizontalStatRowLive(statsGui, y, "Macro Clicks:", "all_macro_clicks", "today_macro_clicks")
+    y += 18
+    AddSectionDivider(statsGui, y, "TIME-BASED RATES", 660)
+    y += 15
     AddHorizontalStatRowLive(statsGui, y, "Exec/Hour:", "all_exec_rate", "today_exec_rate")
+    y += 14
+    AddHorizontalStatRowLive(statsGui, y, "Boxes/Hour:", "all_box_rate", "today_box_rate")
+    y += 14
+    AddHorizontalStatRowLive(statsGui, y, "Macro Clicks/Hour:", "all_macro_click_rate", "today_macro_click_rate")
+    y += 14
+    AddHorizontalStatRowLive(statsGui, y, "Manual Clicks/Hour:", "all_manual_click_rate", "today_manual_click_rate")
     y += 15
     AddSectionDivider(statsGui, y, "MACRO CONDITION BREAKDOWN", 660)
     y += 15
@@ -3484,17 +3491,17 @@ ShowStatsMenu() {
     y += 15
     AddSectionDivider(statsGui, y, "JSON SEVERITY BREAKDOWN", 660)
     y += 15
-    severityTypes := [["Low Severity", "severity_low"], ["Medium Severity", "severity_medium"], ["High Severity", "severity_high"]]
+    ; Use customizable severity display names in stats
+    global severityDisplayNames
+    severityTypes := [
+        [severityDisplayNames["low"], "severity_low"],
+        [severityDisplayNames["medium"], "severity_medium"],
+        [severityDisplayNames["high"], "severity_high"]
+    ]
     for sevInfo in severityTypes {
         AddHorizontalStatRowLive(statsGui, y, sevInfo[1] . ":", "all_" . sevInfo[2], "today_" . sevInfo[2])
         y += 12
     }
-    y += 15
-    AddSectionDivider(statsGui, y, "MACRO DETAILS", 660)
-    y += 15
-    AddHorizontalStatRowLive(statsGui, y, "Most Used Button:", "most_used_btn", "")
-    y += 12
-    AddHorizontalStatRowLive(statsGui, y, "Most Active Layer:", "most_active_layer", "")
     y += 15
     AddSectionDivider(statsGui, y, "DATA FILES", 660)
     y += 15
@@ -3518,7 +3525,9 @@ ShowStatsMenu() {
     statsGui.Show("w960 h" . (y + 60))
     statsGuiOpen := true
     UpdateStatsDisplay()
-    SetTimer(UpdateStatsDisplay, 500)
+    ; Use configurable refresh interval for stats updates
+    global statsRefreshIntervalMs
+    SetTimer(UpdateStatsDisplay, statsRefreshIntervalMs)
 }
 
 AddHorizontalStatRowLive(gui, y, label, allKey, todayKey) {
@@ -3563,6 +3572,18 @@ UpdateStatsDisplay() {
         allStats := ReadStatsFromMemory(false)
         todayStats := GetTodayStatsFromMemory()
 
+        ; Add live, unflushed manual clicks on top of persisted stats
+        global manualClickCount, manualClicksSinceLastFlush
+        liveManualDelta := manualClickCount - manualClicksSinceLastFlush
+        if (liveManualDelta > 0) {
+            if (!allStats.Has("manual_clicks"))
+                allStats["manual_clicks"] := 0
+            if (!todayStats.Has("manual_clicks"))
+                todayStats["manual_clicks"] := 0
+            allStats["manual_clicks"] += liveManualDelta
+            todayStats["manual_clicks"] += liveManualDelta
+        }
+
         ; Get current live time for all-time stats
         currentActiveTime := GetCurrentSessionActiveTime()
 
@@ -3584,22 +3605,35 @@ UpdateStatsDisplay() {
         liveTimeDelta := (currentActiveTime > lastExecutionTime) ? (currentActiveTime - lastExecutionTime) : 0
         effectiveAllActiveTime += liveTimeDelta
 
-        if (effectiveAllActiveTime > 5000) {
-            activeTimeHours := effectiveAllActiveTime / 3600000
-            allStats["boxes_per_hour"] := Round(allStats["total_boxes"] / activeTimeHours, 1)
-            allStats["executions_per_hour"] := Round(allStats["total_executions"] / activeTimeHours, 1)
+        activeTimeHours := Max(effectiveAllActiveTime / 3600000.0, 0.0003)  ; ~1 second minimum to avoid zeros
+        allStats["boxes_per_hour"] := (effectiveAllActiveTime > 0) ? Round(allStats["total_boxes"] / activeTimeHours, 1) : 0
+        allStats["executions_per_hour"] := (effectiveAllActiveTime > 0) ? Round(allStats["total_executions"] / activeTimeHours, 1) : 0
+        ; For macro click rate, use real macro_clicks if present; otherwise approximate as 2 clicks per box.
+        clicksForRate := 0
+        if (allStats.Has("macro_clicks") && allStats["macro_clicks"] > 0) {
+            clicksForRate := allStats["macro_clicks"]
+        } else {
+            clicksForRate := allStats["total_boxes"] * 2
         }
+        allStats["macro_clicks_per_hour"] := (effectiveAllActiveTime > 0) ? Round(clicksForRate / activeTimeHours, 1) : 0
+        allStats["manual_clicks_per_hour"] := (allStats.Has("manual_clicks") && effectiveAllActiveTime > 0) ? Round(allStats["manual_clicks"] / activeTimeHours, 1) : 0
         allStats["session_active_time"] := effectiveAllActiveTime
 
         ; For TODAY: QueryUserStats already includes current session time
         ; Just recalculate rates if needed
         effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
 
-        if (effectiveTodayActiveTime > 5000) {
-            activeTimeHours := effectiveTodayActiveTime / 3600000
-            todayStats["boxes_per_hour"] := Round(todayStats["total_boxes"] / activeTimeHours, 1)
-            todayStats["executions_per_hour"] := Round(todayStats["total_executions"] / activeTimeHours, 1)
+        activeTimeHours := Max(effectiveTodayActiveTime / 3600000.0, 0.0003)
+        todayStats["boxes_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayStats["total_boxes"] / activeTimeHours, 1) : 0
+        todayStats["executions_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayStats["total_executions"] / activeTimeHours, 1) : 0
+        todayClicksForRate := 0
+        if (todayStats.Has("macro_clicks") && todayStats["macro_clicks"] > 0) {
+            todayClicksForRate := todayStats["macro_clicks"]
+        } else {
+            todayClicksForRate := todayStats["total_boxes"] * 2
         }
+        todayStats["macro_clicks_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayClicksForRate / activeTimeHours, 1) : 0
+        todayStats["manual_clicks_per_hour"] := (todayStats.Has("manual_clicks") && effectiveTodayActiveTime > 0) ? Round(todayStats["manual_clicks"] / activeTimeHours, 1) : 0
         if (statsControls.Has("all_exec"))
             statsControls["all_exec"].Value := allStats["total_executions"]
         if (statsControls.Has("today_exec"))
@@ -3624,12 +3658,31 @@ UpdateStatsDisplay() {
             statsControls["all_exec_rate"].Value := allStats["executions_per_hour"]
         if (statsControls.Has("today_exec_rate"))
             statsControls["today_exec_rate"].Value := todayStats["executions_per_hour"]
+        if (statsControls.Has("all_macro_click_rate"))
+            statsControls["all_macro_click_rate"].Value := allStats.Has("macro_clicks_per_hour") ? allStats["macro_clicks_per_hour"] : 0
+        if (statsControls.Has("today_macro_click_rate"))
+            statsControls["today_macro_click_rate"].Value := todayStats.Has("macro_clicks_per_hour") ? todayStats["macro_clicks_per_hour"] : 0
+        if (statsControls.Has("all_manual_click_rate"))
+            statsControls["all_manual_click_rate"].Value := allStats.Has("manual_clicks_per_hour") ? allStats["manual_clicks_per_hour"] : 0
+        if (statsControls.Has("today_manual_click_rate"))
+            statsControls["today_manual_click_rate"].Value := todayStats.Has("manual_clicks_per_hour") ? todayStats["manual_clicks_per_hour"] : 0
+        ; Total click counts under GENERAL STATISTICS
+        if (statsControls.Has("all_macro_clicks"))
+            statsControls["all_macro_clicks"].Value := allStats.Has("macro_clicks") ? allStats["macro_clicks"] : 0
+        if (statsControls.Has("today_macro_clicks"))
+            statsControls["today_macro_clicks"].Value := todayStats.Has("macro_clicks") ? todayStats["macro_clicks"] : 0
+        if (statsControls.Has("all_manual_clicks"))
+            statsControls["all_manual_clicks"].Value := allStats.Has("manual_clicks") ? allStats["manual_clicks"] : 0
+        if (statsControls.Has("today_manual_clicks"))
+            statsControls["today_manual_clicks"].Value := todayStats.Has("manual_clicks") ? todayStats["manual_clicks"] : 0
         ; Dynamic condition rows: update any controls with matching prefixes
         for keyName, ctrl in statsControls {
-            if (SubStr(keyName, 1, 10) == "all_macro_") {
+            ; IMPORTANT: Exclude *_click_rate and *_clicks keys so we don't overwrite the
+            ; dedicated macro/ manual click stats that are calculated above.
+            if (SubStr(keyName, 1, 10) == "all_macro_" && keyName != "all_macro_click_rate" && keyName != "all_macro_clicks") {
                 suffix := SubStr(keyName, 11)
                 ctrl.Value := allStats.Has("macro_" . suffix) ? allStats["macro_" . suffix] : 0
-            } else if (SubStr(keyName, 1, 12) == "today_macro_") {
+            } else if (SubStr(keyName, 1, 12) == "today_macro_" && keyName != "today_macro_click_rate" && keyName != "today_macro_clicks") {
                 suffix := SubStr(keyName, 13)
                 ctrl.Value := todayStats.Has("macro_" . suffix) ? todayStats["macro_" . suffix] : 0
             } else if (SubStr(keyName, 1, 9) == "all_json_") {
@@ -3664,10 +3717,6 @@ UpdateStatsDisplay() {
             statsControls["all_severity_high"].Value := allStats["severity_high"]
         if (statsControls.Has("today_severity_high"))
             statsControls["today_severity_high"].Value := todayStats["severity_high"]
-        if (statsControls.Has("most_used_btn"))
-            statsControls["most_used_btn"].Value := allStats["most_used_button"]
-        if (statsControls.Has("most_active_layer"))
-            statsControls["most_active_layer"].Value := allStats["most_active_layer"]
     } catch as err {
     }
 }
@@ -3703,11 +3752,14 @@ ExportStatsData(statsMenuGui := "") {
 
 ResetAllStats() {
     global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
+    global manualClickCount, manualClicksSinceLastFlush
     result := MsgBox("This will reset ALL statistics (Today and All-Time).`n`nAll execution data will be permanently deleted.`n`n⚠️ Export your stats first if you want to keep them!`n`nReset all stats?", "Reset Statistics", "YesNo Icon!")
     if (result == "Yes") {
         try {
             macroExecutionLog := []
             InvalidateTodayStatsCache()
+            manualClickCount := 0
+            manualClicksSinceLastFlush := 0
             statsJsonFile := workDir . "\stats_log.json"
             if FileExist(statsJsonFile) {
                 FileDelete(statsJsonFile)
@@ -3727,15 +3779,19 @@ ResetAllStats() {
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
+        startTick := A_TickCount
+
         ; Initialize core systems
         InitializeStatsSystem()
         InitializeDirectories()
         InitializeVariables()
-        InitializeJsonAnnotations()
+        InitializeJsonAnnotationsEx()
         InitializeVisualizationSystem()
         
         ; Setup UI and interactions
         InitializeGui()
+        ; Install global mouse hook once so we can track manual left-clicks
+        InstallMouseHook()
         
         ; Load configuration FIRST (before visualization rendering)
         ; This ensures all config settings are available when buttons render
@@ -3750,12 +3806,12 @@ Main() {
         try {
             quickFromConfig := 0
             if (FileExist(configFile)) {
-                quickFromConfig := ParseMacrosFromConfig()
+                ; quickFromConfig := ParseMacrosFromConfig()  ; disabled
             }
-            quickFromState := LoadMacroState(true)
-            quickTotal := quickFromConfig + quickFromState
+            ; quickFromState := LoadMacroState(true)  ; disabled
+            quickTotal := 0
             if (quickTotal > 0) {
-                RefreshAllButtonAppearances()
+                ; RefreshAllButtonAppearances()
                 UpdateStatus("✅ Loaded " . quickTotal . " macros")
             }
         } catch {
@@ -3767,6 +3823,8 @@ Main() {
         }
 
         ; Startup complete
+        totalDuration := A_TickCount - startTick
+        PerfLog("Main_Startup", totalDuration)
 
         ; Setup time tracking and auto-save
         SetTimer(UpdateActiveTime, 5000)  ; Update active time every 5 seconds
@@ -3919,7 +3977,6 @@ F9_RecordingOnly(*) {
         UpdateStatus("❌ F9 FAILED: " . e.Message)
         ; Emergency state reset
         recording := false
-        SafeUninstallMouseHook()
         SafeUninstallKeyboardHook()
         ResetRecordingUI()
     }
@@ -3931,7 +3988,6 @@ ForceStartRecording() {
     
     ; Force clean state
     recording := false
-    SafeUninstallMouseHook()
     SafeUninstallKeyboardHook()
     
     ; Start fresh
@@ -3962,7 +4018,6 @@ ForceStopRecording() {
     }
 
     recording := false
-    SafeUninstallMouseHook()
     SafeUninstallKeyboardHook()
     pendingBoxForTagging := ""
 
@@ -4064,7 +4119,7 @@ ExecuteMacro(buttonName) {
     events := macroEvents[layerMacroName]
     startTime := A_TickCount
 
-    if (events.Length == 1 && events[1].type == "jsonAnnotation") {
+    if (IsJsonProfileMacro(events)) {
         ExecuteJsonAnnotation(events[1])
     } else {
         PlayEventsOptimized(events)
@@ -4149,11 +4204,7 @@ SafeUninstallMouseHook() {
 }
 
 MouseProc(nCode, wParam, lParam) {
-    global recording, currentMacro, macroEvents, mouseMoveThreshold, mouseMoveInterval, boxDragMinDistance
-    
-    if (nCode < 0 || !recording || currentMacro == "") {
-        return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
-    }
+    global recording, currentMacro, macroEvents, mouseMoveThreshold, mouseMoveInterval, boxDragMinDistance, playback, manualClickCount
     
     static WM_LBUTTONDOWN := 0x0201, WM_LBUTTONUP := 0x0202, WM_MOUSEMOVE := 0x0200
     static lastX := 0, lastY := 0, lastMoveTime := 0, isDrawingBox := false, boxStartX := 0, boxStartY := 0
@@ -4161,6 +4212,16 @@ MouseProc(nCode, wParam, lParam) {
     local x := NumGet(lParam, 0, "Int")
     local y := NumGet(lParam, 4, "Int")
     local timestamp := A_TickCount
+
+    ; Always track manual left-clicks when not recording and not in macro playback
+    if (nCode >= 0 && wParam == WM_LBUTTONDOWN && !recording && !playback) {
+        manualClickCount++
+    }
+
+    ; If not recording or no active macro, just pass through to next hook
+    if (nCode < 0 || !recording || currentMacro == "") {
+        return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UInt", wParam, "Ptr", lParam)
+    }
     
     if (!macroEvents.Has(currentMacro))
         macroEvents[currentMacro] := []
@@ -4379,13 +4440,7 @@ AssignToButton(buttonName) {
     UpdateButtonAppearance(buttonName)
     SaveConfig()  ; Immediate persist for new macro assignments
 
-    ; Persist an on-disk thumbnail so next startup loads visuals instantly
-    try {
-        SaveVisualizationThumbnailForButton(buttonName)
-    } catch {
-    }
-
-    ; PERFORMANCE: Queue async save instead of blocking here
+    ; Queue async save of simple macro state (events + viz metadata)
     global needsMacroStateSave
     needsMacroStateSave := true
     SetTimer(DoSaveMacroStateAsync, -200)
@@ -4841,6 +4896,7 @@ HandleContextMenu(buttonName, *) {
 ; ===== BUTTON APPEARANCE =====
 RefreshAllButtonAppearances() {
     global buttonNames
+    startTick := A_TickCount
     VizLog("=== RefreshAllButtonAppearances START ===")
     errorCount := 0
     successCount := 0
@@ -4866,6 +4922,8 @@ RefreshAllButtonAppearances() {
 
     VizLog("RefreshAllButtonAppearances complete: " . successCount . " success, " . errorCount . " errors")
     FlushVizLog()
+    duration := A_TickCount - startTick
+    PerfLog("RefreshAllButtonAppearances", duration)
 }
 
 ; Fast placeholder render (currently unused). Kept for potential future use.
@@ -5026,24 +5084,14 @@ UpdateButtonAppearance(buttonName) {
 
     ; Keep simple label - already set during CreateButtonGrid, don't change it
 
-    hasThumbnail := buttonThumbnails.Has(layerMacroName) && FileExist(buttonThumbnails[layerMacroName])
-    ; Fallback to default thumbnail path if mapping missing
-    if (!hasThumbnail) {
-        defaultThumb := thumbnailDir . "\\" . layerMacroName . ".png"
-        if (FileExist(defaultThumb)) {
-            hasThumbnail := true
-            buttonThumbnails[layerMacroName] := defaultThumb
-        }
-    }
-
-    isJsonAnnotation := false
+    events := hasMacro ? macroEvents[layerMacroName] : ""
+    isJsonAnnotation := hasMacro && IsJsonProfileMacro(events)
     jsonInfo := ""
     jsonColor := "0xFFD700"
 
-    if (hasMacro && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
+    if (isJsonAnnotation) {
         global conditionConfig
-        isJsonAnnotation := true
-        jsonEvent := macroEvents[layerMacroName][1]
+        jsonEvent := events[1]
         ; Use displayName from conditionConfig
         typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
         ; Remove mode from text - will be shown visually via letterboxing
@@ -5055,25 +5103,7 @@ UpdateButtonAppearance(buttonName) {
     }
 
     try {
-        if (hasThumbnail && !isJsonAnnotation) {
-            ; Use thumbnail if available
-            button.Visible := false
-            picture.Visible := true
-            picture.Text := ""
-            try {
-                picture.Value := buttonThumbnails[layerMacroName]
-            } catch {
-                picture.Visible := false
-                button.Visible := true
-                button.Opt("+Background0x3A3A3A")
-                button.SetFont("s7 bold", "cWhite")
-                button.Text := "MACRO`n" . macroEvents[layerMacroName].Length . " events`n(thumb error)"
-            }
-            if (oldHbitmap) {
-                RemoveHBITMAPReference(oldHbitmap)
-                buttonDisplayedHBITMAPs[buttonName] := 0
-            }
-        } else if (isJsonAnnotation) {
+        if (isJsonAnnotation) {
             ; JSON annotation display with visual letterboxing for Narrow mode
             jsonEvent := macroEvents[layerMacroName][1]
             isNarrowMode := (jsonEvent.mode = "Narrow")
@@ -5344,7 +5374,7 @@ GuiResize(thisGui, minMax, width, height) {
 ; ===== LAYER SYSTEM =====
 ; ===== CONTEXT MENUS =====
 ShowContextMenu(buttonName, *) {
-    global currentLayer, conditionConfig, severityLevels, legacyConditionNameToId
+    global currentLayer, conditionConfig, severityLevels, severityDisplayNames
 
     contextMenu := Menu()
 
@@ -5377,9 +5407,15 @@ ShowContextMenu(buttonName, *) {
         actualLabelName := conditionConfig[labelId].displayName
 
         for severity in severityLevels {
-            ; Use the actual label name for the preset (Label 1, Label 2, etc.)
-            presetName := actualLabelName . " (" . StrTitle(severity) . ")"
-            typeMenu.Add(StrTitle(severity), AssignJsonAnnotation.Bind(buttonName, presetName))
+            ; Skip disabled severities for this condition
+            if (!IsSeverityEnabled(labelId, severity))
+                continue
+
+            ; Use customizable display labels for severities, no extra suffixes
+            displaySeverity := severityDisplayNames.Has(severity) ? severityDisplayNames[severity] : StrTitle(severity)
+            presetName := actualLabelName . " (" . displaySeverity . ")"
+
+            typeMenu.Add(displaySeverity, AssignJsonAnnotation.Bind(buttonName, presetName))
         }
 
         ; Show legacy name in menu, but it functions with the actual label preset
@@ -5536,7 +5572,7 @@ ShowSettings() {
     settingsGui.SetFont("s10 Bold")
 
     ; Create tabbed interface
-    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h520", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys", "🎨 Conditions"])
+    tabs := settingsGui.Add("Tab3", "x20 y40 w520 h600", ["⚙️ Essential", "⚡ Execution Timing", "🎹 Hotkeys", "🎨 Conditions"])
 
     ; TAB 1: Essential Configuration
     tabs.UseTab(1)
@@ -5668,9 +5704,6 @@ ShowSettings() {
     btnSlow := settingsGui.Add("Button", "x390 y398 w100 h25", "🐌 Slow")
     btnSlow.OnEvent("Click", (*) => ApplyTimingPreset("slow", settingsGui))
 
-    ; Instructions
-    settingsGui.Add("Text", "x30 y435 w480 h50", "💡 Adjust timing delays to optimize macro execution speed vs reliability. Higher values = more reliable but slower execution. Use presets for quick setup.")
-
     ; TAB 3: Hotkeys
     tabs.UseTab(3)
     global hotkeyProfileActive, wasdHotkeyMap, wasdLabelsEnabled
@@ -5781,13 +5814,7 @@ ShowSettings() {
     btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
     hotkeyY += 36
 
-    ; Instructions
-    settingsGui.SetFont("s8 Bold c0x0066CC")
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h14", "💡 How to Set Hotkeys:")
-    hotkeyY += 18
-    settingsGui.SetFont("s8")
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h52", "• Click the 'Set' button next to any hotkey field`n• Press your desired key combination (e.g., Ctrl+Alt+K, Shift+F5, etc.)`n• The hotkey will be captured and displayed automatically`n• Click 'Apply Hotkeys' to save and activate all changes immediately")
-    settingsGui.SetFont("s9")
+    
 
     ; TAB 4: Conditions Configuration
     tabs.UseTab(4)
@@ -5818,19 +5845,13 @@ ShowSettings() {
         btnPickColor := settingsGui.Add("Button", "x305 y" . conditionY . " w80 h26", "🎨 Pick")
 
     ; Color hex display (editable for manual entry)
-    ; Reduce width slightly to fit live preview swatch
     colorDisplay := settingsGui.Add("Edit", "x395 y" . conditionY . " w90 h26 Center", config.color)
     colorDisplay.SetFont("s8")
 
-    ; Live color preview swatch
-    preview := settingsGui.Add("Text", "x" . (395 + 95) . " y" . (conditionY + 3) . " w20 h20 +Border", "")
-    preview.Opt("+Background" . config.color)
-
-        ; Store controls reference
+        ; Store controls reference (no separate preview swatch)
         conditionEditControls[conditionId] := {
             name: nameEdit,
             colorDisplay: colorDisplay,
-            preview: preview,
             currentColor: config.color
         }
         ; Update preview live when hex edit changes (freeze conditionId)
@@ -5851,17 +5872,270 @@ ShowSettings() {
 
     conditionY += 38
 
-    ; Instructions
-    settingsGui.SetFont("s8 Bold c0x0066CC")
-    settingsGui.Add("Text", "x30 y" . conditionY . " w480 h14", "💡 How to Customize:")
-    conditionY += 18
-    settingsGui.SetFont("s8")
-    settingsGui.Add("Text", "x30 y" . conditionY . " w480 h40", "• Edit the name field to customize how the label appears`n• Click 🎨 Color to pick a visualization color (common colors available)`n• Click 'Apply All Changes' to save and activate your customizations")
-    settingsGui.SetFont("s9")
+    
 
     ; Show settings window
-settingsGui.Show("w580 h580")
+    ; Condition JSON Execution Content editor
+
+    
+
+    btnEditConditionJson := settingsGui.Add("Button", "x30 y" . conditionY . " w260 h28", "✏️ Edit Condition JSON Content")
+    btnEditConditionJson.OnEvent("Click", (*) => EditConditionJsonTemplates(settingsGui))
+    settingsGui.SetFont("s9")
+settingsGui.Show("w580 h700")
 }
+
+
+EditConditionJsonTemplates(settingsGui) {
+    global conditionConfig
+
+    jsonGui := Gui("+Owner" . settingsGui.Hwnd, "Edit Condition JSON Content")
+    jsonGui.SetFont("s8")
+    jsonGui.Add("Text", "x10 y10 w560 h18", "Severity Labels and Levels:")
+
+    ; Severity label editors
+    global severityDisplayNames, severityGlobalEnabled
+    jsonGui.Add("Text", "x10 y35 w60 h18", "High:")
+    editLabelHigh := jsonGui.Add("Edit", "x70 y33 w120 h20", severityDisplayNames["high"])
+
+    jsonGui.Add("Text", "x210 y35 w60 h18", "Medium:")
+    editLabelMedium := jsonGui.Add("Edit", "x270 y33 w120 h20", severityDisplayNames["medium"])
+
+    jsonGui.Add("Text", "x410 y35 w60 h18", "Low:")
+    editLabelLow := jsonGui.Add("Edit", "x470 y33 w120 h20", severityDisplayNames["low"])
+
+    jsonGui.Add("Text", "x10 y60 w560 h18"
+        , "Rename labels and globally enable or disable severity levels.")
+
+    ; Global enable/disable for severity levels
+    chkGlobalHigh := jsonGui.Add("CheckBox", "x10 y80 w90 h18", "Use High")
+    chkGlobalHigh.Value := (severityGlobalEnabled.Has("high") && severityGlobalEnabled["high"]) ? 1 : 0
+
+    chkGlobalMedium := jsonGui.Add("CheckBox", "x110 y80 w100 h18", "Use Medium")
+    chkGlobalMedium.Value := (severityGlobalEnabled.Has("medium") && severityGlobalEnabled["medium"]) ? 1 : 0
+
+    chkGlobalLow := jsonGui.Add("CheckBox", "x230 y80 w90 h18", "Use Low")
+    chkGlobalLow.Value := (severityGlobalEnabled.Has("low") && severityGlobalEnabled["low"]) ? 1 : 0
+
+    ; Build dropdown list like: "1 - Condition 1"
+    items := []
+    firstId := 0
+    for id, cfg in conditionConfig {
+        label := (cfg.displayName != "" ? cfg.displayName : "Condition " . id)
+        itemText := id . " - " . label
+        items.Push(itemText)
+        if (firstId = 0)
+            firstId := id
+    }
+
+    jsonGui.Add("Text", "x10 y105 w70 h18", "Condition:")
+    ddl := jsonGui.Add("DropDownList", "x80 y103 w260 Choose1", items)
+
+    lblJsonHigh := jsonGui.Add("Text", "x10 y140 w80 h18", severityDisplayNames["high"] . ":")
+    editHigh := jsonGui.Add("Edit", "x90 y138 w480 h50 +WantReturn -VScroll", "")
+    chkHigh := jsonGui.Add("CheckBox", "x580 y138 w60 h20", "Use")
+
+    lblJsonMedium := jsonGui.Add("Text", "x10 y200 w80 h18", severityDisplayNames["medium"] . ":")
+    editMedium := jsonGui.Add("Edit", "x90 y198 w480 h50 +WantReturn -VScroll", "")
+    chkMedium := jsonGui.Add("CheckBox", "x580 y198 w60 h20", "Use")
+
+    lblJsonLow := jsonGui.Add("Text", "x10 y260 w80 h18", severityDisplayNames["low"] . ":")
+    editLow := jsonGui.Add("Edit", "x90 y258 w480 h50 +WantReturn -VScroll", "")
+    chkLow := jsonGui.Add("CheckBox", "x580 y258 w60 h20", "Use")
+
+    btnSave := jsonGui.Add("Button", "x310 y320 w90 h26", "Save")
+    btnReset := jsonGui.Add("Button", "x410 y320 w90 h26", "Reset")
+    btnClose := jsonGui.Add("Button", "x510 y320 w60 h26", "Close")
+
+    ddl.OnEvent("Change", LoadConditionJson.Bind(ddl, editHigh, editMedium, editLow, chkHigh, chkMedium, chkLow))
+    btnSave.OnEvent("Click", SaveConditionJson.Bind(ddl, editHigh, editMedium, editLow, editLabelHigh, editLabelMedium, editLabelLow, chkHigh, chkMedium, chkLow, lblJsonHigh, lblJsonMedium, lblJsonLow, chkGlobalHigh, chkGlobalMedium, chkGlobalLow))
+    btnReset.OnEvent("Click", ResetConditionJson.Bind(ddl, editHigh, editMedium, editLow, chkHigh, chkMedium, chkLow, editLabelHigh, editLabelMedium, editLabelLow, lblJsonHigh, lblJsonMedium, lblJsonLow, chkGlobalHigh, chkGlobalMedium, chkGlobalLow))
+    btnClose.OnEvent("Click", CloseJsonEditor.Bind(jsonGui))
+
+    ; Initial load for first condition
+    LoadConditionJson(ddl, editHigh, editMedium, editLow, chkHigh, chkMedium, chkLow)
+
+    jsonGui.Show("w650 h360")
+}
+
+LoadConditionJson(ddl, editHigh, editMedium, editLow, chkHigh := "", chkMedium := "", chkLow := "", *) {
+    global conditionConfig
+
+    if (ddl.Text = "")
+        return
+
+    parts := StrSplit(ddl.Text, " - ")
+    if (parts.Length < 1)
+        return
+
+    conditionId := Integer(parts[1])
+    if (!conditionConfig.Has(conditionId))
+        return
+
+    cfg := conditionConfig[conditionId]
+
+    ; Show current effective JSON (override if present, otherwise default)
+    editHigh.Value := (cfg.HasOwnProp("jsonHigh") && cfg.jsonHigh != ""
+        ? cfg.jsonHigh
+        : BuildJsonAnnotation("Wide", conditionId, "high"))
+
+    editMedium.Value := (cfg.HasOwnProp("jsonMedium") && cfg.jsonMedium != ""
+        ? cfg.jsonMedium
+        : BuildJsonAnnotation("Wide", conditionId, "medium"))
+
+    editLow.Value := (cfg.HasOwnProp("jsonLow") && cfg.jsonLow != ""
+        ? cfg.jsonLow
+        : BuildJsonAnnotation("Wide", conditionId, "low"))
+
+    ; If checkboxes were provided, reflect current enable/disable flags
+    if (IsObject(chkHigh))
+        chkHigh.Value := IsSeverityEnabled(conditionId, "high") ? 1 : 0
+    if (IsObject(chkMedium))
+        chkMedium.Value := IsSeverityEnabled(conditionId, "medium") ? 1 : 0
+    if (IsObject(chkLow))
+        chkLow.Value := IsSeverityEnabled(conditionId, "low") ? 1 : 0
+}
+
+SaveConditionJson(ddl, editHigh, editMedium, editLow, editLabelHigh := "", editLabelMedium := "", editLabelLow := "", chkHigh := "", chkMedium := "", chkLow := "", lblJsonHigh := "", lblJsonMedium := "", lblJsonLow := "", chkGlobalHigh := "", chkGlobalMedium := "", chkGlobalLow := "", *) {
+    global conditionConfig, severityDisplayNames, severityGlobalEnabled
+
+    if (ddl.Text = "")
+        return
+
+    parts := StrSplit(ddl.Text, " - ")
+    if (parts.Length < 1)
+        return
+
+    conditionId := Integer(parts[1])
+    if (!conditionConfig.Has(conditionId))
+        return
+
+    conditionConfig[conditionId].jsonHigh   := Trim(editHigh.Value)
+    conditionConfig[conditionId].jsonMedium := Trim(editMedium.Value)
+    conditionConfig[conditionId].jsonLow    := Trim(editLow.Value)
+
+    ; If label editors were provided, update global display labels
+    if (IsObject(editLabelHigh)) {
+        newHigh := Trim(editLabelHigh.Value)
+        severityDisplayNames["high"] := (newHigh != "" ? newHigh : "High")
+    }
+    if (IsObject(editLabelMedium)) {
+        newMedium := Trim(editLabelMedium.Value)
+        severityDisplayNames["medium"] := (newMedium != "" ? newMedium : "Medium")
+    }
+    if (IsObject(editLabelLow)) {
+        newLow := Trim(editLabelLow.Value)
+        severityDisplayNames["low"] := (newLow != "" ? newLow : "Low")
+    }
+
+    ; Immediately update JSON editor field labels, if we have them
+    if (IsObject(lblJsonHigh))
+        lblJsonHigh.Text := severityDisplayNames["high"] . ":"
+    if (IsObject(lblJsonMedium))
+        lblJsonMedium.Text := severityDisplayNames["medium"] . ":"
+    if (IsObject(lblJsonLow))
+        lblJsonLow.Text := severityDisplayNames["low"] . ":"
+
+    ; Apply global enable/disable for severity levels
+    if (IsObject(chkGlobalHigh))
+        severityGlobalEnabled["high"] := chkGlobalHigh.Value ? true : false
+    if (IsObject(chkGlobalMedium))
+        severityGlobalEnabled["medium"] := chkGlobalMedium.Value ? true : false
+    if (IsObject(chkGlobalLow))
+        severityGlobalEnabled["low"] := chkGlobalLow.Value ? true : false
+
+    ; If enable/disable checkboxes were provided, persist flags
+    if (IsObject(chkHigh))
+        SetSeverityEnabled(conditionId, "high", chkHigh.Value ? true : false)
+    if (IsObject(chkMedium))
+        SetSeverityEnabled(conditionId, "medium", chkMedium.Value ? true : false)
+    if (IsObject(chkLow))
+        SetSeverityEnabled(conditionId, "low", chkLow.Value ? true : false)
+
+    SaveConfig()
+    InitializeJsonAnnotationsEx()
+    InitializeJsonAnnotationsEx()
+    UpdateStatus("Updated JSON for Condition " . conditionId)
+}
+
+ResetConditionJson(ddl, editHigh, editMedium, editLow, chkHigh := "", chkMedium := "", chkLow := "", editLabelHigh := "", editLabelMedium := "", editLabelLow := "", lblJsonHigh := "", lblJsonMedium := "", lblJsonLow := "", chkGlobalHigh := "", chkGlobalMedium := "", chkGlobalLow := "", *) {
+    global conditionConfig, severityDisplayNames, severityGlobalEnabled
+
+    if (ddl.Text = "")
+        return
+
+    parts := StrSplit(ddl.Text, " - ")
+    if (parts.Length < 1)
+        return
+
+    conditionId := Integer(parts[1])
+    if (!conditionConfig.Has(conditionId))
+        return
+
+    ; Clear overrides so defaults are used
+    conditionConfig[conditionId].jsonHigh   := ""
+    conditionConfig[conditionId].jsonMedium := ""
+    conditionConfig[conditionId].jsonLow    := ""
+
+    ; Reset severity enable flags for this condition back to defaults (all on)
+    if (IsObject(chkHigh)) {
+        chkHigh.Value := 1
+        SetSeverityEnabled(conditionId, "high", true)
+    }
+    if (IsObject(chkMedium)) {
+        chkMedium.Value := 1
+        SetSeverityEnabled(conditionId, "medium", true)
+    }
+    if (IsObject(chkLow)) {
+        chkLow.Value := 1
+        SetSeverityEnabled(conditionId, "low", true)
+    }
+
+    ; Reset global severity labels back to defaults
+    severityDisplayNames["high"] := "High"
+    severityDisplayNames["medium"] := "Medium"
+    severityDisplayNames["low"] := "Low"
+
+    ; Update label editors and field labels in the editor, if present
+    if (IsObject(editLabelHigh))
+        editLabelHigh.Value := severityDisplayNames["high"]
+    if (IsObject(editLabelMedium))
+        editLabelMedium.Value := severityDisplayNames["medium"]
+    if (IsObject(editLabelLow))
+        editLabelLow.Value := severityDisplayNames["low"]
+
+    if (IsObject(lblJsonHigh))
+        lblJsonHigh.Text := severityDisplayNames["high"] . ":"
+    if (IsObject(lblJsonMedium))
+        lblJsonMedium.Text := severityDisplayNames["medium"] . ":"
+    if (IsObject(lblJsonLow))
+        lblJsonLow.Text := severityDisplayNames["low"] . ":"
+
+    ; Reset global severity enable flags to ON
+    severityGlobalEnabled["high"] := true
+    severityGlobalEnabled["medium"] := true
+    severityGlobalEnabled["low"] := true
+
+    if (IsObject(chkGlobalHigh))
+        chkGlobalHigh.Value := 1
+    if (IsObject(chkGlobalMedium))
+        chkGlobalMedium.Value := 1
+    if (IsObject(chkGlobalLow))
+        chkGlobalLow.Value := 1
+
+    SaveConfig()
+    InitializeJsonAnnotationsEx()
+
+    ; Reload editor fields with default JSON values
+    LoadConditionJson(ddl, editHigh, editMedium, editLow, chkHigh, chkMedium, chkLow)
+    UpdateStatus("Reset JSON overrides and severity labels to defaults for Condition " . conditionId)
+}
+
+CloseJsonEditor(jsonGui, *) {
+    if IsObject(jsonGui)
+        jsonGui.Destroy()
+}
+
 
 
 FormatCanvasCoord(value) {
@@ -6081,7 +6355,7 @@ RemoveThumbnail(buttonName) {
 }
 
 InitializeJsonAnnotations() {
-    global jsonAnnotations, conditionConfig, severityLevels
+    global jsonAnnotations, conditionConfig, severityLevels, conditionSeverityEnabled, severityDisplayNames
 
     ; Clear any existing annotations
     jsonAnnotations := Map()
@@ -6089,8 +6363,8 @@ InitializeJsonAnnotations() {
     ; Create annotations for all condition types and severity levels in both modes
     labelCount := 0
     for id, config in conditionConfig {
-        ; Use displayName for the preset name (e.g., "Label 1", "Label 2")
-        labelName := config.displayName
+        ; Force generic names in JSON profile context menu (Condition 1, Condition 2, ...)
+        labelName := "Condition " . id
         labelCount++
 
         for severity in severityLevels {
@@ -6109,6 +6383,27 @@ InitializeJsonAnnotations() {
 }
 
 BuildJsonAnnotation(mode, categoryId, severity) {
+    global conditionConfig
+
+    ; First, try user-provided JSON for this condition + severity
+    template := ""
+
+    if (conditionConfig.Has(categoryId)) {
+        cfg := conditionConfig[categoryId]
+        sev := StrLower(severity)
+        if (sev = "high" && cfg.HasOwnProp("jsonHigh") && cfg.jsonHigh != "")
+            template := cfg.jsonHigh
+        else if (sev = "medium" && cfg.HasOwnProp("jsonMedium") && cfg.jsonMedium != "")
+            template := cfg.jsonMedium
+        else if (sev = "low" && cfg.HasOwnProp("jsonLow") && cfg.jsonLow != "")
+            template := cfg.jsonLow
+    }
+
+    if (template != "") {
+        return template
+    }
+
+    ; Fallback: original hard-coded JSON behavior
     ; Define precise coordinates for each mode
     if (mode == "Wide") {
         points := [[-22.18,-22.57],[3808.41,2130.71]]
@@ -6120,6 +6415,25 @@ BuildJsonAnnotation(mode, categoryId, severity) {
     jsonStr := '{"is3DObject":false,"segmentsAnnotation":{"attributes":{"severity":"' . severity . '"},"track_id":1,"type":"bbox","category_id":' . categoryId . ',"points":[[' . points[1][1] . ',' . points[1][2] . '],[' . points[2][1] . ',' . points[2][2] . ']]}}'
     
     return jsonStr
+}
+
+HasCustomJson(conditionId, severity) {
+    global conditionConfig
+
+    if (!conditionConfig.Has(conditionId))
+        return false
+
+    cfg := conditionConfig[conditionId]
+    sev := StrLower(severity)
+
+    if (sev = "high")
+        return cfg.HasOwnProp("jsonHigh") && cfg.jsonHigh != ""
+    else if (sev = "medium")
+        return cfg.HasOwnProp("jsonMedium") && cfg.jsonMedium != ""
+    else if (sev = "low")
+        return cfg.HasOwnProp("jsonLow") && cfg.jsonLow != ""
+
+    return false
 }
 
 ; ===== TIME FORMATTING FUNCTION =====
@@ -6139,6 +6453,76 @@ FormatActiveTime(timeMs) {
     }
 }
 
+; ===== MACRO NORMALIZATION (DEDUPLICATION) =====
+EventsEqual(e1, e2) {
+    if (!IsObject(e1) || !IsObject(e2))
+        return false
+    if (!e1.HasOwnProp("type") || !e2.HasOwnProp("type"))
+        return false
+    if (e1.type != e2.type)
+        return false
+
+    switch e1.type {
+        case "boundingBox":
+            return (e1.left = e2.left
+                && e1.top = e2.top
+                && e1.right = e2.right
+                && e1.bottom = e2.bottom
+                && (e1.HasOwnProp("conditionType") ? e1.conditionType : 0)
+                   = (e2.HasOwnProp("conditionType") ? e2.conditionType : 0))
+        case "mouseDown", "mouseUp", "click":
+            return (e1.HasOwnProp("x") ? e1.x : 0) = (e2.HasOwnProp("x") ? e2.x : 0)
+                && (e1.HasOwnProp("y") ? e1.y : 0) = (e2.HasOwnProp("y") ? e2.y : 0)
+                && (e1.HasOwnProp("button") ? e1.button : "") = (e2.HasOwnProp("button") ? e2.button : "")
+        case "keyDown", "keyUp":
+            return (e1.HasOwnProp("key") ? e1.key : "") = (e2.HasOwnProp("key") ? e2.key : "")
+        case "jsonAnnotation":
+            return (e1.mode = e2.mode)
+                && (e1.categoryId = e2.categoryId)
+                && (e1.severity = e2.severity)
+        default:
+            ; Fallback: consider types equal if no known fields differ
+            return true
+    }
+}
+
+NormalizeMacroEvents(events) {
+    if (!IsObject(events) || events.Length <= 1)
+        return events
+
+    n := events.Length
+
+    ; Try to detect if the sequence is a perfect repetition of a shorter prefix.
+    bestLen := n
+    Loop Floor(n / 2) {
+        p := A_Index
+        if (Mod(n, p) != 0)
+            continue
+        isRepeat := true
+        Loop n {
+            idx := A_Index
+            refIdx := Mod(idx - 1, p) + 1
+            if (!EventsEqual(events[idx], events[refIdx])) {
+                isRepeat := false
+                break
+            }
+        }
+        if (isRepeat) {
+            bestLen := p
+            break
+        }
+    }
+
+    if (bestLen = n)
+        return events
+
+    trimmed := []
+    Loop bestLen {
+        trimmed.Push(events[A_Index])
+    }
+    return trimmed
+}
+
 SaveMacroState() {
     global macroEvents, buttonThumbnails, configFile
 
@@ -6147,6 +6531,10 @@ SaveMacroState() {
     macroCount := 0
 
     for macroName, events in macroEvents {
+        ; Normalize in-memory events to strip accidental repeated sequences
+        events := NormalizeMacroEvents(events)
+        macroEvents[macroName] := events
+
         if (events.Length > 0) {
             macroCount++
 
@@ -6175,7 +6563,9 @@ SaveMacroState() {
 
             for event in events {
                 if (event.type == "boundingBox") {
-                    stateContent .= macroName . "=boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom . "`n"
+                    condType := event.HasOwnProp("conditionType") ? event.conditionType : 1
+                    condName := event.HasOwnProp("conditionName") ? event.conditionName : ""
+                    stateContent .= macroName . "=boundingBox," . event.left . "," . event.top . "," . event.right . "," . event.bottom . ",deg=" . condType . ",name=" . condName . "`n"
                 }
                 else if (event.type == "jsonAnnotation") {
                     stateContent .= macroName . "=jsonAnnotation," . event.mode . "," . event.categoryId . "," . event.severity . "`n"
@@ -6204,12 +6594,6 @@ SaveMacroState() {
         }
     }
     
-    for macroName, thumbnailPath in buttonThumbnails {
-        if (thumbnailPath != "" && FileExist(thumbnailPath)) {
-            stateContent .= macroName . "=thumbnail," . thumbnailPath . "`n"
-        }
-    }
-    
     if FileExist(stateFile)
         FileDelete(stateFile)
     if (stateContent != "")
@@ -6221,134 +6605,179 @@ SaveMacroState() {
 
 LoadMacroState(preserveExisting := false) {
     global macroEvents, buttonThumbnails, configFile
-    
+
     stateFile := StrReplace(configFile, ".ini", "_simple.txt")
-    
+
+    ; If no simple state file exists, nothing to load.
     if !FileExist(stateFile)
         return 0
-    
-    if (!preserveExisting)
-        macroEvents := Map()
+
+    ; If caller asked to preserveExisting (used by the old fast-path),
+    ; ignore this call to avoid duplicating events.
+    if (preserveExisting)
+        return 0
+
+    ; Fresh macro map for a normal restore
+    macroEvents := Map()
     buttonThumbnails := Map()
-    
-    content := FileRead(stateFile)
-    lines := StrSplit(content, "`n")
-    
+
+    content := FileRead(stateFile, "UTF-8")
+    lines := StrSplit(content, "`n", "`r")
+
     macroCount := 0
+    ; Track seen bounding boxes per macro to avoid duplicate boxes from legacy repeated saves
+    boxSeen := Map()
+
     for line in lines {
         line := Trim(line)
         if (line == "")
             continue
-            
-        if (InStr(line, "=")) {
-            equalPos := InStr(line, "=")
-            macroName := SubStr(line, 1, equalPos - 1)
-            data := SubStr(line, equalPos + 1)
-            parts := StrSplit(data, ",")
-            
-            if (parts.Length >= 1) {
-                event := {}
-                
-                if (parts[1] == "boundingBox" && parts.Length >= 5) {
-                    event := {
-                        type: "boundingBox",
-                        left: Integer(parts[2]),
-                        top: Integer(parts[3]),
-                        right: Integer(parts[4]),
-                        bottom: Integer(parts[5])
-                    }
-                }
-                else if (parts[1] == "jsonAnnotation" && parts.Length >= 4) {
-                    event := {
-                        type: "jsonAnnotation",
-                        mode: parts[2],
-                        categoryId: Integer(parts[3]),
-                        severity: parts[4],
-                        annotation: BuildJsonAnnotation(parts[2], Integer(parts[3]), parts[4])
-                    }
-                }
-                else if (parts[1] == "keyDown" && parts.Length >= 2) {
-                    event := {
-                        type: "keyDown",
-                        key: parts[2]
-                    }
-                }
-                else if (parts[1] == "keyUp" && parts.Length >= 2) {
-                    event := {
-                        type: "keyUp",
-                        key: parts[2]
-                    }
-                }
-                else if (parts[1] == "mouseDown" && parts.Length >= 4) {
-                    event := {
-                        type: "mouseDown",
-                        x: Integer(parts[2]),
-                        y: Integer(parts[3]),
-                        button: parts[4]
-                    }
-                }
-                else if (parts[1] == "mouseUp" && parts.Length >= 4) {
-                    event := {
-                        type: "mouseUp",
-                        x: Integer(parts[2]),
-                        y: Integer(parts[3]),
-                        button: parts[4]
-                    }
-                }
-                else if (parts[1] == "recordedMode" && parts.Length >= 2) {
-                    ; Load recordedMode property and attach it to the macro array
-                    if (!macroEvents.Has(macroName)) {
-                        macroEvents[macroName] := []
-                        macroCount++
-                    }
-                    macroEvents[macroName].recordedMode := parts[2]
-                    continue
-                }
-                else if (parts[1] == "recordedCanvas" && parts.Length >= 5) {
-                    if (!macroEvents.Has(macroName)) {
-                        macroEvents[macroName] := []
-                        macroCount++
-                    }
-                    rc := {
-                        left: parts[2] != "" ? parts[2] + 0.0 : 0.0,
-                        top: parts[3] != "" ? parts[3] + 0.0 : 0.0,
-                        right: parts[4] != "" ? parts[4] + 0.0 : 0.0,
-                        bottom: parts[5] != "" ? parts[5] + 0.0 : 0.0
-                    }
-                    if (parts.Length > 5) {
-                        Loop parts.Length - 5 {
-                            idxExtra := A_Index + 5
-                            if (idxExtra <= parts.Length) {
-                                extra := parts[idxExtra]
-                                if (InStr(extra, "mode=")) {
-                                    rc.mode := StrReplace(extra, "mode=", "")
-                                } else if (InStr(extra, "source=")) {
-                                    rc.source := StrReplace(extra, "source=", "")
-                                }
-                            }
-                        }
-                    }
-                    macroEvents[macroName].recordedCanvas := rc
-                    continue
-                }
-                else if (parts[1] == "thumbnail" && parts.Length >= 2) {
-                    thumbnailPath := parts[2]
-                    if (FileExist(thumbnailPath)) {
-                        buttonThumbnails[macroName] := thumbnailPath
-                    }
-                    continue
-                }
 
-                    if (!preserveExisting && event.HasOwnProp("type")) {
-                        if (!macroEvents.Has(macroName)) {
-                            macroEvents[macroName] := []
-                            macroCount++
-                        }
-                        macroEvents[macroName].Push(event)
+        if (!InStr(line, "="))
+            continue
+
+        equalPos := InStr(line, "=")
+        macroName := SubStr(line, 1, equalPos - 1)
+        data := SubStr(line, equalPos + 1)
+        parts := StrSplit(data, ",")
+        if (parts.Length < 1)
+            continue
+
+        token := parts[1]
+
+        ; ---- recordedMode / recordedCanvas metadata (not events) ----
+        if (token = "recordedMode" && parts.Length >= 2) {
+            if (!macroEvents.Has(macroName)) {
+                macroEvents[macroName] := []
+                macroCount++
+            }
+            macroEvents[macroName].recordedMode := parts[2]
+            continue
+        }
+
+        if (token = "recordedCanvas" && parts.Length >= 5) {
+            if (!macroEvents.Has(macroName)) {
+                macroEvents[macroName] := []
+                macroCount++
+            }
+            rc := {
+                left: parts[2] != "" ? parts[2] + 0.0 : 0.0,
+                top: parts[3] != "" ? parts[3] + 0.0 : 0.0,
+                right: parts[4] != "" ? parts[4] + 0.0 : 0.0,
+                bottom: parts[5] != "" ? parts[5] + 0.0 : 0.0
+            }
+            if (parts.Length > 5) {
+                Loop parts.Length - 5 {
+                    idxExtra := 5 + A_Index
+                    if (idxExtra > parts.Length)
+                        break
+                    extra := parts[idxExtra]
+                    if (InStr(extra, "mode=") = 1) {
+                        rc.mode := StrReplace(extra, "mode=", "")
+                    } else if (InStr(extra, "source=") = 1) {
+                        rc.source := StrReplace(extra, "source=", "")
                     }
                 }
             }
+            macroEvents[macroName].recordedCanvas := rc
+            continue
         }
+
+        ; ---- Event reconstruction ----
+        event := ""
+
+        if (token = "boundingBox" && parts.Length >= 5) {
+            event := {
+                type: "boundingBox",
+                left: Integer(parts[2]),
+                top: Integer(parts[3]),
+                right: Integer(parts[4]),
+                bottom: Integer(parts[5])
+            }
+
+            ; Optional viz metadata: deg=<conditionType>, name=<conditionName>
+            if (parts.Length > 5) {
+                Loop parts.Length - 5 {
+                    idx := 5 + A_Index
+                    if (idx > parts.Length)
+                        break
+                    tokenExtra := parts[idx]
+                    if (InStr(tokenExtra, "deg=") = 1) {
+                        val := SubStr(tokenExtra, 5)
+                        if (val != "")
+                            event.conditionType := Integer(val)
+                    } else if (InStr(tokenExtra, "name=") = 1) {
+                        val := SubStr(tokenExtra, 6)
+                        if (val != "")
+                            event.conditionName := val
+                    }
+                }
+            }
+
+            ; De-duplicate identical bounding boxes per macro (same coords + condition)
+            sig := event.left . "," . event.top . "," . event.right . "," . event.bottom . "," . (event.HasOwnProp("conditionType") ? event.conditionType : 0)
+            if (!boxSeen.Has(macroName)) {
+                boxSeen[macroName] := Map()
+            }
+            perMacro := boxSeen[macroName]
+            if (perMacro.Has(sig)) {
+                event := ""  ; skip duplicate box
+            } else {
+                perMacro[sig] := true
+            }
+        } else if (token = "jsonAnnotation" && parts.Length >= 4) {
+            ; Avoid duplicating pure JSON profile macros on load
+            if (macroEvents.Has(macroName)) {
+                existing := macroEvents[macroName]
+                if (IsObject(existing) && IsJsonProfileMacro(existing)) {
+                    ; Already a JSON-only macro for this key; ignore extra entries
+                    continue
+                }
+            }
+            event := {
+                type: "jsonAnnotation",
+                mode: parts[2],
+                categoryId: Integer(parts[3]),
+                severity: parts[4],
+                annotation: BuildJsonAnnotation(parts[2], Integer(parts[3]), parts[4])
+            }
+        } else if (token = "keyDown" && parts.Length >= 2) {
+            event := {
+                type: "keyDown",
+                key: parts[2]
+            }
+        } else if (token = "keyUp" && parts.Length >= 2) {
+            event := {
+                type: "keyUp",
+                key: parts[2]
+            }
+        } else if (token = "mouseDown" && parts.Length >= 4) {
+            event := {
+                type: "mouseDown",
+                x: Integer(parts[2]),
+                y: Integer(parts[3]),
+                button: parts[4]
+            }
+        } else if (token = "mouseUp" && parts.Length >= 4) {
+            event := {
+                type: "mouseUp",
+                x: Integer(parts[2]),
+                y: Integer(parts[3]),
+                button: parts[4]
+            }
+        } else {
+            ; Ignore legacy/unknown tokens (e.g., thumbnail paths)
+            continue
+        }
+
+        if (IsObject(event) && event.HasOwnProp("type")) {
+            if (!macroEvents.Has(macroName)) {
+                macroEvents[macroName] := []
+                macroCount++
+            }
+            macroEvents[macroName].Push(event)
+        }
+    }
 
     return macroCount
 }
@@ -6357,6 +6786,7 @@ LoadMacroState(preserveExisting := false) {
 UpdateTimingFromEdit(variableName, editControl) {
     global boxDrawDelay, mouseClickDelay, mouseDragDelay, mouseReleaseDelay, betweenBoxDelay, keyPressDelay, focusDelay
     global smartBoxClickDelay, smartMenuClickDelay, firstBoxDelay, menuWaitDelay, mouseHoverDelay
+    global statsRefreshIntervalMs
 
     try {
         value := Integer(editControl.Text)
@@ -6390,6 +6820,8 @@ UpdateTimingFromEdit(variableName, editControl) {
                 menuWaitDelay := value
             case "mouseHoverDelay":
                 mouseHoverDelay := value
+            case "statsRefreshIntervalMs":
+                statsRefreshIntervalMs := Max(100, value)
         }
 
         ; Save configuration
@@ -6504,6 +6936,7 @@ ResetStatsFromSettings(parentGui) {
 
 ; ===== CONFIGURATION SAVE/LOAD SYSTEM =====
 SaveConfig() {
+    startTick := A_TickCount
     global currentLayer, macroEvents, configFile, totalLayers, buttonNames, buttonCustomLabels, annotationMode, workDir
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
@@ -6586,16 +7019,47 @@ SaveConfig() {
         configContent .= "hotkeySettings=" . hotkeySettings . "`n"
         configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n`n"
 
+        ; Add severities display labels section (for severity naming and global enable flags)
+        global severityDisplayNames, severityGlobalEnabled
+        configContent .= "[Severities]`n"
+        configContent .= "LabelHigh=" . severityDisplayNames["high"] . "`n"
+        configContent .= "LabelMedium=" . severityDisplayNames["medium"] . "`n"
+        configContent .= "LabelLow=" . severityDisplayNames["low"] . "`n"
+        configContent .= "HighEnabled=" . ((severityGlobalEnabled.Has("high") && severityGlobalEnabled["high"]) ? 1 : 0) . "`n"
+        configContent .= "MediumEnabled=" . ((severityGlobalEnabled.Has("medium") && severityGlobalEnabled["medium"]) ? 1 : 0) . "`n"
+        configContent .= "LowEnabled=" . ((severityGlobalEnabled.Has("low") && severityGlobalEnabled["low"]) ? 1 : 0) . "`n`n"
+
         ; Add conditions section
-        global conditionConfig
+        global conditionConfig, conditionSeverityEnabled, severityLevels
         configContent .= "[Conditions]`n"
         for id, config in conditionConfig {
             configContent .= "ConditionName_" . id . "=" . config.name . "`n"
             configContent .= "ConditionDisplayName_" . id . "=" . config.displayName . "`n"
             configContent .= "ConditionColor_" . id . "=" . config.color . "`n"
             configContent .= "ConditionStatKey_" . id . "=" . config.statKey . "`n"
+            if (config.HasOwnProp("jsonHigh") && config.jsonHigh != "")
+                configContent .= "ConditionJsonHigh_" . id . "=" . config.jsonHigh . "`n"
+            if (config.HasOwnProp("jsonMedium") && config.jsonMedium != "")
+                configContent .= "ConditionJsonMedium_" . id . "=" . config.jsonMedium . "`n"
+            if (config.HasOwnProp("jsonLow") && config.jsonLow != "")
+                configContent .= "ConditionJsonLow_" . id . "=" . config.jsonLow . "`n"
         }
         configContent .= "`n"
+
+        ; Add condition severity enable/disable flags (per condition, per severity)
+        if (conditionSeverityEnabled.Count > 0) {
+            configContent .= "[ConditionSeverities]`n"
+            for id, cfg in conditionConfig {
+                EnsureConditionSeverityMap(id)
+                sevMap := conditionSeverityEnabled[id]
+                for sev in severityLevels {
+                    keyName := "Condition" . id . "_" . sev . "Enabled"
+                    enabledVal := (sevMap.Has(sev) && sevMap[sev]) ? 1 : 0
+                    configContent .= keyName . "=" . enabledVal . "`n"
+                }
+            }
+            configContent .= "`n"
+        }
 
         ; Add macros section
         configContent .= "[Macros]`n"
@@ -6806,6 +7270,25 @@ LoadConfig() {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
+                } else if (currentSection == "Severities") {
+                    ; Load severity display labels and global enable flags
+                    global severityDisplayNames, severityGlobalEnabled
+                    if (key == "LabelHigh") {
+                        severityDisplayNames["high"] := value
+                    } else if (key == "LabelMedium") {
+                        severityDisplayNames["medium"] := value
+                    } else if (key == "LabelLow") {
+                        severityDisplayNames["low"] := value
+                    } else if (key == "HighEnabled") {
+                        valueLower := StrLower(value)
+                        severityGlobalEnabled["high"] := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                    } else if (key == "MediumEnabled") {
+                        valueLower := StrLower(value)
+                        severityGlobalEnabled["medium"] := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                    } else if (key == "LowEnabled") {
+                        valueLower := StrLower(value)
+                        severityGlobalEnabled["low"] := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                    }
                 } else if (currentSection == "conditions" || currentSection == "Conditions") {
                     ; Load condition configuration (backward compatible with legacy 'conditions')
                     global conditionConfig
@@ -6814,27 +7297,61 @@ LoadConfig() {
                     if (RegExMatch(key, "^(?:condition|Condition)Name_(\d+)$", &match)) {
                         conditionId := Integer(match[1])
                         if (!conditionConfig.Has(conditionId)) {
-                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
                         }
                         conditionConfig[conditionId].name := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)DisplayName_(\d+)$", &match)) {
                         conditionId := Integer(match[1])
                         if (!conditionConfig.Has(conditionId)) {
-                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
                         }
                         conditionConfig[conditionId].displayName := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)Color_(\d+)$", &match)) {
                         conditionId := Integer(match[1])
                         if (!conditionConfig.Has(conditionId)) {
-                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
                         }
                         conditionConfig[conditionId].color := value
                     } else if (RegExMatch(key, "^(?:condition|Condition)StatKey_(\d+)$", &match)) {
                         conditionId := Integer(match[1])
                         if (!conditionConfig.Has(conditionId)) {
-                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""}
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
                         }
                         conditionConfig[conditionId].statKey := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)JsonHigh_(\d+)$", &match)) {
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
+                        }
+                        conditionConfig[conditionId].jsonHigh := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)JsonMedium_(\d+)$", &match)) {
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
+                        }
+                        conditionConfig[conditionId].jsonMedium := value
+                    } else if (RegExMatch(key, "^(?:condition|Condition)JsonLow_(\d+)$", &match)) {
+                        conditionId := Integer(match[1])
+                        if (!conditionConfig.Has(conditionId)) {
+                            conditionConfig[conditionId] := {name: "", displayName: "", color: "0xFFFFFF", statKey: ""
+                                , jsonHigh: "", jsonMedium: "", jsonLow: ""}
+                        }
+                        conditionConfig[conditionId].jsonLow := value
+                    }
+                } else if (currentSection == "ConditionSeverities") {
+                    ; Load per-condition severity enable/disable flags
+                    if (RegExMatch(key, "^Condition(\d+)_(high|medium|low)Enabled$", &match)) {
+                        conditionId := Integer(match[1])
+                        sev := match[2]
+                        valueLower := StrLower(value)
+                        enabled := !(valueLower == "" || valueLower == "0" || valueLower == "false" || valueLower == "no" || valueLower == "off")
+                        SetSeverityEnabled(conditionId, sev, enabled)
                     }
                 } else if (currentSection == "Labels") {
                     if (buttonCustomLabels.Has(key)) {
@@ -6847,8 +7364,13 @@ LoadConfig() {
         ; Sync legacy condition maps after loading custom config
         SyncLegacyConditionMaps()
 
-        ; Load macros from config file
-        macrosLoaded := ParseMacrosFromConfig()
+        ; FAST MACRO RESTORE:
+        ; 1) Try simple state file first (quick load of last session macros)
+        ; 2) If none found, fall back to parsing macros from config.ini (legacy)
+        macrosLoaded := LoadMacroState()
+        if (macrosLoaded == 0) {
+            macrosLoaded := ParseMacrosFromConfig()
+        }
 
         ; Update mode toggle button to match loaded setting
         if (modeToggleBtn) {
@@ -6865,25 +7387,15 @@ LoadConfig() {
             modeToggleBtn.Redraw()
         }
 
-        ; Merge legacy metadata (thumbnails/canvas) from simple state file
-        LoadMacroState(true)
-
-        ; Fallback to legacy macro state if nothing restored yet
-        if (macrosLoaded == 0) {
-            legacyLoaded := LoadMacroState()
-            if (legacyLoaded > 0) {
-                macrosLoaded := legacyLoaded
-                SaveConfig()
-                VizLog("Loaded " . macrosLoaded . " macros from legacy state file")
-                FlushVizLog()
-            }
+        ; After macros restored, refresh thumbnails once so buttons show visuals.
+        if (macrosLoaded > 0) {
+            RefreshAllButtonAppearances()
         }
-
-        ; Refresh all button appearances to ensure JSON annotations display correctly
-        RefreshAllButtonAppearances()
 
         ; Validate canvas calibration and log status
         ValidateCanvasCalibration()
+
+        InitializeJsonAnnotationsEx()
 
         if (macrosLoaded > 0) {
             UpdateStatus("📚 Configuration loaded: " . macrosLoaded . " macros restored")
@@ -7004,7 +7516,7 @@ BuildMacroEventsFromString(serializedEvents) {
 }
 
 ParseMacrosFromConfig() {
-    global configFile, macroEvents, buttonNames, totalLayers
+    global configFile, macroEvents, buttonNames, totalLayers, macrosInitialized
 
     macrosLoaded := 0
     macroEvents := Map()
@@ -7149,10 +7661,11 @@ AnalyzeRecordedMacro(macroKey) {
 
 AnalyzeconditionPattern(events) {
     global conditionTypes
-    
+
     local boxes := []
     local keyPresses := []
     
+    ; First pass: collect boxes (with times) and number key presses.
     for event in events {
         if (event.type == "boundingBox") {
             boxes.Push({
@@ -7175,7 +7688,7 @@ AnalyzeconditionPattern(events) {
     }
 
     ; DEBUG: Log what we found
-    VizLog("=== condition ANALYSIS ===")
+    VizLog("=== condition ANALYSIS (time-window) ===")
     VizLog("Found " . boxes.Length . " boxes and " . keyPresses.Length . " key presses")
     for kp in keyPresses {
         VizLog("  KeyPress: deg=" . kp.conditionType . " key=" . kp.key . " time=" . kp.time)
@@ -7185,30 +7698,28 @@ AnalyzeconditionPattern(events) {
     local currentConditionType := 1
     local conditionCounts := Map()
     
-    for id, typeName in conditionTypes
-    {
+    for id, typeName in conditionTypes {
         conditionCounts[id] := 0
     }
     
-    for boxIndex, box in boxes
-    {
+    ; Second pass: for each box, pick the FIRST number key after it and before the next box.
+    for boxIndex, box in boxes {
         local nextBoxTime := (boxIndex < boxes.Length) ? boxes[boxIndex + 1].time : 999999999
 
         VizLog("Box #" . boxIndex . ": time=" . box.time . " nextBoxTime=" . nextBoxTime)
 
-        local closestKeyPress := ""
-        local closestTime := 999999999
+        local assignedKey := ""
 
         for keyPress in keyPresses {
-            if (keyPress.time > box.time && keyPress.time < nextBoxTime && keyPress.time < closestTime) {
-                closestKeyPress := keyPress
-                closestTime := keyPress.time
+            if (keyPress.time > box.time && keyPress.time < nextBoxTime) {
+                assignedKey := keyPress
                 VizLog("  MATCHED keyPress deg=" . keyPress.conditionType . " at time=" . keyPress.time)
+                break  ; first key after box wins
             }
         }
 
-        if (closestKeyPress != "") {
-            currentConditionType := closestKeyPress.conditionType
+        if (assignedKey != "") {
+            currentConditionType := assignedKey.conditionType
             box.conditionType := currentConditionType
             box.assignedBy := "user_selection"
             VizLog("  ASSIGNED deg=" . currentConditionType . " (user_selection)")
@@ -7218,10 +7729,15 @@ AnalyzeconditionPattern(events) {
             VizLog("  ASSIGNED deg=" . currentConditionType . " (auto_default)")
         }
         
-        conditionCounts[box.conditionType]++
+        if (conditionCounts.Has(box.conditionType)) {
+            conditionCounts[box.conditionType]++
+        }
         
+        ; Write back onto the original event used by visualization/SaveConfig
         box.event.conditionType := box.conditionType
-        box.event.conditionName := conditionTypes[box.conditionType]
+        if (conditionTypes.Has(box.conditionType)) {
+            box.event.conditionName := conditionTypes[box.conditionType]
+        }
         box.event.assignedBy := box.assignedBy
     }
     
@@ -7244,15 +7760,37 @@ AnalyzeconditionPattern(events) {
     }
 }
 
+; Detect if a macro consists purely of a JSON profile annotation.
+IsJsonProfileMacro(events) {
+    if (!IsObject(events) || events.Length = 0)
+        return false
+
+    for ev in events {
+        if (!ev.HasOwnProp("type") || ev.type != "jsonAnnotation")
+            return false
+    }
+    return true
+}
+
+NormalizeNumberKey(keyName) {
+    if (!IsSet(keyName))
+        return ""
+    ; Numpad digits: "Numpad1".."Numpad9"
+    if (RegExMatch(keyName, "i)^Numpad([1-9])$", &match))
+        return match[1]
+    ; Top-row digits: "1".."9"
+    if (RegExMatch(keyName, "^([1-9])$", &match))
+        return match[1]
+    return ""
+}
+
 IsNumberKey(keyName) {
-    return RegExMatch(keyName, "^[1-9]$")
+    return NormalizeNumberKey(keyName) != ""
 }
 
 GetNumberFromKey(keyName) {
-    if (RegExMatch(keyName, "^([1-9])$", &match)) {
-        return Integer(match[1])
-    }
-    return 0
+    normalized := NormalizeNumberKey(keyName)
+    return (normalized != "") ? Integer(normalized) : 0
 }
 
 JoinArray(array, delimiter) {
@@ -7471,6 +8009,39 @@ UtilityBackspace() {
         Sleep(focusDelay)
         Send("{Backspace}")
     }
+}
+
+; ===== JSON ANNOTATION INITIALIZER (extended) =====
+InitializeJsonAnnotationsEx() {
+    global jsonAnnotations, conditionConfig, severityLevels, conditionSeverityEnabled, severityDisplayNames
+
+    ; Clear any existing annotations
+    jsonAnnotations := Map()
+
+    ; Create annotations for all condition types and severity levels in both modes
+    labelCount := 0
+    for id, config in conditionConfig {
+        ; Force generic names in JSON profile context menu (Condition 1, Condition 2, ...)
+        labelName := "Condition " . id
+        labelCount++
+
+        for severity in severityLevels {
+            ; Skip disabled severities for this condition
+            if (!IsSeverityEnabled(id, severity))
+                continue
+
+            displaySeverity := severityDisplayNames.Has(severity) ? severityDisplayNames[severity] : StrTitle(severity)
+            presetName := labelName . " (" . displaySeverity . ")"
+
+            ; Create Wide mode annotation
+            jsonAnnotations[presetName] := BuildJsonAnnotation("Wide", id, severity)
+
+            ; Create Narrow mode annotation
+            jsonAnnotations[presetName . " Narrow"] := BuildJsonAnnotation("Narrow", id, severity)
+        }
+    }
+
+    UpdateStatus("?? JSON: " . labelCount . " labels x " . severityLevels.Length . " severities x 2 modes = " . jsonAnnotations.Count . " presets")
 }
 
 ; ===== START APPLICATION =====
