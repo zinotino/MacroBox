@@ -317,16 +317,18 @@ global resizeTimer := 0  ; Timer for debouncing resize events
 ; Manual and macro click tracking
 global manualClickCount := 0              ; Global left-clicks outside macro playback/recording (this run)
 global manualClicksSinceLastFlush := 0    ; Manual clicks already recorded into stats (baseline)
-; Stats UI refresh interval (ms) – controls how often the Stats window recomputes aggregates
+; Stats UI refresh interval (ms) - controls how often the Stats window recomputes aggregates
 global statsRefreshIntervalMs := 500
 ; ===== STATS SYSTEM GLOBALS =====
+; Periodic stats checkpoint interval (ms) for autosaving lifetime stats
+global statsCheckpointIntervalMs := 60000
 global masterStatsCSV := ""
 global permanentStatsFile := ""
 global sessionId := "session_" . A_TickCount
 global currentSessionId := sessionId
 global currentUsername := A_UserName
 global documentsDir := ""
-global workDir := A_ScriptDir "\data"
+global workDir := ""
 
 ; ===== FILE SYSTEM PATHS =====
 global configFile := A_ScriptDir "\config.ini"
@@ -350,6 +352,9 @@ global breakStartTime := 0
 global currentDay := FormatTime(A_Now, "yyyy-MM-dd")  ; Track current day for daily reset
 
 ; ===== UI CONFIGURATION =====
+; Fixed window title
+global appTitle := "MacroBox"
+
 global baseWidth := 1200
 global baseHeight := 800
 global windowWidth := 1200
@@ -580,7 +585,7 @@ global menuWaitDelay := 40         ; Reduced wait time for dropdown menus
 
 ; ===== HOTKEY SETTINGS =====
 global hotkeyRecordToggle := "CapsLock & f"
-global hotkeyEmergencyStop := "CapsLock & Space"
+global hotkeyEmergencyStop := "NumpadAdd"
 global hotkeySubmit := "NumpadEnter"
 global hotkeyDirectClear := "+Enter"
 global hotkeyStats := "F12"
@@ -592,11 +597,15 @@ global hotkeyUtilitySubmit := "+CapsLock"      ; LShift + CapsLock = Shift+Enter
 global hotkeyUtilityBackspace := "^CapsLock"   ; LCtrl + CapsLock = Backspace
 global utilityHotkeysEnabled := true           ; Enable/disable utility hotkeys
 
-; ===== WASD SETTINGS =====
+; ===== HOTKEY / GRID SETTINGS =====
 global hotkeyProfileActive := true  ; FIXED: Was false, should default to true
-global wasdLabelsEnabled := true  ; Always enabled by default
+global wasdLabelsEnabled := true    ; Always enabled by default
 global wasdHotkeyMap := Map()
 global capsLockPressed := false
+
+; Simple toggles for macro execution grids
+global numpadGridEnabled := true    ; Enable/disable numpad macro grid
+global wasdGridEnabled := true      ; Enable/disable WASD macro grid
 
 GetVirtualScreenBounds(&left, &top, &right, &bottom) {
     left := DllCall("GetSystemMetrics", "Int", 76, "Int")
@@ -879,7 +888,7 @@ ShowWelcomeScreen() {
     userChoice := "Continue"
 
     ; Create welcome dialog
-    welcomeGui := Gui("+AlwaysOnTop", "Welcome to MacroMono")
+    welcomeGui := Gui("+AlwaysOnTop", "Welcome to MacroBox")
     welcomeGui.SetFont("s10")
 
     ; Title
@@ -895,25 +904,28 @@ ShowWelcomeScreen() {
     welcomeGui.Add("Text", "x20 y95 w560", "Getting Started:")
     welcomeGui.SetFont("s10")
 
-    welcomeGui.Add("Text", "x40 y120 w540", "1️⃣  Customize Your Labels")
-    welcomeGui.Add("Text", "x60 y140 w520 c0x666666", "• Press Ctrl+K to open Settings → Conditions tab")
-    welcomeGui.Add("Text", "x60 y160 w520 c0x666666", "• Edit label names and pick colors for your categories")
+    ; Step 1
+    welcomeGui.Add("Text", "x40 y120 w540", "1) Customize Your Labels")
+    welcomeGui.Add("Text", "x60 y140 w520 c0x666666", "- Press Ctrl+K to open Settings > Conditions tab")
+    welcomeGui.Add("Text", "x60 y160 w520 c0x666666", "- Edit label names and pick colors for your categories")
 
-    welcomeGui.Add("Text", "x40 y190 w540", "2️⃣  Calibrate Your Canvas (Next Step)")
-    welcomeGui.Add("Text", "x60 y210 w520 c0x666666", "• Choose Wide (landscape) or Narrow (portrait) mode")
-    welcomeGui.Add("Text", "x60 y230 w520 c0x666666", "• Click corners to define your working area")
+    ; Step 2
+    welcomeGui.Add("Text", "x40 y190 w540", "2) Calibrate Your Canvas (Next Step)")
+    welcomeGui.Add("Text", "x60 y210 w520 c0x666666", "- Choose Wide (landscape) or Narrow (portrait) mode")
+    welcomeGui.Add("Text", "x60 y230 w520 c0x666666", "- Click corners to define your working area")
 
-    welcomeGui.Add("Text", "x40 y260 w540", "3️⃣  Start Recording")
-    welcomeGui.Add("Text", "x60 y280 w520 c0x666666", "• CapsLock+F to record/stop macro")
-    welcomeGui.Add("Text", "x60 y300 w520 c0x666666", "• Use numpad or WASD keys to assign labels")
-    welcomeGui.Add("Text", "x60 y320 w520 c0x666666", "• Press F12 to view statistics")
+    ; Step 3
+    welcomeGui.Add("Text", "x40 y260 w540", "3) Start Recording")
+    welcomeGui.Add("Text", "x60 y280 w520 c0x666666", "- CapsLock+F to record/stop macro")
+    welcomeGui.Add("Text", "x60 y300 w520 c0x666666", "- Use numpad or WASD keys to assign labels")
+    welcomeGui.Add("Text", "x60 y320 w520 c0x666666", "- Press F12 to view statistics")
 
     ; Separator
     welcomeGui.Add("Text", "x20 y355 w560 h1 +0x10")  ; Horizontal line
 
     ; Tip
     welcomeGui.SetFont("s9 Italic c0x0066CC")
-    welcomeGui.Add("Text", "x40 y365 w520", "💡 Tip: You can customize all labels to match your workflow - no preset categories!")
+    welcomeGui.Add("Text", "x40 y365 w520", "Tip: You can customize all labels to match your workflow - no preset categories!")
     welcomeGui.SetFont("s10")
 
     ; Buttons
@@ -1145,9 +1157,9 @@ CaptureHotkey(editControl, hotkeyName) {
     }
 }
 
-ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui) {
+ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, editEmergencyStop, settingsGui) {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
-    global hotkeyStats, hotkeyBreakMode, hotkeySettings
+    global hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyEmergencyStop
 
     ; Store old values for hotkey re-registration
     oldSubmit := hotkeySubmit
@@ -1163,6 +1175,7 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySu
     hotkeyStats := editStats.Value
     hotkeyBreakMode := editBreakMode.Value
     hotkeySettings := editSettings.Value
+    hotkeyEmergencyStop := editEmergencyStop.Value
 
     ; Re-register hotkeys with new bindings (apply instantly without restart)
     try {
@@ -1196,7 +1209,7 @@ ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySu
 
 ResetHotkeySettings(settingsGui) {
     global hotkeyRecordToggle, hotkeySubmit, hotkeyDirectClear, hotkeyUtilitySubmit, hotkeyUtilityBackspace
-    global hotkeyStats, hotkeyBreakMode, hotkeySettings
+    global hotkeyStats, hotkeyBreakMode, hotkeySettings, hotkeyEmergencyStop
 
     ; Confirm reset
     result := MsgBox("Reset all hotkeys to default values?`n`nThis will restore:`n• Record Toggle: CapsLock & f`n• Submit: NumpadEnter`n• Direct Clear: +Enter`n• Utility Submit: +CapsLock`n• Utility Backspace: ^CapsLock`n• Stats: F12`n• Break Mode: ^b`n• Settings: ^k", "Reset Hotkeys", "YesNo Icon?")
@@ -1218,6 +1231,7 @@ ResetHotkeySettings(settingsGui) {
     hotkeyStats := "F12"
     hotkeyBreakMode := "^b"
     hotkeySettings := "^k"
+    hotkeyEmergencyStop := "NumpadAdd"
 
     ; Re-register hotkeys with default bindings
     try {
@@ -1430,6 +1444,12 @@ ApplyConditionSettings(conditionEditControls, settingsGui) {
 
         if (!ValidateConditionName(newName)) {
             errorMessages.Push("Label " . conditionId . ": Invalid name '" . newName . "' (use alphanumeric, spaces, hyphens, underscores only)")
+            continue
+        }
+        ; Disallow reserved names that are used internally for 'no condition'
+        lowerName := StrLower(newName)
+        if (lowerName == "clear" || lowerName == "none") {
+            errorMessages.Push("Label " . conditionId . ": Name '" . newName . "' is reserved and cannot be used (it is used internally for 'no condition')")
             continue
         }
 
@@ -1980,20 +2000,6 @@ global vizLogBuffer := []
 global vizLogPath := A_ScriptDir "\vizlog_debug.txt"
 global vizLoggingEnabled := false  ; Disable verbose viz logging by default to speed startup
 
-; Lightweight performance log (always enabled) for profiling startup/shutdown
-; Written as a plain text file in the same folder as this script.
-global perfLogPath := (A_ScriptDir "\perf_timing.txt")
-
-PerfLog(label, durationMs) {
-    global perfLogPath
-    line := A_Now . " | " . label . " | " . durationMs . " ms`n"
-    try {
-        FileAppend(line, perfLogPath, "UTF-8")
-    } catch {
-        ; ignore logging failures
-    }
-}
-
 VizLog(msg) {
     global vizLogBuffer, vizLoggingEnabled
     if (!vizLoggingEnabled)
@@ -2499,7 +2505,8 @@ InitializeStatsSystem() {
     currentSessionId := sessionId
     InitializePermanentStatsFile()
     ; IMPORTANT: Do NOT load stats JSON here.
-    ; We keep startup fast and only load stats on demand (e.g., when opening the Stats menu).
+    ; We keep startup fast and only load stats on demand (e.g., when opening
+    ; the Stats menu or when a write path first touches stats).
     try {
         UpdateStatus("📊 Stats system initialized")
     } catch {
@@ -2534,7 +2541,7 @@ FormatMilliseconds(ms) {
     if (ms < 1000) {
         return ms . " ms"
     } else if (ms < 60000) {
-        return Round(ms / 1000, 1) . " sec"
+        return Round(ms / 1000) . " sec"
     } else if (ms < 3600000) {
         minutes := Floor(ms / 60000)
         seconds := Round(Mod(ms, 60000) / 1000)
@@ -2592,6 +2599,283 @@ Stats_CreateEmptyStatsMap() {
     stats["severity_high"] := 0
 
     return stats
+}
+
+; ===== STATS TOTALS PERSISTENCE (AGGREGATED ONLY) =====
+
+Stats_CloneMap(src) {
+    clone := Map()
+    for k, v in src {
+        clone[k] := v
+    }
+    return clone
+}
+
+StatsTotals_EnsureInitialized() {
+    global statsTotals, workDir
+    if (IsObject(statsTotals) && statsTotals.Count > 0)
+        return
+
+    ; Fresh defaults
+    statsTotals := Map()
+    statsTotals["version"] := 1
+
+    allTime := Stats_CreateEmptyStatsMap()
+    ; For persisted totals, start session_active_time at 0
+    allTime["session_active_time"] := 0
+    statsTotals["all_time"] := allTime
+    statsTotals["per_day"] := Map()
+
+    totalsFile := workDir . "\stats_totals.json"
+    try {
+        if (FileExist(totalsFile)) {
+            loaded := ObjLoad(totalsFile)
+            if (IsObject(loaded) && loaded.Has("all_time") && loaded.Has("per_day")) {
+                statsTotals := loaded
+            }
+        }
+    } catch {
+        ; On any load error, fall back to fresh totals
+    }
+
+    ; If totals appear empty but we have the full execution history CSV,
+    ; rebuild all-time and per-day stats from that history.
+    try {
+        allTimeRef := statsTotals["all_time"]
+        totalExec := allTimeRef.Has("total_executions") ? allTimeRef["total_executions"] : 0
+        csvPath := workDir . "\master_stats_permanent.csv"
+        if (totalExec = 0 && FileExist(csvPath)) {
+            StatsTotals_RebuildFromHistory(csvPath)
+        }
+    } catch {
+    }
+}
+
+StatsTotals_Save() {
+    global statsTotals, workDir
+    try {
+        totalsFile := workDir . "\stats_totals.json"
+        ObjSave(statsTotals, totalsFile)
+    } catch {
+    }
+}
+
+StatsTotals_RebuildFromHistory(csvPath) {
+    global statsTotals
+
+    ; Start from a clean slate
+    statsTotals := Map()
+    statsTotals["version"] := 1
+    statsTotals["all_time"] := Stats_CreateEmptyStatsMap()
+    statsTotals["all_time"]["session_active_time"] := 0
+    statsTotals["per_day"] := Map()
+
+    try {
+        content := FileRead(csvPath, "UTF-8")
+    } catch {
+        return
+    }
+
+    lines := StrSplit(content, "`n", "`r")
+    if (lines.Length < 2)
+        return
+
+    headerLine := Trim(lines[1])
+    if (headerLine = "")
+        return
+
+    headers := StrSplit(headerLine, ",")
+    headerIndex := Map()
+    idx := 1
+    for h in headers {
+        headerIndex[h] := idx
+        idx += 1
+    }
+
+    ; Re-apply every execution row into the stats aggregator
+    Loop lines.Length - 1 {
+        line := Trim(lines[A_Index + 1])
+        if (line = "")
+            continue
+
+        parts := StrSplit(line, ",")
+        if (parts.Length < 4)
+            continue
+
+        exec := Map()
+        exec["timestamp"]              := StatsCSV_GetField(parts, headerIndex, "timestamp")
+        exec["session_id"]             := StatsCSV_GetField(parts, headerIndex, "session_id")
+        exec["username"]               := StatsCSV_GetField(parts, headerIndex, "username")
+        exec["execution_type"]         := StatsCSV_GetField(parts, headerIndex, "execution_type")
+        exec["button_key"]             := StatsCSV_GetField(parts, headerIndex, "button_key")
+        exec["layer"]                  := StatsCSV_GetField(parts, headerIndex, "layer")
+        exec["execution_time_ms"]      := Integer(StatsCSV_GetField(parts, headerIndex, "execution_time_ms"))
+        exec["total_boxes"]            := Integer(StatsCSV_GetField(parts, headerIndex, "total_boxes"))
+        exec["severity_level"]         := StatsCSV_GetField(parts, headerIndex, "severity_level")
+        exec["session_active_time_ms"] := Integer(StatsCSV_GetField(parts, headerIndex, "session_active_time_ms"))
+        exec["break_mode_active"]      := (StrLower(StatsCSV_GetField(parts, headerIndex, "break_mode_active")) = "true")
+        exec["macro_clicks"]           := Integer(StatsCSV_GetField(parts, headerIndex, "macro_clicks"))
+        exec["manual_clicks"]          := Integer(StatsCSV_GetField(parts, headerIndex, "manual_clicks"))
+        exec["clear_count"]            := Integer(StatsCSV_GetField(parts, headerIndex, "clear_count"))
+
+        ; Condition counts (Condition 1..9) – these will be picked up via conditionConfig/statKey mapping
+        Loop 9 {
+            fieldName := "condition_" . A_Index . "_count"
+            csvName   := "condition_" . A_Index . "_count"
+            exec[fieldName] := Integer(StatsCSV_GetField(parts, headerIndex, csvName))
+        }
+
+        StatsTotals_UpdateFromExecution(exec)
+    }
+
+    StatsTotals_Save()
+}
+
+StatsCSV_GetField(parts, headerIndex, name) {
+    if (!headerIndex.Has(name))
+        return ""
+    i := headerIndex[name]
+    return (i <= parts.Length) ? parts[i] : ""
+}
+
+StatsTotals_GetAllTimeSnapshot() {
+    StatsTotals_EnsureInitialized()
+    global statsTotals
+    return Stats_CloneMap(statsTotals["all_time"])
+}
+
+StatsTotals_GetDaySnapshot(date) {
+    StatsTotals_EnsureInitialized()
+    global statsTotals
+    perDay := statsTotals["per_day"]
+    if (!perDay.Has(date)) {
+        dayStats := Stats_CreateEmptyStatsMap()
+        dayStats["session_active_time"] := 0
+        perDay[date] := dayStats
+    }
+    return Stats_CloneMap(perDay[date])
+}
+
+StatsTotals_GetDayRef(date) {
+    ; Internal helper to get a mutable per-day stats map
+    StatsTotals_EnsureInitialized()
+    global statsTotals
+    perDay := statsTotals["per_day"]
+    if (!perDay.Has(date)) {
+        dayStats := Stats_CreateEmptyStatsMap()
+        dayStats["session_active_time"] := 0
+        perDay[date] := dayStats
+    }
+    return statsTotals["per_day"][date]
+}
+
+StatsTotals_ApplyExecutionToStats(stats, executionData) {
+    global conditionConfig
+
+    if (!IsObject(executionData))
+        return
+
+    execution_type := executionData.Has("execution_type") ? executionData["execution_type"] : ""
+    total_boxes   := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
+    execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
+    severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
+    macro_clicks  := executionData.Has("macro_clicks") ? executionData["macro_clicks"] : 0
+    manual_clicks := executionData.Has("manual_clicks") ? executionData["manual_clicks"] : 0
+
+    ; Aggregate basic stats (ignore session_end for execution counts)
+    if (execution_type != "session_end") {
+        stats["total_executions"] := stats["total_executions"] + 1
+        stats["total_boxes"] := stats["total_boxes"] + total_boxes
+        stats["total_execution_time"] := stats["total_execution_time"] + execution_time
+    }
+
+    ; Count execution types
+    if (execution_type == "clear") {
+        stats["clear_executions_count"] := stats["clear_executions_count"] + 1
+    } else if (execution_type == "json_profile") {
+        stats["json_profile_executions_count"] := stats["json_profile_executions_count"] + 1
+    } else if (execution_type == "macro") {
+        stats["macro_executions_count"] := stats["macro_executions_count"] + 1
+    }
+
+    ; Track clicks
+    if (macro_clicks > 0) {
+        stats["macro_clicks"] := stats["macro_clicks"] + macro_clicks
+    }
+    if (manual_clicks > 0) {
+        stats["manual_clicks"] := stats["manual_clicks"] + manual_clicks
+    }
+
+    ; Severity levels for JSON profiles
+    if (execution_type == "json_profile" && severity_level != "") {
+        switch StrLower(severity_level) {
+            case "low":
+                stats["severity_low"] := stats["severity_low"] + 1
+            case "medium":
+                stats["severity_medium"] := stats["severity_medium"] + 1
+            case "high":
+                stats["severity_high"] := stats["severity_high"] + 1
+        }
+    }
+
+    ; Aggregate condition counts dynamically
+    for id, config in conditionConfig {
+        fieldName := config.statKey . "_count"
+        count := executionData.Has(fieldName) ? executionData[fieldName] : 0
+        stats[config.statKey . "_total"] := stats[config.statKey . "_total"] + count
+        if (execution_type == "json_profile") {
+            stats["json_" . config.statKey] := stats["json_" . config.statKey] + count
+        } else if (execution_type == "macro") {
+            stats["macro_" . config.statKey] := stats["macro_" . config.statKey] + count
+        }
+    }
+
+    ; Handle clear counts
+    clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
+    stats["clear_total"] := stats["clear_total"] + clear
+    if (execution_type == "json_profile") {
+        stats["json_clear"] := stats["json_clear"] + clear
+    } else if (execution_type == "macro") {
+        stats["macro_clear"] := stats["macro_clear"] + clear
+    }
+}
+
+StatsTotals_UpdateFromExecution(executionData) {
+    global statsTotals, statsSessionActivePersisted
+    StatsTotals_EnsureInitialized()
+
+    if (!IsObject(executionData))
+        return
+
+    ; Determine date for per-day aggregation
+    timestamp := executionData.Has("timestamp") ? executionData["timestamp"] : ""
+    date := (timestamp != "") ? SubStr(timestamp, 1, 10) : FormatTime(A_Now, "yyyy-MM-dd")
+
+    allTime := statsTotals["all_time"]
+    dayStats := StatsTotals_GetDayRef(date)
+
+    execution_type := executionData.Has("execution_type") ? executionData["execution_type"] : ""
+
+    ; Handle session_active_time via incremental deltas per session
+    if (execution_type == "session_end") {
+        sessId := executionData.Has("session_id") ? executionData["session_id"] : ""
+        if (sessId != "" && executionData.Has("session_active_time_ms")) {
+            totalActive := executionData["session_active_time_ms"]
+            lastPersisted := statsSessionActivePersisted.Has(sessId) ? statsSessionActivePersisted[sessId] : 0
+            delta := totalActive - lastPersisted
+            if (delta > 0) {
+                statsSessionActivePersisted[sessId] := totalActive
+                allTime["session_active_time"] := allTime["session_active_time"] + delta
+                dayStats["session_active_time"] := dayStats["session_active_time"] + delta
+            }
+        }
+        ; Do not treat session_end as a normal execution for counts
+        return
+    }
+
+    ; Apply to all-time and per-day totals
+    StatsTotals_ApplyExecutionToStats(allTime, executionData)
+    StatsTotals_ApplyExecutionToStats(dayStats, executionData)
 }
 
 Stats_IncrementConditionCount(stats, condition_name, prefix := "json_") {
@@ -2670,6 +2954,10 @@ Stats_IncrementConditionCountDirect(executionData, condition_name) {
 global todayStatsCache := Map()
 global todayStatsCacheDate := ""
 global todayStatsCacheInvalidated := true
+; Aggregated totals for stats persistence (all-time + per-day)
+global statsTotals := Map()
+; Tracks how much active time per session has already been persisted
+global statsSessionActivePersisted := Map()
 
 ; Unified stats query function with flexible filtering
 ; filterOptions := {
@@ -2680,7 +2968,7 @@ global todayStatsCacheInvalidated := true
 ;     layer: layer_number                       (optional)
 ; }
 QueryUserStats(filterOptions := "") {
-    global macroExecutionLog, sessionId, totalActiveTime, currentUsername
+    global sessionId, manualClickCount, manualClicksSinceLastFlush
 
     ; Initialize default filter options
     if (filterOptions == "") {
@@ -2688,258 +2976,40 @@ QueryUserStats(filterOptions := "") {
         filterOptions["dateFilter"] := "all"
     }
 
-    ; Check if we can use cached today stats
-    ; IMPORTANT: For real-time display, we still need to update live time even from cache
-    if (filterOptions["dateFilter"] == "today") {
-        today := FormatTime(A_Now, "yyyy-MM-dd")
-        if (!todayStatsCacheInvalidated && todayStatsCacheDate == today && todayStatsCache.Count > 0) {
-            ; Clone cached stats to avoid modifying the cache itself
-            stats := Map()
-            for key, value in todayStatsCache {
-                stats[key] := value
-            }
-
-            ; CRITICAL: Update live time from current session
-            currentLiveTime := GetCurrentSessionActiveTime()
-            sessionActiveMap := stats.Has("session_active_time_map") ? stats["session_active_time_map"] : Map()
-
-            ; Recalculate total time with current live delta
-            totalSessionActive := 0
-            for sessId, activeMs in sessionActiveMap {
-                if (activeMs > 0) {
-                    totalSessionActive += activeMs
-                }
-            }
-
-            if (sessionActiveMap.Has(sessionId)) {
-                ; Add delta since last saved execution in this session
-                timeDelta := currentLiveTime - sessionActiveMap[sessionId]
-                if (timeDelta > 0) {
-                    totalSessionActive += timeDelta
-                }
-            } else {
-                ; No executions yet today in current session - add all current time
-                if (currentLiveTime > 0) {
-                    totalSessionActive += currentLiveTime
-                }
-            }
-
-            stats["session_active_time"] := totalSessionActive
-
-            ; Recalculate rates with updated time
-            if (stats["session_active_time"] > 5000) {
-                activeTimeHours := stats["session_active_time"] / 3600000
-                stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
-                stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
-            }
-
-            return stats
-        }
-    }
-
-    ; Build stats from scratch
-    stats := Stats_CreateEmptyStatsMap()
-    sessionActiveMap := Map()
-    executionTimes := []
-
-    ; Determine date filter
     dateFilter := filterOptions.Has("dateFilter") ? filterOptions["dateFilter"] : "all"
-    today := (dateFilter == "today") ? FormatTime(A_Now, "yyyy-MM-dd") : ""
-    filterSession := (dateFilter == "session")
-    targetSessionId := filterOptions.Has("sessionId") ? filterOptions["sessionId"] : sessionId
+    today := FormatTime(A_Now, "yyyy-MM-dd")
 
-    ; Optional filters
-    filterUsername := filterOptions.Has("username") ? filterOptions["username"] : ""
-    filterButton := filterOptions.Has("buttonKey") ? filterOptions["buttonKey"] : ""
-    filterLayer := filterOptions.Has("layer") ? filterOptions["layer"] : 0
-
-    ; Process execution log
-    for executionData in macroExecutionLog {
-        try {
-            ; Apply date filter
-            if (dateFilter == "today") {
-                timestamp := executionData.Has("timestamp") ? executionData["timestamp"] : ""
-                if (SubStr(timestamp, 1, 10) != today) {
-                    continue
-                }
-            }
-
-            ; Apply session filter
-            if (filterSession) {
-                execSessionId := executionData.Has("session_id") ? executionData["session_id"] : sessionId
-                if (execSessionId != targetSessionId) {
-                    continue
-                }
-            }
-
-            ; Apply username filter
-            if (filterUsername != "") {
-                execUsername := executionData.Has("username") ? executionData["username"] : currentUsername
-                if (execUsername != filterUsername) {
-                    continue
-                }
-            }
-
-            ; Apply button filter
-            if (filterButton != "") {
-                execButton := executionData.Has("button_key") ? executionData["button_key"] : ""
-                if (execButton != filterButton) {
-                    continue
-                }
-            }
-
-            ; Apply layer filter
-            if (filterLayer > 0) {
-                execLayer := executionData.Has("layer") ? executionData["layer"] : 1
-                if (execLayer != filterLayer) {
-                    continue
-                }
-            }
-
-            ; Extract execution data
-            execution_type := executionData["execution_type"]
-            macro_name := executionData.Has("button_key") ? executionData["button_key"] : ""
-            layer := executionData.Has("layer") ? executionData["layer"] : 1
-            execution_time := executionData.Has("execution_time_ms") ? executionData["execution_time_ms"] : 0
-            total_boxes := executionData.Has("total_boxes") ? executionData["total_boxes"] : 0
-            severity_level := executionData.Has("severity_level") ? executionData["severity_level"] : ""
-            session_active_time := executionData.Has("session_active_time_ms") ? executionData["session_active_time_ms"] : 0
-            execSessionId := executionData.Has("session_id") ? executionData["session_id"] : sessionId
-            username := executionData.Has("username") ? executionData["username"] : currentUsername
-            macro_clicks := executionData.Has("macro_clicks") ? executionData["macro_clicks"] : 0
-            manual_clicks := executionData.Has("manual_clicks") ? executionData["manual_clicks"] : 0
-
-            ; Track maximum active time per session
-            if (!sessionActiveMap.Has(execSessionId) || session_active_time > sessionActiveMap[execSessionId]) {
-                sessionActiveMap[execSessionId] := session_active_time
-            }
-
-            ; Update user summary
-            UpdateUserSummary(stats["user_summary"], username, total_boxes, execSessionId)
-
-            ; Aggregate basic stats (ignore session_end-only markers for execution counts)
-            if (execution_type != "session_end") {
-                stats["total_executions"]++
-                stats["total_boxes"] += total_boxes
-                stats["total_execution_time"] += execution_time
-                executionTimes.Push(execution_time)
-            }
-
-            ; Count execution types
-            if (execution_type == "clear") {
-                stats["clear_executions_count"]++
-            } else if (execution_type == "json_profile") {
-                stats["json_profile_executions_count"]++
-            } else {
-                stats["macro_executions_count"]++
-            }
-
-            ; Track macro clicks (per execution) for click-rate stats
-            if (macro_clicks > 0) {
-                stats["macro_clicks"] += macro_clicks
-            }
-
-            ; Track manual clicks (per execution/session) for click-rate stats
-            if (manual_clicks > 0) {
-                stats["manual_clicks"] += manual_clicks
-            }
-
-            ; Track severity levels for JSON profiles
-            if (execution_type == "json_profile" && severity_level != "") {
-                switch StrLower(severity_level) {
-                    case "low":
-                        stats["severity_low"]++
-                    case "medium":
-                        stats["severity_medium"]++
-                    case "high":
-                        stats["severity_high"]++
-                }
-            }
-
-            ; Aggregate condition counts dynamically (with legacy fallback)
-    global conditionConfig
-            for id, config in conditionConfig {
-                fieldName := config.statKey . "_count"
-                count := executionData.Has(fieldName) ? executionData[fieldName] : 0
-                stats[config.statKey . "_total"] := stats[config.statKey . "_total"] + count
-                if (execution_type == "json_profile") {
-                    stats["json_" . config.statKey] := stats["json_" . config.statKey] + count
-                } else if (execution_type == "macro") {
-                    stats["macro_" . config.statKey] := stats["macro_" . config.statKey] + count
-                }
-            }
-
-            ; Handle clear counts
-            clear := executionData.Has("clear_count") ? executionData["clear_count"] : 0
-            stats["clear_total"] := stats["clear_total"] + clear
-            if (execution_type == "json_profile") {
-                stats["json_clear"] := stats["json_clear"] + clear
-            } else if (execution_type == "macro") {
-                stats["macro_clear"] := stats["macro_clear"] + clear
-            }
-        } catch {
-            continue
-        }
-    }
-
-    ; Calculate aggregate metrics
-    totalSessionActive := 0
-    for _, activeMs in sessionActiveMap {
-        if (activeMs > 0) {
-            totalSessionActive += activeMs
-        }
-    }
-
-    if (sessionActiveMap.Has(sessionId)) {
-        stats["current_session_active_time"] := sessionActiveMap[sessionId]
-    } else {
-        stats["current_session_active_time"] := 0
-    }
-
-    if (totalSessionActive > 0) {
-        stats["session_active_time"] := totalSessionActive
-    }
-
-    ; CRITICAL FIX: For "today" filter, include current active session time
-    ; This ensures live time is shown even before first execution today
+    ; Build stats from aggregated totals
     if (dateFilter == "today") {
-        currentLiveTime := GetCurrentSessionActiveTime()
-
-        ; If current session had executions today, its time is already in sessionActiveMap
-        ; But we need to add the delta since last execution
-        if (sessionActiveMap.Has(sessionId)) {
-            ; Add delta since last saved execution in this session
-            timeDelta := currentLiveTime - sessionActiveMap[sessionId]
-            if (timeDelta > 0) {
-                stats["session_active_time"] += timeDelta
-            }
-        } else {
-            ; No executions yet today in current session - add all current time
-            if (currentLiveTime > 0) {
-                stats["session_active_time"] += currentLiveTime
-            }
-        }
+        stats := StatsTotals_GetDaySnapshot(today)
+    } else {
+        stats := StatsTotals_GetAllTimeSnapshot()
     }
 
-    stats["session_active_time_map"] := sessionActiveMap
-    stats["distinct_user_count"] := stats["user_summary"].Count
-
-    for username, userData in stats["user_summary"] {
-        if (userData.Has("sessions")) {
-            userData["session_count"] := userData["sessions"].Count
-        } else {
-            userData["session_count"] := 0
-        }
+    ; Add live manual clicks (not yet flushed into statsTotals)
+    liveManualDelta := manualClickCount - manualClicksSinceLastFlush
+    if (liveManualDelta > 0) {
+        if (!stats.Has("manual_clicks"))
+            stats["manual_clicks"] := 0
+        stats["manual_clicks"] += liveManualDelta
     }
 
-    if (stats["total_executions"] > 0) {
-        stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"], 1)
+    ; Add live active session time on top of persisted totals
+    if (!stats.Has("session_active_time"))
+        stats["session_active_time"] := 0
+
+    currentLiveTime := GetCurrentSessionActiveTime()
+    stats["session_active_time"] += currentLiveTime
+
+    ; Recompute derived metrics (whole numbers for display)
+    if (stats.Has("total_executions") && stats["total_executions"] > 0) {
+        stats["average_execution_time"] := Round(stats["total_execution_time"] / stats["total_executions"])
     }
 
     if (stats["session_active_time"] > 5000) {
         activeTimeHours := stats["session_active_time"] / 3600000
-        stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours, 1)
-        stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours, 1)
+        stats["boxes_per_hour"] := Round(stats["total_boxes"] / activeTimeHours)
+        stats["executions_per_hour"] := Round(stats["total_executions"] / activeTimeHours)
     }
 
     ; Cache today's stats if applicable
@@ -3143,9 +3213,6 @@ RecordExecutionStats(macroKey, executionStartTime, executionType, events, analys
         ; Ignore any issues with manual click tracking to avoid impacting core stats
     }
     result := AppendToCSV(executionData)
-    if (result) {
-        SaveStatsToJson()
-    }
     return result
 }
 
@@ -3154,6 +3221,7 @@ global macroExecutionLog := []
 SaveSessionEndMarker() {
     global sessionId, currentUsername, annotationMode
     global manualClickCount, manualClicksSinceLastFlush
+    global conditionTypes
 
     ; Only save if there's active time to preserve
     currentActiveTime := GetCurrentSessionActiveTime()
@@ -3198,14 +3266,30 @@ SaveSessionEndMarker() {
         executionData[name . "_count"] := 0
     }
 
-    ; Append to log (will be saved by SaveStatsToJson)
+    ; Append to in-memory log for this run only
     macroExecutionLog.Push(executionData)
     InvalidateTodayStatsCache()
+
+    ; Update aggregated totals and persist
+    StatsTotals_UpdateFromExecution(executionData)
+    StatsTotals_Save()
+}
+
+; Periodic checkpoint to ensure stats persistence across unexpected exits.
+; This writes a fresh session_end marker and saves stats JSON without
+; impacting execution counts or daily reset behavior.
+AutoSaveStats() {
+    try {
+        SaveSessionEndMarker()
+    } catch {
+        ; Ignore autosave errors - core behavior must not break 
+    }
 }
 
 AppendToCSV(executionData) {
     global macroExecutionLog, permanentStatsFile
     try {
+        ; Keep execution log in-memory for this run only
         macroExecutionLog.Push(executionData)
         ; Invalidate today's stats cache when new data is added
         InvalidateTodayStatsCache()
@@ -3218,6 +3302,10 @@ AppendToCSV(executionData) {
             }
             FileAppend(row, permanentStatsFile, "UTF-8")
         }
+
+        ; Update aggregated totals and persist
+        StatsTotals_UpdateFromExecution(executionData)
+        StatsTotals_Save()
 
         return true
     } catch Error as e {
@@ -3247,9 +3335,6 @@ UpdateActiveTime() {
 HandleDayChange(newDay) {
     global currentDay, totalActiveTime, lastActiveTime, sessionId, applicationStartTime
     ; Day has changed - reset daily tracking while preserving lifetime stats
-    ; Note: Lifetime stats are preserved in macroExecutionLog (never reset unless manual)
-    ; Daily stats are calculated by filtering GetTodayStatsFromMemory() by date
-
     ; Reset session time tracking for new day
     totalActiveTime := 0
     lastActiveTime := A_TickCount
@@ -3412,12 +3497,6 @@ global statsControls := Map()
 
 ShowStatsMenu() {
     global masterStatsCSV, darkMode, currentSessionId, permanentStatsFile, statsGui, statsGuiOpen, statsControls
-    global macroExecutionLog
-
-    ; Ensure stats are loaded on-demand (lazy and only once per run)
-    if (!IsObject(macroExecutionLog) || macroExecutionLog.Length = 0) {
-        LoadStatsFromJson()
-    }
 
     if (statsGuiOpen) {
         CloseStatsMenu()
@@ -3572,72 +3651,36 @@ UpdateStatsDisplay() {
         return
     }
     try {
-        ; Query stats - QueryUserStats now handles live time calculation
+        ; Query stats - QueryUserStats already adds live active time and manual clicks
         allStats := ReadStatsFromMemory(false)
         todayStats := GetTodayStatsFromMemory()
 
-        ; Add live, unflushed manual clicks on top of persisted stats
-        global manualClickCount, manualClicksSinceLastFlush
-        liveManualDelta := manualClickCount - manualClicksSinceLastFlush
-        if (liveManualDelta > 0) {
-            if (!allStats.Has("manual_clicks"))
-                allStats["manual_clicks"] := 0
-            if (!todayStats.Has("manual_clicks"))
-                todayStats["manual_clicks"] := 0
-            allStats["manual_clicks"] += liveManualDelta
-            todayStats["manual_clicks"] += liveManualDelta
-        }
+        ; Derive click rates using the same active-time basis for each view
+        ; ALL-TIME
+        effectiveAllActiveTime := allStats.Has("session_active_time") ? allStats["session_active_time"] : 0
+        allActiveHours := Max(effectiveAllActiveTime / 3600000.0, 0.0003)
 
-        ; Get current live time for all-time stats
-        currentActiveTime := GetCurrentSessionActiveTime()
-
-        ; For ALL-TIME: Add current session's live delta
-        effectiveAllActiveTime := (allStats.Has("session_active_time") ? allStats["session_active_time"] : 0)
-
-        ; Calculate delta from last saved execution time in current session
-        lastExecutionTime := 0
-        if (macroExecutionLog.Length > 0) {
-            lastExecution := macroExecutionLog[macroExecutionLog.Length]
-            if (lastExecution.Has("session_active_time_ms") && lastExecution.Has("session_id")) {
-                ; Only use if it's from current session
-                if (lastExecution["session_id"] == sessionId) {
-                    lastExecutionTime := lastExecution["session_active_time_ms"]
-                }
-            }
-        }
-
-        liveTimeDelta := (currentActiveTime > lastExecutionTime) ? (currentActiveTime - lastExecutionTime) : 0
-        effectiveAllActiveTime += liveTimeDelta
-
-        activeTimeHours := Max(effectiveAllActiveTime / 3600000.0, 0.0003)  ; ~1 second minimum to avoid zeros
-        allStats["boxes_per_hour"] := (effectiveAllActiveTime > 0) ? Round(allStats["total_boxes"] / activeTimeHours, 1) : 0
-        allStats["executions_per_hour"] := (effectiveAllActiveTime > 0) ? Round(allStats["total_executions"] / activeTimeHours, 1) : 0
-        ; For macro click rate, use real macro_clicks if present; otherwise approximate as 2 clicks per box.
         clicksForRate := 0
         if (allStats.Has("macro_clicks") && allStats["macro_clicks"] > 0) {
             clicksForRate := allStats["macro_clicks"]
         } else {
             clicksForRate := allStats["total_boxes"] * 2
         }
-        allStats["macro_clicks_per_hour"] := (effectiveAllActiveTime > 0) ? Round(clicksForRate / activeTimeHours, 1) : 0
-        allStats["manual_clicks_per_hour"] := (allStats.Has("manual_clicks") && effectiveAllActiveTime > 0) ? Round(allStats["manual_clicks"] / activeTimeHours, 1) : 0
-        allStats["session_active_time"] := effectiveAllActiveTime
+        allStats["macro_clicks_per_hour"] := (effectiveAllActiveTime > 0) ? Round(clicksForRate / allActiveHours) : 0
+        allStats["manual_clicks_per_hour"] := (allStats.Has("manual_clicks") && effectiveAllActiveTime > 0) ? Round(allStats["manual_clicks"] / allActiveHours) : 0
 
-        ; For TODAY: QueryUserStats already includes current session time
-        ; Just recalculate rates if needed
-        effectiveTodayActiveTime := (todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0)
+        ; TODAY
+        effectiveTodayActiveTime := todayStats.Has("session_active_time") ? todayStats["session_active_time"] : 0
+        todayActiveHours := Max(effectiveTodayActiveTime / 3600000.0, 0.0003)
 
-        activeTimeHours := Max(effectiveTodayActiveTime / 3600000.0, 0.0003)
-        todayStats["boxes_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayStats["total_boxes"] / activeTimeHours, 1) : 0
-        todayStats["executions_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayStats["total_executions"] / activeTimeHours, 1) : 0
         todayClicksForRate := 0
         if (todayStats.Has("macro_clicks") && todayStats["macro_clicks"] > 0) {
             todayClicksForRate := todayStats["macro_clicks"]
         } else {
             todayClicksForRate := todayStats["total_boxes"] * 2
         }
-        todayStats["macro_clicks_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayClicksForRate / activeTimeHours, 1) : 0
-        todayStats["manual_clicks_per_hour"] := (todayStats.Has("manual_clicks") && effectiveTodayActiveTime > 0) ? Round(todayStats["manual_clicks"] / activeTimeHours, 1) : 0
+        todayStats["macro_clicks_per_hour"] := (effectiveTodayActiveTime > 0) ? Round(todayClicksForRate / todayActiveHours) : 0
+        todayStats["manual_clicks_per_hour"] := (todayStats.Has("manual_clicks") && effectiveTodayActiveTime > 0) ? Round(todayStats["manual_clicks"] / todayActiveHours) : 0
         if (statsControls.Has("all_exec"))
             statsControls["all_exec"].Value := allStats["total_executions"]
         if (statsControls.Has("today_exec"))
@@ -3737,6 +3780,9 @@ CloseStatsMenu() {
 
 ExportStatsData(statsMenuGui := "") {
     global macroExecutionLog, documentsDir
+    ; Ensure export sees full history, even if stats window wasn't opened yet
+    EnsureStatsLoaded()
+
     if (!macroExecutionLog || macroExecutionLog.Length == 0) {
         MsgBox("📊 No data to export yet`n`nStart using macros to generate performance data!", "Info", "Icon!")
         return
@@ -3756,39 +3802,89 @@ ExportStatsData(statsMenuGui := "") {
 
 ResetAllStats() {
     global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
+    global statsTotals, statsSessionActivePersisted
     global manualClickCount, manualClicksSinceLastFlush
-    result := MsgBox("This will reset ALL statistics (Today and All-Time).`n`nAll execution data will be permanently deleted.`n`n⚠️ Export your stats first if you want to keep them!`n`nReset all stats?", "Reset Statistics", "YesNo Icon!")
-    if (result == "Yes") {
-        try {
-            macroExecutionLog := []
-            InvalidateTodayStatsCache()
-            manualClickCount := 0
-            manualClicksSinceLastFlush := 0
-            statsJsonFile := workDir . "\stats_log.json"
-            if FileExist(statsJsonFile) {
-                FileDelete(statsJsonFile)
-            }
-            if FileExist(masterStatsCSV) {
-                FileDelete(masterStatsCSV)
-            }
-            UpdateStatus("🗑️ Stats reset complete")
-            MsgBox("Statistics reset complete!`n`n✅ All execution data cleared.`n`nStart using macros to build new stats!", "Reset Complete", "Icon!")
-        } catch Error as e {
-            UpdateStatus("⚠️ Failed to reset statistics")
-            MsgBox("Failed to reset statistics: " . e.Message, "Error", "Icon!")
+
+    try {
+        macroExecutionLog := []
+        InvalidateTodayStatsCache()
+        manualClickCount := 0
+        manualClicksSinceLastFlush := 0
+
+        ; Remove legacy per-execution stats log if present
+        statsJsonFile := workDir . "\stats_log.json"
+        if FileExist(statsJsonFile) {
+            FileDelete(statsJsonFile)
         }
+
+        ; Remove aggregated totals file
+        totalsFile := workDir . "\stats_totals.json"
+        if FileExist(totalsFile) {
+            FileDelete(totalsFile)
+        }
+
+        statsTotals := Map()
+        statsSessionActivePersisted := Map()
+        if FileExist(masterStatsCSV) {
+            FileDelete(masterStatsCSV)
+        }
+
+        UpdateStatus("🗑️ Stats reset complete")
+    } catch Error as e {
+        UpdateStatus("⚠️ Failed to reset statistics: " . e.Message)
     }
 }
 
+	
+	ShowCredits(parentGui, *) {
+	    creditsGui := Gui("+Owner" . parentGui.Hwnd, "MacroMono Credits")
+	    creditsGui.SetFont("s9", "Segoe UI")
+	
+		    creditsText := "
+		    (
+	MacroMono - Complete Data Labeling Assistant
+	
+	Designed and developed by:
+	  Alexander Neff
+	
+	Project Annotate - Rivian
+	  April 2025 - December 2025
+	  Developed at the Rivian Training Facility
+	
+	Special thanks:
+	  Stephen da Silva
+	  Ivan Briseno
+	  Adan Arteaga
+	  Aleisha Marie La Roque
+	  Kenny Coppenbarger
+	  Sierra Pelton
+	  Valentino Dore
+	
+	This tool was created to reduce repetitive strain from repeatedly drawing full-canvas blockages and bounding boxes, and to streamline large-scale annotation workflows.
+	
+	Stay in touch:
+	  LinkedIn: https://www.linkedin.com/in/alex-neff13/
+	  Email:    alexneffmgmt@gmail.com
+		    )"
+	
+	    creditsGui.Add("Text", "x15 y15 w520 h360", creditsText)
+	    btnClose := creditsGui.Add("Button", "x240 y385 w80 h26", "Close")
+	    btnClose.OnEvent("Click", (*) => creditsGui.Destroy())
+	
+	    creditsGui.Show("w580 h460")
+	}
+	
 ; ===== MAIN INITIALIZATION =====
 Main() {
     try {
         startTick := A_TickCount
 
-        ; Initialize core systems
-        InitializeStatsSystem()
-        InitializeDirectories()
-        InitializeVariables()
+    ; Initialize core systems
+    InitializeStatsSystem()
+    ; Periodic stats checkpoint so lifetime stats persist across sessions/crashes
+    SetTimer(AutoSaveStats, statsCheckpointIntervalMs)
+    InitializeDirectories()
+    InitializeVariables()
         InitializeJsonAnnotationsEx()
         InitializeVisualizationSystem()
         
@@ -3827,9 +3923,6 @@ Main() {
         }
 
         ; Startup complete
-        totalDuration := A_TickCount - startTick
-        PerfLog("Main_Startup", totalDuration)
-
         ; Setup time tracking and auto-save
         SetTimer(UpdateActiveTime, 5000)  ; Update active time every 5 seconds
         SetTimer(AutoSave, 60000)  ; Auto-save every 60 seconds
@@ -3878,6 +3971,7 @@ InitializeDirectories() {
 ; ===== HOTKEY SETUP - FIXED F9 SYSTEM =====
 SetupHotkeys() {
     global hotkeySubmit, hotkeyUtilitySubmit, hotkeyUtilityBackspace
+    global numpadGridEnabled, wasdGridEnabled
 
     try {
         ; CRITICAL: Clear any existing hotkeys to prevent conflicts
@@ -3885,6 +3979,35 @@ SetupHotkeys() {
             Hotkey("F9", "Off")
             Hotkey("CapsLock & f", "Off")
             Hotkey("CapsLock & Space", "Off")
+            Hotkey(hotkeyEmergencyStop, "Off")
+
+            ; Clear numpad macro grid hotkeys
+            Hotkey("Numpad7", "Off")
+            Hotkey("Numpad8", "Off")
+            Hotkey("Numpad9", "Off")
+            Hotkey("Numpad4", "Off")
+            Hotkey("Numpad5", "Off")
+            Hotkey("Numpad6", "Off")
+            Hotkey("Numpad1", "Off")
+            Hotkey("Numpad2", "Off")
+            Hotkey("Numpad3", "Off")
+            Hotkey("Numpad0", "Off")
+            Hotkey("NumpadDot", "Off")
+            Hotkey("NumpadMult", "Off")
+
+            ; Clear WASD macro grid hotkeys
+            Hotkey("CapsLock & 1", "Off")
+            Hotkey("CapsLock & 2", "Off")
+            Hotkey("CapsLock & 3", "Off")
+            Hotkey("CapsLock & q", "Off")
+            Hotkey("CapsLock & w", "Off")
+            Hotkey("CapsLock & e", "Off")
+            Hotkey("CapsLock & a", "Off")
+            Hotkey("CapsLock & s", "Off")
+            Hotkey("CapsLock & d", "Off")
+            Hotkey("CapsLock & z", "Off")
+            Hotkey("CapsLock & x", "Off")
+            Hotkey("CapsLock & c", "Off")
         } catch {
         }
 
@@ -3893,11 +4016,12 @@ SetupHotkeys() {
         ; RECORDING CONTROL - COMPLETELY ISOLATED
         Hotkey("CapsLock & f", F9_RecordingOnly, "On")
         Hotkey("CapsLock & Space", (*) => EmergencyStop(), "On")
+        Hotkey(hotkeyEmergencyStop, (*) => EmergencyStop(), "On")
 
         ; Utility keys
         Hotkey("F12", (*) => ShowStatsMenu())
 
-        ; Macro execution - EXPLICITLY EXCLUDE F9
+        ; Macro execution grid hotkeys (registered once; on/off controlled by helpers)
         Hotkey("Numpad7", (*) => SafeExecuteMacroByKey("Num7"))
         Hotkey("Numpad8", (*) => SafeExecuteMacroByKey("Num8"))
         Hotkey("Numpad9", (*) => SafeExecuteMacroByKey("Num9"))
@@ -3911,7 +4035,6 @@ SetupHotkeys() {
         Hotkey("NumpadDot", (*) => SafeExecuteMacroByKey("NumDot"))
         Hotkey("NumpadMult", (*) => SafeExecuteMacroByKey("NumMult"))
 
-        ; WASD hotkeys for macro execution (CapsLock + WASD keys)
         Hotkey("CapsLock & 1", (*) => ExecuteWASDMacro("Num7"))
         Hotkey("CapsLock & 2", (*) => ExecuteWASDMacro("Num8"))
         Hotkey("CapsLock & 3", (*) => ExecuteWASDMacro("Num9"))
@@ -3924,6 +4047,19 @@ SetupHotkeys() {
         Hotkey("CapsLock & z", (*) => ExecuteWASDMacro("Num0"))
         Hotkey("CapsLock & x", (*) => ExecuteWASDMacro("NumDot"))
         Hotkey("CapsLock & c", (*) => ExecuteWASDMacro("NumMult"))
+
+        ; Ensure grids start in the correct state for this session
+        if (numpadGridEnabled) {
+            EnableNumpadGrid()
+        } else {
+            DisableNumpadGrid()
+        }
+
+        if (wasdGridEnabled) {
+            EnableWASDGrid()
+        } else {
+            DisableWASDGrid()
+        }
 
         ; Utility - Standard
         Hotkey(hotkeySubmit, (*) => SubmitCurrentImage())
@@ -3984,6 +4120,91 @@ F9_RecordingOnly(*) {
         SafeUninstallKeyboardHook()
         ResetRecordingUI()
     }
+}
+
+; Simple handlers for grid enable/disable toggles from the settings UI
+ToggleNumpadGrid(ctrl, info) {
+    global numpadGridEnabled
+    ; Checkbox value: 1 = enabled, 0 = disabled
+    numpadGridEnabled := (ctrl.Value = 1)
+    if (numpadGridEnabled) {
+        EnableNumpadGrid()
+    } else {
+        DisableNumpadGrid()
+    }
+    SaveConfig()
+}
+
+; ===== SIMPLE GRID HOTKEY UTILITIES =====
+EnableNumpadGrid() {
+    Hotkey("Numpad7", "On")
+    Hotkey("Numpad8", "On")
+    Hotkey("Numpad9", "On")
+    Hotkey("Numpad4", "On")
+    Hotkey("Numpad5", "On")
+    Hotkey("Numpad6", "On")
+    Hotkey("Numpad1", "On")
+    Hotkey("Numpad2", "On")
+    Hotkey("Numpad3", "On")
+    Hotkey("Numpad0", "On")
+    Hotkey("NumpadDot", "On")
+    Hotkey("NumpadMult", "On")
+}
+
+DisableNumpadGrid() {
+    Hotkey("Numpad7", "Off")
+    Hotkey("Numpad8", "Off")
+    Hotkey("Numpad9", "Off")
+    Hotkey("Numpad4", "Off")
+    Hotkey("Numpad5", "Off")
+    Hotkey("Numpad6", "Off")
+    Hotkey("Numpad1", "Off")
+    Hotkey("Numpad2", "Off")
+    Hotkey("Numpad3", "Off")
+    Hotkey("Numpad0", "Off")
+    Hotkey("NumpadDot", "Off")
+    Hotkey("NumpadMult", "Off")
+}
+
+EnableWASDGrid() {
+    Hotkey("CapsLock & 1", "On")
+    Hotkey("CapsLock & 2", "On")
+    Hotkey("CapsLock & 3", "On")
+    Hotkey("CapsLock & q", "On")
+    Hotkey("CapsLock & w", "On")
+    Hotkey("CapsLock & e", "On")
+    Hotkey("CapsLock & a", "On")
+    Hotkey("CapsLock & s", "On")
+    Hotkey("CapsLock & d", "On")
+    Hotkey("CapsLock & z", "On")
+    Hotkey("CapsLock & x", "On")
+    Hotkey("CapsLock & c", "On")
+}
+
+DisableWASDGrid() {
+    Hotkey("CapsLock & 1", "Off")
+    Hotkey("CapsLock & 2", "Off")
+    Hotkey("CapsLock & 3", "Off")
+    Hotkey("CapsLock & q", "Off")
+    Hotkey("CapsLock & w", "Off")
+    Hotkey("CapsLock & e", "Off")
+    Hotkey("CapsLock & a", "Off")
+    Hotkey("CapsLock & s", "Off")
+    Hotkey("CapsLock & d", "Off")
+    Hotkey("CapsLock & z", "Off")
+    Hotkey("CapsLock & x", "Off")
+    Hotkey("CapsLock & c", "Off")
+}
+
+ToggleWASDGrid(ctrl, info) {
+    global wasdGridEnabled
+    wasdGridEnabled := (ctrl.Value = 1)
+    if (wasdGridEnabled) {
+        EnableWASDGrid()
+    } else {
+        DisableWASDGrid()
+    }
+    SaveConfig()
 }
 
 ; ===== FORCED RECORDING FUNCTIONS =====
@@ -4628,17 +4849,22 @@ FocusBrowser() {
 
 ; ===== GUI MANAGEMENT =====
 InitializeGui() {
-    global mainGui, statusBar, darkMode, windowWidth, windowHeight, scaleFactor, minWindowWidth, minWindowHeight
+    global mainGui, statusBar, darkMode, windowWidth, windowHeight, scaleFactor, minWindowWidth, minWindowHeight, appTitle
 
     ; NIGHT MODE - dark theme always enabled
-    mainGui := Gui("+Resize +MinSize" . minWindowWidth . "x" . minWindowHeight, "Data Labeling Assistant")
+    mainGui := Gui("+Resize +MinSize" . minWindowWidth . "x" . minWindowHeight, appTitle . " - Data Labeling Assistant")
     mainGui.BackColor := "0x2D2D2D"
     mainGui.SetFont("s" . Round(10 * scaleFactor), "c0xFFFFFF")
     
-    CreateToolbar()
+    CreateToolbarBranded()
     CreateGridOutline()
     CreateButtonGrid()
     CreateStatusBar()
+
+    ; Ensure clear button uses trashcan emoji label
+    if (mainGui.HasProp("btnClear")) {
+        try mainGui.btnClear.Text := "🗑 Clear"
+    }
     
     mainGui.OnEvent("Size", GuiResize)
     mainGui.OnEvent("Close", (*) => SafeExit())
@@ -4647,7 +4873,7 @@ InitializeGui() {
 }
 
 CreateToolbar() {
-    global mainGui, darkMode, modeToggleBtn, windowWidth
+    global mainGui, darkMode, modeToggleBtn, windowWidth, appTitle
 
     ; Calculate scale based on current window size
     scale := GetScaleFactor()
@@ -4690,6 +4916,9 @@ CreateToolbar() {
     btnClear.OnEvent("Click", (*) => ShowClearDialog())
     btnClear.SetFont("s" . Round(7 * scale) . " bold", "cWhite")
     btnClear.Opt("+Background0x505050")
+    mainGui.btnClear := btnClear
+    btnClear.Text := "Clear"
+    btnClear.Text := "🧹 Clear"
 
     ; Right section
     rightSection := Round(windowWidth * 0.5)
@@ -4713,6 +4942,101 @@ CreateToolbar() {
     btnEmergency.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
     btnEmergency.Opt("+Background0x8B0000")
     mainGui.btnEmergency := btnEmergency
+}
+
+CreateToolbarBranded() {
+    global mainGui, darkMode, modeToggleBtn, windowWidth, appTitle, annotationMode
+
+    ; Calculate scale based on current window size
+    scale := GetScaleFactor()
+
+    ; ALL dimensions use scale - SIMPLE percentage scaling
+    toolbarHeight := Round(40 * scale)
+    btnHeight := Round(28 * scale)
+    btnY := Round((toolbarHeight - btnHeight) / 2)
+    spacing := Round(8 * scale)
+    primaryBtnWidth := Round(90 * scale)
+    standardBtnWidth := Round(80 * scale)
+
+    ; Background
+    tbBg := mainGui.Add("Text", "x0 y0 w" . windowWidth . " h" . toolbarHeight)
+    tbBg.BackColor := "0x1E1E1E"
+    mainGui.tbBg := tbBg
+
+    x := spacing
+
+    ; Left section: core controls
+    btnRecord := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . primaryBtnWidth . " h" . btnHeight, "?? Record")
+    btnRecord.OnEvent("Click", (*) => F9_RecordingOnly())
+    btnRecord.SetFont("s" . Round(9 * scale) . " bold", "cWhite")
+    btnRecord.Opt("+Background0x3A3A3A")
+    mainGui.btnRecord := btnRecord
+    btnRecord.Text := "⏺ Record"
+    x += primaryBtnWidth + spacing
+
+    modeToggleBtn := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . standardBtnWidth . " h" . btnHeight, (annotationMode = "Wide" ? "?? Wide" : "?? Narrow"))
+    modeToggleBtn.OnEvent("Click", (*) => ToggleAnnotationMode())
+    modeToggleBtn.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    modeToggleBtn.Opt("+Background0x505050")
+    mainGui.modeToggleBtn := modeToggleBtn
+    modeToggleBtn.Text := (annotationMode = "Wide" ? "🔦 Wide" : "📱 Narrow")
+    x += standardBtnWidth + spacing
+
+    btnBreakMode := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . standardBtnWidth . " h" . btnHeight, "? Break")
+    btnBreakMode.OnEvent("Click", (*) => ToggleBreakMode())
+    btnBreakMode.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    btnBreakMode.Opt("+Background0x505050")
+    mainGui.btnBreakMode := btnBreakMode
+    btnBreakMode.Text := "☕ Break"
+    x += standardBtnWidth + spacing
+
+    btnClear := mainGui.Add("Button", "x" . x . " y" . btnY . " w" . standardBtnWidth . " h" . btnHeight, "??? Clear")
+    btnClear.OnEvent("Click", (*) => ShowClearDialog())
+    btnClear.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    btnClear.Opt("+Background0x505050")
+    mainGui.btnClear := btnClear
+    x += standardBtnWidth + spacing
+
+    leftSectionEnd := x
+
+    ; Optional centered title between left and right sections
+    rightSection := Round(windowWidth * 0.5)
+    titleAreaLeft := leftSectionEnd + spacing
+    titleAreaRight := rightSection - spacing
+    titleWidth := titleAreaRight - titleAreaLeft
+
+    if (titleWidth > Round(80 * scale)) {
+        titleY := btnY
+        titleCtrl := mainGui.Add("Text", "x" . titleAreaLeft . " y" . titleY . " w" . titleWidth . " h" . btnHeight . " Center BackgroundTrans", appTitle)
+        titleCtrl.SetFont("s" . Round(16 * scale) . " bold cWhite", "Segoe UI Black")
+        mainGui.titleCtrl := titleCtrl
+    }
+
+    ; Right section
+    rightSection := Round(windowWidth * 0.5)
+    rightWidth := windowWidth - rightSection - spacing
+    btnWidth := Round((rightWidth - Round(20 * scale)) / 3)
+
+    btnStats := mainGui.Add("Button", "x" . rightSection . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "?? Stats")
+    btnStats.OnEvent("Click", (*) => ShowStatsMenu())
+    btnStats.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    btnStats.Opt("+Background0x3A3A3A")
+    mainGui.btnStats := btnStats
+    btnStats.Text := "📊 Stats"
+
+    btnSettings := mainGui.Add("Button", "x" . (rightSection + btnWidth + Round(5 * scale)) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "?? Config")
+    btnSettings.OnEvent("Click", (*) => ShowSettings())
+    btnSettings.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    btnSettings.Opt("+Background0x3A3A3A")
+    mainGui.btnSettings := btnSettings
+    btnSettings.Text := "⚙ Config"
+
+    btnEmergency := mainGui.Add("Button", "x" . (rightSection + (btnWidth * 2) + Round(10 * scale)) . " y" . btnY . " w" . btnWidth . " h" . btnHeight, "?? STOP")
+    btnEmergency.OnEvent("Click", (*) => EmergencyStop())
+    btnEmergency.SetFont("s" . Round(8 * scale) . " bold", "cWhite")
+    btnEmergency.Opt("+Background0x8B0000")
+    mainGui.btnEmergency := btnEmergency
+    btnEmergency.Text := "⛔ STOP`nCapsLock+SPACE"
 }
 
 CreateGridOutline() {
@@ -5083,6 +5407,20 @@ StopMacroLoop(layerMacroName, buttonName := "") {
     }
 }
 
+; Ensure in-memory stats include any existing history from disk before writing.
+; This prevents new sessions from overwriting an existing stats_log.json with
+; only the current run's data.
+EnsureStatsLoaded() {
+    global macroExecutionLog, workDir
+    try {
+        statsJsonFile := workDir . "\stats_log.json"
+        if ((!IsObject(macroExecutionLog) || macroExecutionLog.Length = 0) && FileExist(statsJsonFile)) {
+            LoadStatsFromJson()
+        }
+    } catch {
+        ; On failure, fall back to current in-memory log (do not throw)
+    }
+}
 StopAllMacroLoops() {
     global activeLoops
 
@@ -5157,8 +5495,90 @@ RefreshAllButtonAppearances() {
 
     VizLog("RefreshAllButtonAppearances complete: " . successCount . " success, " . errorCount . " errors")
     FlushVizLog()
-    duration := A_TickCount - startTick
-    PerfLog("RefreshAllButtonAppearances", duration)
+}
+
+; Refresh buttons that currently have JSON annotations,
+; used after severity label or JSON template changes so existing tiles
+; pick up new labels/templates without manual re-assignment.
+RefreshJsonMacroButtonAppearances() {
+    global buttonNames, macroEvents, currentLayer, buttonDisplayedHBITMAPs
+    global conditionConfig, severityDisplayNames
+
+    for buttonName in buttonNames {
+        layerMacroName := "L" . currentLayer . "_" . buttonName
+
+        if (!macroEvents.Has(layerMacroName))
+            continue
+
+        events := macroEvents[layerMacroName]
+        if (events.Length < 1)
+            continue
+
+        updatedThisButton := false
+        for idx, ev in events {
+            try {
+                if (!IsObject(ev) || !ev.HasOwnProp("type") || ev.type != "jsonAnnotation")
+                    continue
+
+                ; Canonicalize severity back to stable keys (high/medium/low)
+                sevKey := ev.severity
+                ; If this severity isn't one of our known keys, try to map by label
+                if (!severityDisplayNames.Has(sevKey)) {
+                    ; Map from current label text back to key, case-insensitive
+                    for key, lbl in severityDisplayNames {
+                        if (StrLower(lbl) = StrLower(ev.severity)) {
+                            sevKey := key
+                            ev.severity := sevKey
+                            break
+                        }
+                    }
+                    ; Fallback: normalize obvious variants like HIGH/MEDIUM/LOW
+                    if (!severityDisplayNames.Has(sevKey)) {
+                        lowSev := StrLower(ev.severity)
+                        if (lowSev = "high" || lowSev = "h")
+                            sevKey := "high"
+                        else if (lowSev = "medium" || lowSev = "med" || lowSev = "m")
+                            sevKey := "medium"
+                        else if (lowSev = "low" || lowSev = "l")
+                            sevKey := "low"
+                        ev.severity := sevKey
+                    }
+                }
+
+                ; Rebuild annotation from current conditionConfig + canonical severity,
+                ; so any updated JSON templates and severity labels take effect.
+                if (!conditionConfig.Has(ev.categoryId))
+                    continue
+
+                ev.annotation := BuildJsonAnnotation(ev.mode, ev.categoryId, sevKey)
+                updatedThisButton := true
+            } catch {
+            }
+        }
+
+        if (!updatedThisButton)
+            continue
+
+        ; Clear any cached HBITMAP so visuals rebuild with new labels/templates
+        try {
+            if (buttonDisplayedHBITMAPs.Has(buttonName) && buttonDisplayedHBITMAPs[buttonName]) {
+                oldHbitmap := buttonDisplayedHBITMAPs[buttonName]
+                try {
+                    if (IsHBITMAPValid(oldHbitmap))
+                        RemoveHBITMAPReference(oldHbitmap)
+                } catch {
+                }
+                buttonDisplayedHBITMAPs[buttonName] := 0
+            }
+        } catch {
+        }
+
+        ; Redraw this button with the updated annotation/severity label
+        try {
+            UpdateButtonAppearance(buttonName)
+        } catch {
+        }
+    }
 }
 
 ; Fast placeholder render (currently unused). Kept for potential future use.
@@ -5217,7 +5637,7 @@ FastRefreshButtonPlaceholders() {
                     picture.Visible := false
                 button.Visible := true
                 button.Opt("+Background0x3A3A3A")
-                button.SetFont("s7 bold", "cWhite")
+                button.SetFont("s7 bold", "cBlack")
                 button.Text := "MACRO`n" . events.Length . " events"
             }
         } catch {
@@ -5353,12 +5773,14 @@ UpdateButtonAppearance(buttonName) {
     jsonColor := "0xFFD700"
 	
     if (isJsonAnnotation) {
-        global conditionConfig
+        global conditionConfig, severityDisplayNames
         jsonEvent := events[1]
         ; Use displayName from conditionConfig
         typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
-        ; Remove mode from text - will be shown visually via letterboxing
-        jsonInfo := typeName . " " . StrUpper(jsonEvent.severity)
+        ; Use current severity display label (High/Medium/Low or user-customized)
+        severityLabel := severityDisplayNames.Has(jsonEvent.severity) ? severityDisplayNames[jsonEvent.severity] : StrTitle(jsonEvent.severity)
+        ; Remove mode from text - mode is shown visually via letterboxing
+        jsonInfo := typeName . " " . severityLabel
 	
         if (conditionConfig.Has(jsonEvent.categoryId)) {
             jsonColor := conditionConfig[jsonEvent.categoryId].color
@@ -5485,7 +5907,7 @@ UpdateButtonAppearance(buttonName) {
                                 picture.Visible := false
                                 button.Visible := true
                                 button.Opt("+Background0x3A3A3A")
-                                button.SetFont("s7 bold", "cWhite")
+                                button.SetFont("s7 bold", "cBlack")
                                 button.Text := "MACRO`n" . events.Length . " events`n(viz error)"
                                 buttonDisplayedHBITMAPs[buttonName] := 0
                             }
@@ -5494,7 +5916,7 @@ UpdateButtonAppearance(buttonName) {
                             picture.Visible := false
                             button.Visible := true
                             button.Opt("+Background0x3A3A3A")
-                            button.SetFont("s7 bold", "cWhite")
+                            button.SetFont("s7 bold", "cBlack")
                             button.Text := "MACRO`n" . events.Length . " events`n(viz error)"
                             buttonDisplayedHBITMAPs[buttonName] := 0
                         }
@@ -5502,7 +5924,7 @@ UpdateButtonAppearance(buttonName) {
                         picture.Visible := false
                         button.Visible := true
                         button.Opt("+Background0x3A3A3A")
-                        button.SetFont("s7 bold", "cWhite")
+                        button.SetFont("s7 bold", "cBlack")
                         button.Text := "MACRO`n" . events.Length . " events"
                         buttonDisplayedHBITMAPs[buttonName] := 0
                     }
@@ -5553,7 +5975,7 @@ UpdateButtonAppearance(buttonName) {
                     picture.Visible := false
                     button.Visible := true
                     button.Opt("+Background0x3A3A3A")
-                    button.SetFont("s7 bold", "cWhite")
+                    button.SetFont("s7 bold", "cBlack")
                     button.Text := "MACRO`n" . events.Length . " events" . failureReason
                     buttonDisplayedHBITMAPs[buttonName] := 0
                 }
@@ -5650,24 +6072,26 @@ ShowContextMenu(buttonName, *) {
     ; Legacy workflow labels as functional defaults
     ; Shows old workflow names (Smudge, Glare, etc.) but uses actual Label 1-9 presets
     legacyLabels := [
-        {name: "Smudge", id: 1},
-        {name: "Glare", id: 2},
-        {name: "Splashes", id: 3},
-        {name: "Partial Blockage", id: 4},
-        {name: "Full Blockage", id: 5},
-        {name: "Light Flare", id: 6},
-        {name: "Rain", id: 7},
-        {name: "Haze", id: 8},
-        {name: "Snow", id: 9}
+        {name: "Condition 1", id: 1},
+        {name: "Condition 2", id: 2},
+        {name: "Condition 3", id: 3},
+        {name: "Condition 4", id: 4},
+        {name: "Condition 5", id: 5},
+        {name: "Condition 6", id: 6},
+        {name: "Condition 7", id: 7},
+        {name: "Condition 8", id: 8},
+        {name: "Condition 9", id: 9}
     ]
 
     for item in legacyLabels {
         typeMenu := Menu()
-        legacyName := item.name
         labelId := item.id
 
-        ; Get the actual displayName from config (Label 1, Label 2, etc.)
-        actualLabelName := conditionConfig[labelId].displayName
+        ; Get the actual displayName from config (Condition 1, 2, etc.) with fallback
+        actualLabelName := (conditionConfig.Has(labelId) && conditionConfig[labelId].displayName != "")
+            ? conditionConfig[labelId].displayName
+            : item.name
+        legacyName := actualLabelName
 
         for severity in severityLevels {
             ; Skip disabled severities for this condition
@@ -5676,9 +6100,9 @@ ShowContextMenu(buttonName, *) {
 
             ; Use customizable display labels for severities, no extra suffixes
             displaySeverity := severityDisplayNames.Has(severity) ? severityDisplayNames[severity] : StrTitle(severity)
-            presetName := actualLabelName . " (" . displaySeverity . ")"
 
-            typeMenu.Add(displaySeverity, AssignJsonAnnotation.Bind(buttonName, presetName))
+            ; Bind both the condition id and canonical severity key
+            typeMenu.Add(displaySeverity, AssignJsonAnnotation.Bind(buttonName, labelId, severity))
         }
 
         ; Show legacy name in menu, but it functions with the actual label preset
@@ -5871,10 +6295,55 @@ ShowSettings() {
     UpdateCanvasStatusControls(settingsGui)
     settingsGui.SetFont("s9")
 
-    ; Stats reset
-    settingsGui.Add("Text", "x30 y260 w480 h18", "📊 Statistics")
-    btnResetStats := settingsGui.Add("Button", "x40 y283 w180 h28", "📊 Reset All Stats")
+    ; Config profiles - simple quick slots (macros + stats)
+    settingsGui.Add("Text", "x30 y260 w480 h18", "Config Profiles")
+    profilesGroup := settingsGui.Add("GroupBox", "x30 y280 w480 h170", "Quick Save/Load Slots")
+
+    slotY := 305
+    btnSave1 := settingsGui.Add("Button", "x45 y" . slotY . " w90 h26", "Save 1")
+    btnLoad1 := settingsGui.Add("Button", "x150 y" . slotY . " w90 h26", "Load 1")
+    slotY += 28
+    btnSave2 := settingsGui.Add("Button", "x45 y" . slotY . " w90 h26", "Save 2")
+    btnLoad2 := settingsGui.Add("Button", "x150 y" . slotY . " w90 h26", "Load 2")
+    slotY += 28
+    btnSave3 := settingsGui.Add("Button", "x45 y" . slotY . " w90 h26", "Save 3")
+    btnLoad3 := settingsGui.Add("Button", "x150 y" . slotY . " w90 h26", "Load 3")
+    slotY += 28
+    btnSave4 := settingsGui.Add("Button", "x45 y" . slotY . " w90 h26", "Save 4")
+    btnLoad4 := settingsGui.Add("Button", "x150 y" . slotY . " w90 h26", "Load 4")
+
+    settingsGui.SetFont("s8")
+    settingsGui.Add("Text", "x260 y305 w240 h60 +Wrap c0x666666"
+        , "Slots save macros (config.ini) so you can quickly switch profiles without affecting stats.")
+    settingsGui.SetFont("s9")
+
+    btnSave1.OnEvent("Click", (*) => SaveToSlot(1))
+    btnLoad1.OnEvent("Click", (*) => LoadFromSlot(1))
+    btnSave2.OnEvent("Click", (*) => SaveToSlot(2))
+    btnLoad2.OnEvent("Click", (*) => LoadFromSlot(2))
+    btnSave3.OnEvent("Click", (*) => SaveToSlot(3))
+    btnLoad3.OnEvent("Click", (*) => LoadFromSlot(3))
+        btnSave4.OnEvent("Click", (*) => SaveToSlot(4))
+    btnLoad4.OnEvent("Click", (*) => LoadFromSlot(4))
+
+    ; Macro pack management section (separate from slots)
+    settingsGui.Add("Text", "x30 y460 w480 h18", "Macro Packs")
+    btnExportPack := settingsGui.Add("Button", "x40 y483 w180 h28", "Export Macro Pack...")
+    btnExportPack.OnEvent("Click", (*) => ExportMacroPack())
+
+    btnImportPack := settingsGui.Add("Button", "x230 y483 w180 h28", "Load Macro Pack...")
+    btnImportPack.OnEvent("Click", (*) => ImportMacroPack())
+
+    ; Stats reset (bottom of Essentials tab)
+    settingsGui.Add("Text", "x30 y520 w480 h18", "Statistics")
+    btnResetStats := settingsGui.Add("Button", "x40 y543 w180 h28", "Reset All Stats")
     btnResetStats.OnEvent("Click", (*) => ResetStatsFromSettings(settingsGui))
+
+    ; Credits section
+    settingsGui.Add("Text", "x30 y580 w480 h18", "Credits")
+    btnCredits := settingsGui.Add("Button", "x40 y603 w180 h28", "Credits / About")
+    btnCredits.OnEvent("Click", ShowCredits.Bind(settingsGui))
+
 
     ; TAB 2: Execution Settings
     tabs.UseTab(2)
@@ -6059,23 +6528,51 @@ ShowSettings() {
     settingsGui.SetFont("s9")
     hotkeyY += 30
 
-    ; Settings
-    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Settings:")
-    editSettings := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeySettings)
-    btnCaptureSettings := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
-    btnCaptureSettings.OnEvent("Click", (*) => CaptureHotkey(editSettings, "Settings"))
+    ; Emergency Stop
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Emergency Stop:")
+    editEmergencyStop := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeyEmergencyStop)
+    btnCaptureEmergencyStop := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+    btnCaptureEmergencyStop.OnEvent("Click", (*) => CaptureHotkey(editEmergencyStop, "Emergency Stop"))
     settingsGui.SetFont("s7")
-    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Open settings")
+    settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Global kill-switch (e.g. Numpad +)")
     settingsGui.SetFont("s9")
-    hotkeyY += 35
+    hotkeyY += 30
 
-    ; Apply/Reset buttons for hotkeys
-    btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w120 h28", "✅ Apply Hotkeys")
-    btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(editRecordToggle, editSubmit, editDirectClear, editUtilitySubmit, editUtilityBackspace, editStats, editBreakMode, editSettings, settingsGui))
+    ; Settings
+settingsGui.Add("Text", "x30 y" . hotkeyY . " w120 h22", "Settings:")
+editSettings := settingsGui.Add("Edit", "x155 y" . hotkeyY . " w130 h22", hotkeySettings)
+btnCaptureSettings := settingsGui.Add("Button", "x290 y" . hotkeyY . " w50 h22", "Set")
+btnCaptureSettings.OnEvent("Click", (*) => CaptureHotkey(editSettings, "Settings"))
+settingsGui.SetFont("s7")
+settingsGui.Add("Text", "x350 y" . (hotkeyY+3) . " w145 h16 c0x666666", "Open settings")
+settingsGui.SetFont("s9")
+hotkeyY += 35
 
-    btnResetHotkeys := settingsGui.Add("Button", "x165 y" . hotkeyY . " w120 h28", "🔄 Reset to Default")
-    btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
-    hotkeyY += 36
+    ; Macro grid enable/disable toggles
+    settingsGui.Add("Text", "x30 y" . hotkeyY . " w480 h18", "Macro Grids:")
+    hotkeyY += 24
+
+    chkNumpadGrid := settingsGui.Add("CheckBox", "x40 y" . hotkeyY . " w200 h22", "Enable Numpad Grid")
+    chkNumpadGrid.Value := numpadGridEnabled ? 1 : 0
+    chkNumpadGrid.OnEvent("Click", ToggleNumpadGrid)
+    hotkeyY += 24
+
+    chkWASDGrid := settingsGui.Add("CheckBox", "x40 y" . hotkeyY . " w200 h22", "Enable WASD Grid")
+    chkWASDGrid.Value := wasdGridEnabled ? 1 : 0
+    chkWASDGrid.OnEvent("Click", ToggleWASDGrid)
+    hotkeyY += 30
+
+; Apply/Reset buttons for hotkeys
+btnApplyHotkeys := settingsGui.Add("Button", "x30 y" . hotkeyY . " w120 h28", "Apply Hotkeys")
+btnApplyHotkeys.OnEvent("Click", (*) => ApplyHotkeySettings(
+    editRecordToggle, editSubmit, editDirectClear,
+    editUtilitySubmit, editUtilityBackspace,
+    editStats, editBreakMode, editSettings, editEmergencyStop, settingsGui))
+
+btnResetHotkeys := settingsGui.Add("Button", "x165 y" . hotkeyY . " w120 h28", "Reset to Default")
+btnResetHotkeys.OnEvent("Click", (*) => ResetHotkeySettings(settingsGui))
+hotkeyY += 36
+
 
     
 
@@ -6147,7 +6644,6 @@ ShowSettings() {
     settingsGui.SetFont("s9")
 settingsGui.Show("w580 h700")
 }
-
 
 EditConditionJsonTemplates(settingsGui) {
     global conditionConfig
@@ -6317,7 +6813,10 @@ SaveConditionJson(ddl, editHigh, editMedium, editLow, editLabelHigh := "", editL
 
     SaveConfig()
     InitializeJsonAnnotationsEx()
-    InitializeJsonAnnotationsEx()
+    ; Update stored jsonAnnotation events + visuals so existing tiles
+    ; pick up new severity labels/templates without re-assignment.
+    RefreshJsonMacroButtonAppearances()
+    RefreshAllButtonAppearances()
     UpdateStatus("Updated JSON for Condition " . conditionId)
 }
 
@@ -6388,6 +6887,8 @@ ResetConditionJson(ddl, editHigh, editMedium, editLow, chkHigh := "", chkMedium 
 
     SaveConfig()
     InitializeJsonAnnotationsEx()
+    RefreshJsonMacroButtonAppearances()
+    RefreshAllButtonAppearances()
 
     ; Reload editor fields with default JSON values
     LoadConditionJson(ddl, editHigh, editMedium, editLow, chkHigh, chkMedium, chkLow)
@@ -6493,32 +6994,27 @@ ToggleAnnotationMode() {
 
 ; ===== UPDATE EXISTING JSON MACROS (SINGLE LAYER) =====
 UpdateExistingJSONMacros(newMode) {
-	    global macroEvents, conditionConfig, buttonNames, jsonAnnotations, currentLayer
-	
-	    updatedCount := 0
-	    layer := 1
-	    for buttonName in buttonNames {
-	        layerMacroName := "L" . layer . "_" . buttonName
-	        if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
-	            jsonEvent := macroEvents[layerMacroName][1]
-	            ; Use displayName from conditionConfig
-	            typeName := conditionConfig.Has(jsonEvent.categoryId) ? conditionConfig[jsonEvent.categoryId].displayName : "Label " . jsonEvent.categoryId
-	            presetName := typeName . " (" . StrTitle(jsonEvent.severity) . ")" . (newMode = "Narrow" ? " Narrow" : "")
-	            
-	            if (jsonAnnotations.Has(presetName)) {
-	                ; Update the annotation
-	                jsonEvent.annotation := jsonAnnotations[presetName]
-	                jsonEvent.mode := newMode
-	                updatedCount++
-	                
-	                ; Update button appearance (single layer)
-	                if (layer == currentLayer) {
-	                    UpdateButtonAppearance(buttonName)
-	                }
-	            }
-	        }
-	    }
-    
+    global macroEvents, buttonNames, currentLayer
+
+    updatedCount := 0
+    layer := 1
+    for buttonName in buttonNames {
+        layerMacroName := "L" . layer . "_" . buttonName
+        if (macroEvents.Has(layerMacroName) && macroEvents[layerMacroName].Length == 1 && macroEvents[layerMacroName][1].type == "jsonAnnotation") {
+            jsonEvent := macroEvents[layerMacroName][1]
+
+            ; Rebuild annotation directly from canonical categoryId/severity for new mode
+            jsonEvent.annotation := BuildJsonAnnotation(newMode, jsonEvent.categoryId, jsonEvent.severity)
+            jsonEvent.mode := newMode
+            updatedCount++
+
+            ; Update button appearance (single layer)
+            if (layer == currentLayer) {
+                UpdateButtonAppearance(buttonName)
+            }
+        }
+    }
+
     if (updatedCount > 0) {
         SaveConfig()
         UpdateStatus("Updated " . updatedCount . " JSON macros to " . newMode . " mode")
@@ -6540,8 +7036,33 @@ EditCustomLabel(buttonName) {
     }
 }
 
-AssignJsonAnnotation(buttonName, presetName, *) {
-    global currentLayer, macroEvents, jsonAnnotations, conditionConfig, annotationMode
+AssignJsonAnnotation(buttonName, categoryId, severity, *) {
+    global currentLayer, macroEvents, jsonAnnotations, conditionConfig, annotationMode, severityDisplayNames
+
+    ; NEW PATH: canonical severity + direct BuildJsonAnnotation
+    layerMacroName := "L" . currentLayer . "_" . buttonName
+
+    sevKey := StrLower(severity)
+    currentMode := annotationMode
+    annotation := BuildJsonAnnotation(currentMode, categoryId, sevKey)
+
+    macroEvents[layerMacroName] := [{
+        type: "jsonAnnotation",
+        annotation: annotation,
+        mode: currentMode,
+        categoryId: categoryId,
+        severity: sevKey
+    }]
+
+    typeName := (conditionConfig.Has(categoryId) && conditionConfig[categoryId].displayName != "")
+        ? conditionConfig[categoryId].displayName
+        : "Condition " . categoryId
+    sevLabel := severityDisplayNames.Has(sevKey) ? severityDisplayNames[sevKey] : StrTitle(sevKey)
+
+    UpdateButtonAppearance(buttonName)
+    SaveConfig()
+    UpdateStatus("??? Assigned " . currentMode . " " . typeName . " (" . sevLabel . ") to " . buttonName)
+
 
     layerMacroName := "L" . currentLayer . "_" . buttonName
 
@@ -6622,9 +7143,10 @@ InitializeJsonAnnotations() {
     jsonAnnotations := Map()
 
     ; Create annotations for all condition types and severity levels in both modes
+    ; IMPORTANT: Context menu uses generic names (Condition 1, Condition 2, ...)
+    ; so it stays stable even if users rename display labels for visualization.
     labelCount := 0
     for id, config in conditionConfig {
-        ; Force generic names in JSON profile context menu (Condition 1, Condition 2, ...)
         labelName := "Condition " . id
         labelCount++
 
@@ -7167,31 +7689,11 @@ ApplyTimingPreset(preset, settingsGui) {
 }
 
 ResetStatsFromSettings(parentGui) {
-    global macroExecutionLog, masterStatsCSV, workDir
-
-    if (MsgBox("Reset all statistics data?`n`nThis will clear execution logs but preserve macros.", "Confirm Stats Reset", "YesNo Icon!") = "Yes") {
-        try {
-            macroExecutionLog := []
-            InvalidateTodayStatsCache()
-
-            statsJsonFile := workDir . "\stats_log.json"
-            if FileExist(statsJsonFile) {
-                FileDelete(statsJsonFile)
-            }
-
-            if (masterStatsCSV != "" && FileExist(masterStatsCSV)) {
-                FileDelete(masterStatsCSV)
-            }
-
-            InitializeStatsSystem()
-            UpdateStatus("?? Statistics reset - Ready for new session")
-        } catch Error as err {
-            UpdateStatus("?? Failed to reset statistics: " . err.Message)
-        }
-
-        if (parentGui) {
-            parentGui.Destroy()
-        }
+    ; Delegate to the unified stats reset routine so both lifetime and
+    ; daily stats (including active time) are reset consistently.
+    ResetAllStats()
+    if (parentGui) {
+        parentGui.Destroy()
     }
 }
 
@@ -7290,7 +7792,9 @@ SaveConfig() {
         configContent .= "hotkeyStats=" . hotkeyStats . "`n"
         configContent .= "hotkeyBreakMode=" . hotkeyBreakMode . "`n"
         configContent .= "hotkeySettings=" . hotkeySettings . "`n"
-        configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n`n"
+        configContent .= "utilityHotkeysEnabled=" . (utilityHotkeysEnabled ? 1 : 0) . "`n"
+        configContent .= "wasdGridEnabled=" . (wasdGridEnabled ? 1 : 0) . "`n"
+        configContent .= "numpadGridEnabled=" . (numpadGridEnabled ? 1 : 0) . "`n`n"
 
         ; Add severities display labels section (for severity naming and global enable flags)
         global severityDisplayNames, severityGlobalEnabled
@@ -7407,8 +7911,8 @@ SaveConfig() {
     }
 }
 
-LoadConfig() {
-	    global currentLayer, macroEvents, configFile, buttonNames, buttonCustomLabels, annotationMode, modeToggleBtn
+LoadConfig(skipSimpleState := false) {
+		    global currentLayer, macroEvents, configFile, buttonNames, buttonCustomLabels, annotationMode, modeToggleBtn
     global wideCanvasLeft, wideCanvasTop, wideCanvasRight, wideCanvasBottom, isWideCanvasCalibrated
     global narrowCanvasLeft, narrowCanvasTop, narrowCanvasRight, narrowCanvasBottom, isNarrowCanvasCalibrated
     
@@ -7446,13 +7950,13 @@ LoadConfig() {
                 key := Trim(SubStr(line, 1, equalPos - 1))
                 value := Trim(SubStr(line, equalPos + 1))
 
-	                if (currentSection == "General") {
+                if (currentSection == "General") {
 	                    if (key == "AnnotationMode") {
-                        if (value == "Wide" || value == "Narrow")
-                            annotationMode := value
-                        else
-                            annotationMode := "Wide"  ; Reset to default if invalid
-                    }
+                         if (value == "Wide" || value == "Narrow")
+                             annotationMode := value
+                         else
+                             annotationMode := "Wide"  ; Reset to default if invalid
+                     }
                 } else if (currentSection == "Canvas") {
                     ; Load canvas calibration data
                     if (key == "wideCanvasLeft") {
@@ -7557,6 +8061,12 @@ LoadConfig() {
                     } else if (key == "utilityHotkeysEnabled") {
                         valueLower := StrLower(value)
                         utilityHotkeysEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
+                    } else if (key == "wasdGridEnabled") {
+                        valueLower := StrLower(value)
+                        wasdGridEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
+                    } else if (key == "numpadGridEnabled") {
+                        valueLower := StrLower(value)
+                        numpadGridEnabled := !(valueLower = "" || valueLower = "0" || valueLower = "false" || valueLower = "no" || valueLower = "off")
                     }
                 } else if (currentSection == "Severities") {
                     ; Load severity display labels and global enable flags
@@ -7653,9 +8163,13 @@ LoadConfig() {
         SyncLegacyConditionMaps()
 
         ; FAST MACRO RESTORE:
-        ; 1) Try simple state file first (quick load of last session macros)
-        ; 2) If none found, fall back to parsing macros from config.ini (legacy)
-        macrosLoaded := LoadMacroState()
+        ; 1) Try simple state file first (quick load of last session macros),
+        ;    unless explicitly skipped (e.g. when loading a specific profile).
+        ; 2) If none found, fall back to parsing macros from config.ini (profile-bound).
+        macrosLoaded := 0
+        if (!skipSimpleState) {
+            macrosLoaded := LoadMacroState()
+        }
         if (macrosLoaded == 0) {
             macrosLoaded := ParseMacrosFromConfig()
         }
@@ -7844,21 +8358,18 @@ SaveToSlot(slotNumber) {
     global workDir, configFile
     
     try {
+        ; Persist current config and stats to their normal locations
+        ; (stats remain global, not per-slot)
         SaveConfig()
-        SaveStatsToJson()
+        StatsTotals_Save()
         
         slotDir := workDir . "\slots\slot_" . slotNumber
         if !DirExist(slotDir) {
             DirCreate(slotDir)
         }
         
-        ; Copy current config to slot
+        ; Copy current config to slot (macros + settings only)
         FileCopy(configFile, slotDir . "\config.ini", true)
-        
-        logFile := workDir . "\stats_log.json"
-        if FileExist(logFile) {
-            FileCopy(logFile, slotDir . "\stats_log.json", true)
-        }
         
         ; Save slot info
         slotInfo := "Slot " . slotNumber . " - Saved: " . FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
@@ -7882,16 +8393,14 @@ LoadFromSlot(slotNumber) {
             return false
         }
         
-        ; Copy slot config to current
+        ; Copy slot config to current (macros + settings only)
         FileCopy(slotDir . "\config.ini", configFile, true)
         
-        logFile := workDir . "\stats_log.json"
-        if FileExist(slotDir . "\stats_log.json") {
-            FileCopy(slotDir . "\stats_log.json", logFile, true)
-        }
-        
-        LoadConfig()
-        LoadStatsFromJson()
+        ; Load config for this slot, but skip generic simple-state restore so
+        ; macros/visuals come from the slot's config.ini rather than last session.
+        LoadConfig(true)
+        StatsTotals_EnsureInitialized()
+        InvalidateTodayStatsCache()
         
         ; Refresh UI
         global buttonNames
@@ -7905,6 +8414,48 @@ LoadFromSlot(slotNumber) {
         UpdateStatus("⚠️ Load from slot failed: " . e.Message)
         return false
     }
+}
+
+ExportMacroPack(*) {
+    global configFile
+
+    ; EXTREMELY SIMPLE: just copy config.ini to user-chosen file
+    if (!FileExist(configFile)) {
+        MsgBox("No config.ini found to export.", "Export Macro Pack", "Icon!")
+        return
+    }
+
+    ; Default packs directory under the script folder
+    packsDir := A_ScriptDir . "\packs"
+    if (!DirExist(packsDir)) {
+        DirCreate(packsDir)
+    }
+
+    defaultName := "MacroPack_" . FormatTime(A_Now, "yyyyMMdd_HHmmss") . ".ini"
+    initialPath := packsDir . "\" . defaultName
+    savePath := FileSelect("S16", initialPath, "Save Macro Pack", "INI (*.ini)")
+    if (savePath = "")
+        return  ; user cancelled
+
+    FileCopy(configFile, savePath, 1)
+}
+
+ImportMacroPack(*) {
+    global configFile
+
+    ; EXTREMELY SIMPLE: user picks a .ini, we overwrite config.ini and reload
+    packsDir := A_ScriptDir . "\packs"
+    if (!DirExist(packsDir)) {
+        DirCreate(packsDir)
+    }
+
+    packPath := FileSelect("3", packsDir, "Load Macro Pack", "INI (*.ini)")
+    if (packPath = "")
+        return  ; user cancelled
+
+    FileCopy(packPath, configFile, true)
+    ; When loading a macro pack, bypass simple-state restore and rebuild from the pack's config.ini.
+    LoadConfig(true)
 }
 
 ; ===== ANALYSIS FUNCTIONS =====
@@ -8100,7 +8651,6 @@ AutoSave() {
     
     if (!recording && !breakMode) {
         SaveConfig()
-        SaveStatsToJson()
     }
 }
 
@@ -8132,7 +8682,7 @@ CleanupAndExit() {
 
         SaveConfig()
         savedMacros := SaveMacroState()
-        SaveStatsToJson()
+        ; StatsTotals_UpdateFromExecution/Save called by SaveSessionEndMarker/AppendToCSV
         UpdateStatus("💾 Saved " . savedMacros . " macros")
 
         ; Clean up visualization resources - COMPREHENSIVE HBITMAP CLEANUP
@@ -8163,7 +8713,6 @@ CleanupAndExit() {
     } catch Error as e {
         try {
             SaveConfig()
-            SaveStatsToJson()
             CleanupHBITMAPCache()
             CleanupButtonDisplayedHBITMAPs()
         } catch {
@@ -8306,10 +8855,10 @@ InitializeJsonAnnotationsEx() {
     jsonAnnotations := Map()
 
     ; Create annotations for all condition types and severity levels in both modes
+    ; Use live condition displayName so JSON profile names always match user labels.
     labelCount := 0
     for id, config in conditionConfig {
-        ; Force generic names in JSON profile context menu (Condition 1, Condition 2, ...)
-        labelName := "Condition " . id
+        labelName := (config.displayName != "" ? config.displayName : "Condition " . id)
         labelCount++
 
         for severity in severityLevels {
@@ -8317,6 +8866,7 @@ InitializeJsonAnnotationsEx() {
             if (!IsSeverityEnabled(id, severity))
                 continue
 
+            ; Severity display names follow user-customizable labels
             displaySeverity := severityDisplayNames.Has(severity) ? severityDisplayNames[severity] : StrTitle(severity)
             presetName := labelName . " (" . displaySeverity . ")"
 
