@@ -38,7 +38,7 @@ MacroBox records mouse clicks and bounding box drawings once, then replays them 
 
 ### The Solution
 - Record once, replay infinitely
-- 18 macro slots (Numpad 1-9 + WASD grid)
+- 12 macro slots (Numpad 1-9 + WASD grid)
 - Auto-loop execution with configurable timing
 - Multi-monitor support with universal calibration
 
