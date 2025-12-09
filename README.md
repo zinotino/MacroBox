@@ -1,4 +1,4 @@
-# Backroad: AutoHotkey v2 Data Labeling & Visualization System
+# MacroBox: AutoHotkey v2 Data Labeling & Visualization System
 
 **Version**: 1.0.0 (Pre-Release)  
 **Language**: AutoHotkey v2  
@@ -26,7 +26,7 @@
 
 ## Overview
 
-Backroad is a professional-grade data labeling and visualization system built in AutoHotkey v2. It provides real-time box annotation with multi-mode rendering, foolproof multi-monitor calibration, and persistent data storage for machine learning preprocessing workflows.
+MacroBox is a professional-grade data labeling and visualization system built in AutoHotkey v2. It provides real-time box annotation with multi-mode rendering, foolproof multi-monitor calibration, and persistent data storage for machine learning preprocessing workflows.
 
 **Primary Use Case**: Annotate regions of interest in streamed or recorded content with automatic visualization in real-time UI overlays.
 
@@ -80,12 +80,12 @@ Backroad is a professional-grade data labeling and visualization system built in
 
 1. **Download & Extract**
    ```
-   Extract Backroad to: C:\Tools\Backroad\
+   Extract MacroBox to: C:\Tools\MacroBox\
    ```
 
 2. **Run the Application**
    ```
-   Double-click: backroad.ahk
+   Double-click: MacroBox.ahk
    AutoHotkey v2 interpreter launches the program
    ```
 
@@ -130,16 +130,16 @@ Backroad is a professional-grade data labeling and visualization system built in
    AutoHotkey v2 will be available system-wide
    ```
 
-2. **Clone or Download Backroad**
+2. **Clone or Download MacroBox**
    ```
-   git clone https://github.com/zinotino/Backroad.git
+   git clone https://github.com/zinotino/MacroBox.git
    OR
-   Download ZIP → Extract to C:\Tools\Backroad\
+   Download ZIP → Extract to C:\Tools\MacroBox\
    ```
 
 3. **Verify Installation**
    ```
-   Navigate to: C:\Tools\Backroad\mono\
+   Navigate to: C:\Tools\MacroBox\mono\
    Right-click: main.ahk → Open with → AutoHotkey v2
    If prompt appears: "Canvas not calibrated" → FIRST TIME SETUP (see above)
    ```
@@ -343,7 +343,7 @@ Traditional systems fail on:
 - ✗ Vertical/portrait mode setups
 - ✗ Mixed DPI systems (e.g., 96 DPI + 125 DPI)
 
-**Backroad Solution**: Zero setup-specific logic. Pure proportional math.
+**MacroBox Solution**: Zero setup-specific logic. Pure proportional math.
 
 ### How It Works
 
@@ -416,7 +416,7 @@ Result:    ✓ Works perfectly (width=2500)
 **Scenario**: Label 100 boxes in a 5-minute video segment
 
 1. **Setup** (30 seconds)
-   - Start Backroad
+   - Start MacroBox
    - Select Wide mode
    - Review video segment
 
@@ -442,7 +442,7 @@ Result:    ✓ Works perfectly (width=2500)
    - Create folder: `C:\Projects\DefectLabeling\`
 
 2. **Sessions 1-10**
-   - Each session: Open Backroad → Record boxes → Export CSV
+   - Each session: Open MacroBox → Record boxes → Export CSV
    - Save with naming: `session_01_segment_A.csv`, `session_02_segment_B.csv`, etc.
 
 3. **Consolidation**
@@ -458,7 +458,7 @@ Result:    ✓ Works perfectly (width=2500)
    - Distribute to all team members
 
 2. **Each Annotator**
-   - Copy config to their Backroad install
+   - Copy config to their MacroBox install
    - Record their annotations independently
    - Export with annotator ID: `annotations_john_session_01.csv`
 
@@ -471,10 +471,10 @@ Result:    ✓ Works perfectly (width=2500)
 **Scenario**: Validate annotations during live recording
 
 1. **Setup**
-   - Split screen: Video player + Backroad overlay
+   - Split screen: Video player + MacroBox overlay
 
 2. **Record**
-   - As defects appear, record boxes in Backroad
+   - As defects appear, record boxes in MacroBox
    - Overlay shows real-time visualization
    - Status window confirms box count
 
@@ -486,7 +486,7 @@ Result:    ✓ Works perfectly (width=2500)
 **Scenario**: Improve annotations from previous session
 
 1. **Load Previous Session**
-   - Open Backroad
+   - Open MacroBox
    - File → Import Previous Session → select `session_01.csv`
    - All previous boxes display in overlay
 
@@ -505,7 +505,7 @@ Result:    ✓ Works perfectly (width=2500)
 
 ### config.ini (Auto-Created on First Run)
 
-**Location**: `C:\Tools\Backroad\mono\config.ini`
+**Location**: `C:\Tools\MacroBox\mono\config.ini`
 
 ```ini
 [Canvas]
@@ -530,7 +530,7 @@ statusWindowX=100
 statusWindowY=100
 
 [Export]
-defaultExportPath=C:\Users\YourUsername\Documents\Backroad_Exports\
+defaultExportPath=C:\Users\YourUsername\Documents\MacroBox_Exports\
 autoAddTimestamp=1
 
 [Session]
@@ -582,14 +582,14 @@ ShowSettings=Ctrl+S      # Default: Ctrl+S to open settings
 
 **Method 1: Direct Run**
 ```
-Navigate to: C:\Tools\Backroad\mono\
+Navigate to: C:\Tools\MacroBox\mono\
 Double-click: main.ahk
 AutoHotkey v2 launches automatically
 ```
 
 **Method 2: Command Line**
 ```
-AutoHotkey.exe "C:\Tools\Backroad\mono\main.ahk"
+AutoHotkey.exe "C:\Tools\MacroBox\mono\main.ahk"
 ```
 
 **Method 3: Shortcut**
@@ -636,7 +636,7 @@ Go to Settings → Calibrate Canvas
    - Status updates: "Boxes recorded: 47"
 
 4. **Review Overlay**
-   - Backroad overlay window shows all recorded boxes
+   - MacroBox overlay window shows all recorded boxes
    - Colors indicate category
    - Letterbox frame (if Narrow mode) shows 4:3 region
 
@@ -645,7 +645,7 @@ Go to Settings → Calibrate Canvas
 **Export Current Session**:
 ```
 1. Click: Export → Save As CSV
-2. Choose location (defaults to: C:\Users\YourUsername\Documents\Backroad_Exports\)
+2. Choose location (defaults to: C:\Users\YourUsername\Documents\MacroBox_Exports\)
 3. Name file: annotations_2025-10-31_0130.csv
 4. Click Save
 → CSV created with all recorded boxes + metadata
@@ -679,7 +679,7 @@ box_id,session_id,timestamp,mode,category_id,left,top,right,bottom,category_name
 **Solution**:
 1. Download AutoHotkey v2: https://www.autohotkey.com/
 2. Run installer
-3. Retry launching Backroad
+3. Retry launching MacroBox
 
 ---
 
@@ -689,7 +689,7 @@ box_id,session_id,timestamp,mode,category_id,left,top,right,bottom,category_name
 
 **Solution**:
 1. Check if `config.ini` exists in the `mono/` folder
-2. If missing: Backroad creates it on first run; recalibrate
+2. If missing: MacroBox creates it on first run; recalibrate
 3. If exists: Open with Notepad; verify:
    ```ini
    isWideCanvasCalibrated=1
@@ -760,7 +760,7 @@ box_id,session_id,timestamp,mode,category_id,left,top,right,bottom,category_name
 **Cause**: UI framework issue or DLL missing
 
 **Solution**:
-1. Restart Backroad
+1. Restart MacroBox
 2. If persists: Check for corrupted `modules/ui/` folder
 3. Verify GDI+ dependencies are available
 
@@ -803,7 +803,7 @@ box_id,session_id,timestamp,mode,category_id,left,top,right,bottom,category_name
 **Build Script** (for release):
 ```
 Run: build/build.ahk
-Output: Backroad.exe (compiled AutoHotkey binary)
+Output: MacroBox.exe (compiled AutoHotkey binary)
 Includes: All modules, resources, config
 ```
 
@@ -873,7 +873,7 @@ Includes: All modules, resources, config
 ## Frequently Asked Questions
 
 **Q: Can I use this on macOS or Linux?**  
-A: No. Backroad uses Windows-specific APIs (mouse hooks, GDI+). Windows 10+ only.
+A: No. MacroBox uses Windows-specific APIs (mouse hooks, GDI+). Windows 10+ only.
 
 **Q: How many boxes can I record in one session?**  
 A: Tested reliably up to 10,000 boxes per session. Performance depends on RAM.
@@ -884,7 +884,7 @@ A: v1.0.0: View/export only. v1.1.0 will add editing. Workaround: Export CSV →
 **Q: How do I backup my calibration?**  
 A: Copy `config.ini` to safe location. Restore by copying back to `mono/` folder.
 
-**Q: Can I use multiple instances of Backroad?**  
+**Q: Can I use multiple instances of MacroBox?**  
 A: Not recommended. Only one mouse hook can be active per process.
 
 ---
