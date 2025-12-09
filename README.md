@@ -513,6 +513,16 @@ A: Copy: `MacroMono.ahk`, `config.ini`, `macros.txt`, `stats_log.json`
 
 Standalone script provided as-is.
 
+**Permissions:**
+- ✅ Personal or commercial use for data labeling
+- ✅ Modify for own use
+- ✅ Share original script
+
+**Restrictions:**
+- ❌ No warranty provided
+- ❌ Use at own risk
+- ❌ Author not responsible for platform bans or issues
+
 ---
 
 ## Contributing
