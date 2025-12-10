@@ -53,7 +53,7 @@ MacroBox records mouse clicks and bounding box drawings once, then replays them 
 ## Key Features
 
 ### Automation
-- **18 Macro Slots**: Numpad (1-9) + WASD grid (Q/W/E/A/S/D/Z/X/C)
+- **12 Macro Slots**: Numpad (1-9) + WASD grid (Q/W/E/A/S/D/Z/X/C)
 - **Auto Mode**: Loop macros at intervals (0.5-10s) with configurable counts
 - **Universal Calibration**: Works on any monitor setup (negative coords, ultrawide, vertical)
 - **In-Memory Cache**: HBITMAP thumbnails bypass filesystem restrictions
@@ -304,7 +304,7 @@ Settings → Hotkeys → Edit or click "Set" to capture new binding
 
 **What it does:**
 - Stores thumbnail visualizations in RAM (not disk)
-- Each thumbnail ~50KB, 18 buttons = ~900KB total
+- Each thumbnail ~50KB, 12 buttons = ~900KB total
 - Cache cleared on: recalibration, color changes, exit
 
 **Why it matters:**
@@ -469,7 +469,7 @@ A: No. Windows-only (requires Win32 APIs).
 A: MacroBox operates at OS level. Platforms can't distinguish from human clicks. Use responsibly and follow platform terms of service.
 
 **Q: How many macros can I have?**  
-A: 18 simultaneous slots. Practical limit ~999 before performance degrades.
+A: 12 simultaneous slots. Practical limit ~999 before performance degrades.
 
 **Q: Can I transfer macros between computers?**  
 A: Yes. Copy `macros.txt` + `config.ini`. Recalibrate canvas (monitor-specific).
