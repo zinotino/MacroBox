@@ -9,19 +9,18 @@ Single 8,923-line AutoHotkey V2 script | Windows 10/11 | Zero dependencies
 ## Table of Contents
 
 - [Overview](#overview)
-- [Key Features](#key-features)
+- [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Usage](#usage)
-  - [Recording Macros](#recording-macros)
-  - [Auto Mode](#auto-mode)
-  - [Canvas Modes](#canvas-modes)
-  - [Statistics](#statistics)
+- [Canvas Calibration](#canvas-calibration)
+- [Recording Macros](#recording-macros)
+- [Auto Mode](#auto-mode)
+- [Statistics & Export](#statistics--export)
 - [Hotkeys](#hotkeys)
+- [Configuration Files](#configuration-files)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
-- [Technical Details](#technical-details)
+- [Technical Specifications](#technical-specifications)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -29,46 +28,25 @@ Single 8,923-line AutoHotkey V2 script | Windows 10/11 | Zero dependencies
 
 ## Overview
 
-MacroBox records mouse clicks and bounding box drawings once, then replays them instantly with a single keypress. Built for high-volume annotation work on platforms like Remotasks, Scale AI, segments.ai, and manufacturing QC systems.
+MacroBox records mouse clicks and bounding box drawings once, then replays them instantly. Built for high-volume annotation work on Remotasks, Scale AI, segments.ai, and manufacturing QC systems.
 
-### The Problem
-- Repetitive strain injuries from 8+ hour clicking shifts
-- Productivity bottlenecks processing 1000+ items daily
-- Label variance from fatigue and inconsistency
+**Problem:** RSI from 8+ hour shifts, productivity bottlenecks, label variance from fatigue
 
-### The Solution
-- Record once, replay infinitely
-- 12 macro slots (Numpad 1-9 + WASD grid)
-- Auto-loop execution with configurable timing
-- Multi-monitor support with universal calibration
-
-### Results
-- **200%** productivity increase
-- **66.7%** cost reduction per item
-- **78%** reduction in label variance
-- Pays for itself in 3 days of work
+**Solution:** Record once, replay infinitely with 200% productivity increase, 66.7% cost reduction, 78% less variance
 
 ---
 
-## Key Features
+## Features
 
-### Automation
-- **12 Macro Slots**: Numpad (1-9) + WASD grid (Q/W/E/A/S/D/Z/X/C)
-- **Auto Mode**: Loop macros at intervals (0.5-10s) with configurable counts
+- **18 Macro Slots**: Numpad (1-9) + WASD grid (Q/W/E/A/S/D/Z/X/C)
+- **Auto Mode**: Loop execution with intervals (0.5-10s) and counts (0-999)
 - **Universal Calibration**: Works on any monitor setup (negative coords, ultrawide, vertical)
 - **In-Memory Cache**: HBITMAP thumbnails bypass filesystem restrictions
-
-### Annotation
 - **9 Condition Types**: Customizable names and hex colors
-- **Dual Canvas Modes**: Wide (16:9) and Narrow (4:3) with letterbox
-- **segments.ai Export**: JSON annotations with severity levels
-- **Manual Click Tracking**: Differentiates automated vs manual work
-
-### Productivity
-- **Statistics Dashboard**: All-time and daily metrics with dual-column view
-- **Break Mode**: Pause time tracking during breaks
-- **Custom Button Labels**: Self-documenting workflow
-- **Timing Presets**: Fast/Default/Safe/Slow profiles
+- **Dual Canvas**: Wide (16:9) and Narrow (4:3) modes
+- **Statistics**: All-time and daily metrics, CSV export
+- **Break Mode**: Pause time tracking
+- **segments.ai Integration**: JSON export with severity levels
 
 ---
 
@@ -76,195 +54,322 @@ MacroBox records mouse clicks and bounding box drawings once, then replays them 
 
 ### Requirements
 
-- Windows 10 or 11 (64-bit)
+- Windows 10/11 (64-bit)
 - [AutoHotkey V2.0+](https://www.autohotkey.com/)
 - 2GB RAM minimum (4GB recommended)
 
-### Standard Install
+### Steps
 
-1. **Install AutoHotkey V2**
-   ```
-   https://www.autohotkey.com/
-   ```
+1. Install AutoHotkey V2 from https://www.autohotkey.com/
+2. Download MacroBox: `git clone https://github.com/yourusername/MacroBox.git`
+3. Double-click `MacroMono.ahk` to run
+4. Follow welcome screen to calibrate (see [Canvas Calibration](#canvas-calibration))
 
-2. **Download MacroBox**
-   ```bash
-   git clone https://github.com/yourusername/MacroBox.git
-   ```
-
-3. **Run the script**
-   ```
-   Double-click MacroMono.ahk
-   ```
-
-4. **First-time calibration**
-   - Settings → Calibrate Wide Canvas
-   - Click top-left corner of drawing area
-   - Click bottom-right corner
-   - Done
-
-### Corporate IT Bypass
-
-For restricted environments:
-1. Download portable AutoHotkey V2
-2. Run `MacroMono.ahk` from any location (USB, network drive)
-3. Config auto-saves to `Documents\MacroBox\` (no admin needed)
+**Corporate IT Bypass:** Run portable AHK V2 from USB/network drive. Config saves to `Documents\MacroBox\` (no admin needed).
 
 ---
 
 ## Quick Start
 
-### Recording Your First Macro
+**First Time:**
+1. Launch → Calibrate canvas → Done (see [Canvas Calibration](#canvas-calibration) for details)
 
-1. Press `CapsLock + F` to start recording
-2. Draw bounding boxes on screen (click and drag)
-3. Press number keys 1-9 to assign condition types
-4. Press `CapsLock + F` to stop recording
-5. **Click GUI button with mouse** to save macro (e.g., click the Numpad1 button)
-6. Thumbnail appears on button
-7. Press button hotkey (e.g., Numpad1) to replay
+**Record Macro:**
+2. See [Recording Macros](#recording-macros) section below
 
-**Important**: After recording, click the GUI button to save (not the hotkey). Hotkeys execute, mouse clicks save.
-
-### Using Auto Mode
-
-1. Right-click saved macro button → "Loop Settings"
-2. Enable auto mode
-3. Set interval (e.g., 2.0 seconds)
-4. Set count (0 = infinite, or 1-999)
-5. Press button hotkey once to start loop
-6. Press again to stop
-
-Yellow border = auto mode enabled
+**Use Auto Mode:**
+3. See [Auto Mode](#auto-mode) section below
 
 ---
 
-## Configuration
+## Canvas Calibration
 
-### config.ini
+### Purpose
 
-Location: `MacroBox\config.ini` or `Documents\MacroBox\config.ini`
+Teaches MacroBox where you draw bounding boxes. Required for accurate replay and thumbnails.
+
+### How It Works
+
+Stores raw pixel coordinates. Uses proportional scaling on replay:
+
+```
+buttonX = (boxScreenX - canvasLeft) / canvasWidth * buttonWidth
+```
+
+Works on ANY monitor configuration - no hardcoded values.
+
+### Calibration Steps
+
+**Wide Canvas (16:9):**
+
+1. Settings → Calibrate Wide Canvas
+2. Click **top-left corner** of drawing area
+3. Click **bottom-right corner**
+4. Confirm coordinates → Save
+
+**Narrow Canvas (4:3):**
+
+1. Settings → Calibrate Narrow Canvas
+2. Click **top-left corner** of 4:3 area
+3. Click **bottom-right corner**
+4. System checks ~1.33 aspect ratio → Save
+
+### Multi-Monitor Support
+
+Works on:
+- Single monitor (1920x1080)
+- Dual monitors with negative coordinates (left at -1920)
+- Triple+ monitors
+- Ultrawide (3440x1440, 3840x1600)
+- Vertical monitors
+- Mixed DPI
+
+**Important:** Calibrate on SAME monitor where you'll record.
+
+### When to Recalibrate
+
+- Changed resolution
+- Moved to different monitor
+- Drawing area moved
+- Boxes appear offset
+
+### Storage
+
+Saved to `config.ini`:
 
 ```ini
-[General]
-AnnotationMode=Wide
-
 [Canvas]
 wideCanvasLeft=-1845.00
 wideCanvasTop=38.00
 wideCanvasRight=-329.00
 wideCanvasBottom=890.00
 isWideCanvasCalibrated=1
+```
 
-[Timing]
-smartBoxClickDelay=45
-firstBoxDelay=180
-betweenBoxDelay=120
+---
 
-[Hotkeys]
-hotkeyRecordToggle=CapsLock & f
-hotkeySubmit=NumpadEnter
-hotkeyDirectClear=+Enter
+## Recording Macros
 
-[Conditions]
-ConditionDisplayName_1=Condition 1
-ConditionColor_1=0xFF8C00
-ConditionJsonHigh_1={"..."}
+### Complete Workflow
 
+**1. Start Recording**
+
+Press `CapsLock + F`
+
+- Status: "Recording: ON"
+- GUI border: red
+
+**2. Draw Boxes**
+
+Click and drag on screen
+
+- Each box captured with pixel-perfect coordinates
+
+**3. Assign Condition Types**
+
+Press number keys 1-9 while drawing
+
+- Each box can have different type
+- Color-coded by configuration
+
+**4. Stop Recording**
+
+Press `CapsLock + F` again
+
+- Status: "Ready to assign - Click button to save"
+- GUI: "awaiting assignment" mode
+
+**5. Save to Button**
+
+**Click GUI button with MOUSE** (not hotkey)
+
+- Example: Click Numpad1 button on screen
+- Thumbnail appears
+- Macro saved
+
+**6. Execute**
+
+Press button hotkey (e.g., Numpad1)
+
+- Replays in <100ms
+- Stats update
+
+### Important Notes
+
+- **Hotkeys execute, mouse clicks save**
+- Record 5-10 boxes per macro typical
+- First box: 180ms delay (stability)
+- Subsequent: 120ms between boxes
+- Press `Esc` to cancel assignment
+- Overwrite by saving to same button
+
+### Canvas Mode
+
+Current mode (Wide/Narrow) determines:
+- Which calibration used
+- Thumbnail rendering
+- Letterbox bars (Narrow only)
+
+**Switch mode BEFORE recording.** Saved macros remember their mode.
+
+---
+
+## Auto Mode
+
+### Purpose
+
+Automatically repeat macros at intervals without manual keypresses.
+
+### Use Cases
+
+- **Continuous Feed**: Manufacturing QC
+- **Batch Processing**: Label exactly 50 items
+- **Timed Workflows**: Platform time-based tasks
+- **Training Data**: Repetitive patterns
+
+### Complete Setup
+
+**1. Record and Save Macro First**
+
+See [Recording Macros](#recording-macros)
+
+**2. Configure Loop**
+
+Right-click button → "Loop Settings"
+
+```
+☑ Enable auto mode
+Interval: 2.0 seconds (0.5 - 10.0)
+Count: 0 (infinite) or 1-999
+```
+
+**3. Visual Confirmation**
+
+Yellow border = configured
+
+**4. Start Loop**
+
+Press button hotkey once (e.g., Numpad1)
+
+- First execution: immediate
+- Subsequent: interval timing
+
+**5. Stop Loop**
+
+- Press hotkey again (toggle)
+- Or right-click → uncheck enable
+- Or `NumpadAdd` (emergency stop all)
+
+### Examples
+
+**Infinite (Continuous):**
+```
+Interval: 1.5s | Count: 0
+Use: Manufacturing line
+```
+
+**Batch (50 Items):**
+```
+Interval: 3.0s | Count: 50
+Use: Label specific count then stop
+```
+
+**Fast (Training Data):**
+```
+Interval: 0.5s | Count: 20
+Use: Rapid similar items
+```
+
+### Persistence
+
+Saved per button in `config.ini`:
+
+```ini
 [LoopSettings]
 L1_numpad1_intervalMs=2000
 L1_numpad1_count=0
 ```
 
-### macros.txt
+### Limitations
 
-Location: `Documents\MacroBox\macros.txt`
-
-Pipe-delimited event format:
-
-```
-numpad1|boundingBox|100|200|300|400|deg=1|name=Condition 1
-numpad1|mouseDown|-1500|300|left
-numpad1|mouseUp|-1200|500|left
-wasdQ|boundingBox|150|250|350|450|deg=3
-```
+- **Min interval**: 0.5s (500ms)
+- **Max interval**: 10s
+- **Simultaneous**: 5-10 practical before lag
+- **Break mode**: Loops continue (executions recorded, time not tracked)
 
 ---
 
-## Usage
+## Statistics & Export
 
-### Recording Macros
+### Statistics Window
 
-**Workflow:**
-1. `CapsLock + F` = start recording (red border on GUI)
-2. Draw bounding boxes
-3. Press 1-9 to assign condition types to boxes
-4. `CapsLock + F` = stop recording ("Ready to assign" mode)
-5. Click GUI button with mouse to save
-6. Press button hotkey to execute
+Press `F12` to open:
 
-**Tips:**
-- Can record multiple boxes with different condition types
-- Each button stores one complete macro
-- Press `Esc` to cancel assignment
-- Thumbnail shows visual preview
-
-### Auto Mode
-
-**Setup:**
-```
-Right-click button → Loop Settings
-├─ Enable auto mode: [✓]
-├─ Interval: 0.5 - 10.0 seconds
-└─ Count: 0 (infinite) or 1-999
-```
-
-**Controls:**
-- Press hotkey once = start loop
-- Press again = stop loop
-- `NumpadAdd` = emergency stop all loops
-
-**Visual Indicators:**
-- Yellow border = auto mode configured
-- Flashing thumbnail = currently executing
-- Status bar shows remaining count
-
-### Canvas Modes
-
-**Wide Mode (16:9)**
-- Blue button indicator
-- Full widescreen recording
-- Requires Wide canvas calibration
-
-**Narrow Mode (4:3)**
-- Orange button indicator
-- Portrait with letterbox bars
-- Requires Narrow canvas calibration
-
-**Switching:**
-- Click mode button on GUI
-- Mode affects NEW recordings only
-- Saved macros remember their recording mode
-
-### Statistics
-
-Press `F12` to open stats window:
-
-**Left Column** = All-time (since reset)  
-**Right Column** = Today (current date)
-
-Metrics:
+**Left Column - All-Time:**
 - Total executions
 - Total boxes
 - Manual clicks
 - Macro clicks
-- Active time
-- Boxes per hour
+- Active time (hours:minutes)
 - Average execution time
+- Boxes per hour
+- Executions per hour
 
-**Export:**
-- Click "Export CSV" at bottom
-- Saves to `Documents\MacroBox\exports\stats_YYYYMMDD_HHMMSS.csv`
+**Right Column - Today:**
+- Same metrics
+- Filtered to current date
+- Resets at midnight
+
+**Per-Condition Breakdown:**
+- Condition 1-9 counts
+- Clear count (no type assigned)
+
+**Live Updates:**
+- Real-time during execution
+- Manual clicks increment
+- Active time ticks (excludes break mode)
+
+### What Gets Tracked
+
+**Automatically:**
+- **Executions**: One macro replay = 1 execution
+- **Boxes**: Individual boxes (1 execution may have 5 boxes)
+- **Manual Clicks**: Non-macro left-clicks
+- **Macro Clicks**: Clicks during execution
+- **Active Time**: Working time (excludes breaks)
+- **Session ID**: `sess_YYYYMMDD_HHMMSS` (auto-generated)
+- **Username**: Windows username (auto-captured)
+
+**Key Distinction:**
+- 1 execution with 5 boxes = 1 execution, 5 boxes (NOT 5 executions)
+- ROI based on executions
+
+### CSV Export
+
+**Access:** Stats window → "Export CSV" button
+
+**Location:**
+```
+Documents\MacroBox\exports\stats_YYYYMMDD_HHMMSS.csv
+```
+
+**Format:**
+```csv
+timestamp,session_id,username,execution_type,button_key,layer,
+execution_time_ms,canvas_mode,session_active_time_ms,break_mode_active,
+total_boxes,condition_assignments,severity_level,annotation_details,
+condition_1_count,condition_2_count,condition_3_count,condition_4_count,
+condition_5_count,condition_6_count,condition_7_count,condition_8_count,
+condition_9_count,clear_count,macro_clicks,manual_clicks,
+execution_success,error_details
+```
+
+**Example:**
+```csv
+2024-12-09 14:30:15,sess_20241209_140000,JohnDoe,macro,numpad1,1,
+850,wide,1245000,false,5,Condition 1,medium,"",
+5,0,0,0,0,0,0,0,0,0,12,3,true,""
+```
 
 ---
 
@@ -272,29 +377,127 @@ Metrics:
 
 ### Default Bindings
 
-| Action | Hotkey | Description |
-|--------|--------|-------------|
-| **Recording** | | |
-| Record Toggle | `CapsLock + F` | Start/stop recording |
-| Submit | `NumpadEnter` | Submit annotation |
-| Direct Clear | `Shift + Enter` | Clear without menu |
-| **App Controls** | | |
-| Statistics | `F12` | Show/hide stats window |
-| Break Mode | `Ctrl + B` | Pause time tracking |
-| Settings | `Ctrl + K` | Open settings |
-| Emergency Stop | `NumpadAdd` | Kill all active loops |
-| **Utility (Browser)** | | |
-| Utility Submit | `Shift + CapsLock` | Focus browser, send Shift+Enter |
-| Utility Backspace | `Ctrl + CapsLock` | Focus browser, send Backspace |
-| **Macro Execution** | | |
-| Numpad Grid | `Numpad 1-9` | Execute numpad macros |
-| WASD Grid | `Q/W/E/A/S/D/Z/X/C` | Execute WASD macros |
+| Category | Action | Hotkey | Description |
+|----------|--------|--------|-------------|
+| **Recording** | Toggle | `CapsLock + F` | Start/stop recording |
+| | Submit | `NumpadEnter` | Submit annotation |
+| | Direct Clear | `Shift + Enter` | Clear without menu |
+| **App** | Statistics | `F12` | Show/hide stats |
+| | Break Mode | `Ctrl + B` | Pause time tracking |
+| | Settings | `Ctrl + K` | Open settings |
+| | Emergency | `NumpadAdd` | Kill all loops |
+| **Utility** | Submit | `Shift + CapsLock` | Browser focus + Shift+Enter |
+| | Backspace | `Ctrl + CapsLock` | Browser focus + Backspace |
+| **Execute** | Numpad | `1-9` | Execute numpad macros |
+| | WASD | `Q/W/E/A/S/D/Z/X/C` | Execute WASD macros |
 
-**Note:** CapsLock alone is disabled. Use `Win + CapsLock` to toggle caps lock state.
+### CapsLock Behavior
+
+**Disabled by design:** CapsLock alone does nothing (prevents accidental caps)
+
+**Toggle caps:** Press `Win + CapsLock`
+
+### Utility Hotkeys
+
+Auto-detect Chrome/Firefox/Edge, switch focus, send keypress, return.
+
+**Enable/Disable:** Settings → Hotkeys
 
 ### Customization
 
-Settings → Hotkeys → Edit or click "Set" to capture new binding
+Settings → Hotkeys → Edit or click "Set" to capture
+
+**Avoid:** F1-F4, Ctrl+C/V/X/Z (system defaults)
+
+**Safe patterns:** `CapsLock + letter`, `Ctrl + Shift + letter`, `Alt + Numpad`
+
+---
+
+## Configuration Files
+
+### config.ini
+
+**Location:** `MacroBox\config.ini` or `Documents\MacroBox\config.ini`
+
+**Complete Structure:**
+
+```ini
+[General]
+AnnotationMode=Wide
+LastSaved=20241209120000
+
+[Canvas]
+wideCanvasLeft=-1845.00
+wideCanvasTop=38.00
+wideCanvasRight=-329.00
+wideCanvasBottom=890.00
+isWideCanvasCalibrated=1
+narrowCanvasLeft=-1618.00
+narrowCanvasTop=156.00
+narrowCanvasRight=-553.00
+narrowCanvasBottom=1007.00
+isNarrowCanvasCalibrated=1
+
+[Timing]
+smartBoxClickDelay=45
+smartMenuClickDelay=100
+firstBoxDelay=180
+mouseHoverDelay=30
+menuWaitDelay=50
+betweenBoxDelay=120
+
+[Hotkeys]
+hotkeyRecordToggle=CapsLock & f
+hotkeySubmit=NumpadEnter
+hotkeyDirectClear=+Enter
+hotkeyUtilitySubmit=+CapsLock
+hotkeyUtilityBackspace=^CapsLock
+hotkeyStats=F12
+hotkeyBreakMode=^b
+hotkeySettings=^k
+utilityHotkeysEnabled=1
+
+[Conditions]
+ConditionDisplayName_1=Condition 1
+ConditionColor_1=0xFF8C00
+ConditionStatKey_1=condition_1
+ConditionJsonHigh_1={"..."}
+ConditionJsonMedium_1={"..."}
+ConditionJsonLow_1={"..."}
+# ... repeated for 2-9
+
+[LoopSettings]
+L1_numpad1_intervalMs=2000
+L1_numpad1_count=0
+L1_wasdQ_intervalMs=5000
+L1_wasdQ_count=100
+```
+
+### macros.txt
+
+**Location:** `Documents\MacroBox\macros.txt`
+
+**Format:** Pipe-delimited
+
+```
+buttonName|eventType|param1|param2|param3|param4|metadata
+```
+
+**Example:**
+
+```
+numpad1|boundingBox|100|200|300|400|deg=1|name=Condition 1
+numpad1|mouseDown|-1500|300|left
+numpad1|mouseUp|-1200|500|left
+numpad2|jsonAnnotation|Wide|2|high
+wasdQ|boundingBox|150|250|350|450|deg=3
+```
+
+**Event Types:**
+- `boundingBox`: Coordinates + metadata
+- `mouseDown/Up`: Raw events
+- `jsonAnnotation`: segments.ai JSON
+- `keyDown/Up`: Keyboard (rare)
 
 ---
 
@@ -302,128 +505,111 @@ Settings → Hotkeys → Edit or click "Set" to capture new binding
 
 ### In-Memory HBITMAP Cache
 
-**What it does:**
-- Stores thumbnail visualizations in RAM (not disk)
-- Each thumbnail ~50KB, 12 buttons = ~900KB total
-- Cache cleared on: recalibration, color changes, exit
+**What:** Thumbnails stored as Windows bitmap handles in RAM (not disk)
 
-**Why it matters:**
-- Bypasses file permission restrictions
-- Works in corporate IT environments
-- Zero disk footprint for visualizations
-- Can't be blocked by filesystem policies
+**Why:** Bypasses filesystem restrictions, works in corporate IT, zero disk footprint
 
-### Custom Button Labels
+**Details:**
+- ~50KB per thumbnail
+- 18 buttons = ~900KB
+- Cleared on: recalibration, color changes, exit
+- Regenerated from macro events
 
-Right-click button → "Edit Label"
+### Canvas Modes
 
-Rename from "numpad1" to "Full QC Check" or any meaningful name. Labels persist in config.ini.
+**Wide (16:9):** Blue indicator, widescreen  
+**Narrow (4:3):** Orange indicator, letterbox bars
+
+Click mode button to switch. Affects NEW recordings only.
+
+### Custom Labels
+
+Right-click button → "Edit Label" → Rename (e.g., "numpad1" → "Full QC Check")
+
+Persists in config.ini.
 
 ### Break Mode
 
-`Ctrl + B` to toggle:
+`Ctrl + B` toggle:
 - Time tracking paused
-- Macros still work
+- Macros work
 - Stats don't accumulate
-- Use for: bathroom, lunch, meetings
+
+Use for: breaks, lunch, meetings
 
 ### Automatic Tracking
 
-Happens automatically:
-- **Manual Clicks**: Non-macro left-clicks tracked
-- **Session ID**: Auto-generated `sess_YYYYMMDD_HHMMSS`
-- **Username**: Windows username captured
-- **Window Scaling**: GUI auto-resizes with debouncing
+- **Manual Clicks**: Non-macro left-clicks
+- **Session ID**: `sess_YYYYMMDD_HHMMSS`
+- **Username**: Windows username
+- **Window Scaling**: Auto-resize with debouncing
 
 ---
 
 ## Troubleshooting
 
-### Application Won't Start
+### Won't Start
 
-**"AutoHotkey V2 not found"**
-```
-Solution: Install from https://www.autohotkey.com/
-```
+**"AutoHotkey V2 not found":** Install from https://www.autohotkey.com/
 
-**"Access Denied"**
-```
-Solution: Run from different location or as Administrator
-```
+**"Access Denied":** Run from different location or as Admin
 
-### Canvas Calibration Issues
+### Calibration Issues
 
-**Boxes appear offset or invisible**
-
-Cause: Calibration doesn't match drawing area
-
-Fix:
+**Boxes offset/invisible:**
 1. Settings → Recalibrate
 2. Click EXACT corners where you draw
 3. Test with one box
-4. Multi-monitor: calibrate on SAME monitor you record on
+4. Multi-monitor: calibrate on SAME monitor
 
-### CapsLock Disabled
+### Recording Issues
 
-This is intentional. CapsLock alone does nothing to prevent accidental caps during work.
+**Macro won't save:** Click GUI button with MOUSE (not hotkey). Hotkeys execute, clicks save.
 
-To toggle caps lock: Press `Win + CapsLock`
+**No thumbnail:** Check boxes drawn, canvas calibrated, button clicked.
 
-### First Box Slower
+### Auto Mode Issues
 
-Intentional. First box has 180ms delay for UI stabilization. Subsequent boxes 120ms.
+**Won't start:** Check yellow border, thumbnail visible, press once.
 
-Adjust: Settings → Timing → First Box Delay
+**Stops unexpectedly:** Execution error, emergency stop, or hotkey toggled again.
 
-### Auto Mode Won't Start
+**Unstable:** Increase interval or use slower timing preset.
 
-Check:
-- Button has yellow border (auto mode enabled)
-- Thumbnail visible (macro recorded)
-- Press once to start, again to stop
+### Stats Issues
 
-### Stats Not Updating
+**Not updating:** Turn off break mode (`Ctrl + B`), execute one macro, press `F12`.
 
-1. Turn off break mode: `Ctrl + B`
-2. Execute at least one macro
-3. Press `F12` to refresh
+**CSV empty:** No executions recorded. Execute at least one macro first.
 
 ### Hotkey Conflicts
 
-If hotkey doesn't work:
-1. Close other apps (Discord, games, IDEs)
-2. Settings → Hotkeys → change binding
-3. Avoid: F1-F4, Ctrl+C/V/X/Z
+Close conflicting apps, press NumLock (numpad), `Win + CapsLock` (caps state), or change binding.
 
-Safe patterns: `CapsLock + letter`, `Ctrl + Shift + letter`, `Alt + Numpad`
+**Avoid:** F1-F4, Ctrl+C/V/X/Z  
+**Safe:** `CapsLock + letter`, `Ctrl + Shift + letter`
 
 ### Timing Issues
 
-**"Fast" preset unstable?**
+**"Fast" unstable:** Test 3-box macro 20 times, count failures. 0 = good, 5+ = use "Safe" or "Slow".
 
-Test:
-1. Record 3-box macro
-2. Execute 20 times
-3. Count failures
-4. 0 failures = good, 5+ = use "Safe" or "Slow"
-
-Corporate PCs often need "Safe" or "Slow".
+**First box slow:** Intentional (180ms for stability). Adjust: Settings → Timing → First Box Delay.
 
 ---
 
-## Technical Details
+## Technical Specifications
 
 ### Architecture
 
-- **Language**: AutoHotkey V2
-- **Structure**: Monolithic (single file, no modules)
-- **Lines**: 8,923
-- **Functions**: 165+
-- **Dependencies**: None
+| Aspect | Value |
+|--------|-------|
+| Language | AutoHotkey V2 |
+| Structure | Monolithic (single file) |
+| Lines | 8,923 |
+| Functions | 165+ |
+| Dependencies | None |
 
-**Internal notes:**
-- Macros named `L1_buttonname` (Layer 1 - internal only)
-- No layer switching (preserved for future)
+**Note:** Macros named `L1_buttonname` (Layer 1 - internal only, no layer switching)
 
 ### Performance
 
@@ -433,16 +619,19 @@ Corporate PCs often need "Safe" or "Slow".
 | HBITMAP generation | ~50ms |
 | GUI refresh | 60 FPS |
 | Stats query | <10ms (10k records) |
-| Memory usage | 50-150MB |
-| Auto mode overhead | <5ms per tick |
+| Memory | 50-150MB |
+| Auto overhead | <5ms/tick |
 
 ### Limitations
 
-- Max macros: 999 (practical limit before slowdown)
-- Max boxes per macro: 100 (performance degrades after)
-- Auto mode interval: 0.5 - 10 seconds
-- CSV size: Unlimited (plain text)
-- Stats file: ~1MB per 10,000 executions
+| Limit | Value |
+|-------|-------|
+| Max macros | 999 (practical) |
+| Max boxes/macro | 100 |
+| Auto interval | 0.5-10s |
+| Simultaneous loops | 5-10 (practical) |
+| CSV size | Unlimited |
+| Stats file | ~1MB/10k exec |
 
 ### File Structure
 
@@ -451,9 +640,9 @@ MacroMono.ahk                           # Main script (8,923 lines)
 
 Documents\MacroBox\
 ├── config.ini                          # Configuration
-├── macros.txt                          # All macro recordings
+├── macros.txt                          # Recordings
 ├── stats\
-│   └── stats_log.json                  # Persistent statistics
+│   └── stats_log.json                  # Persistent stats
 └── exports\
     └── stats_YYYYMMDD_HHMMSS.csv      # CSV exports
 ```
@@ -462,86 +651,75 @@ Documents\MacroBox\
 
 ## FAQ
 
-**Q: Can I use this on Mac or Linux?**  
-A: No. Windows-only (requires Win32 APIs).
+**Q: Mac/Linux support?**  
+A: No. Windows-only (Win32 APIs).
 
-**Q: Will I get banned from Remotasks/Scale AI?**  
-A: MacroBox operates at OS level. Platforms can't distinguish from human clicks. Use responsibly and follow platform terms of service.
+**Q: Platform bans?**  
+A: OS-level operation. Platforms can't distinguish. Use responsibly.
 
-**Q: How many macros can I have?**  
-A: 12 simultaneous slots. Practical limit ~999 before performance degrades.
+**Q: How many macros?**  
+A: 18 slots. ~999 practical limit.
 
-**Q: Can I transfer macros between computers?**  
-A: Yes. Copy `macros.txt` + `config.ini`. Recalibrate canvas (monitor-specific).
+**Q: Transfer between computers?**  
+A: Copy `macros.txt` + `config.ini`. Recalibrate (monitor-specific).
 
-**Q: Do macros work on different resolutions?**  
-A: No. Pixel-coordinate based. Resolution change requires recalibration and re-recording.
+**Q: Different resolutions?**  
+A: No. Pixel-based. Resolution change = recalibrate + re-record.
 
-**Q: How do I edit macros?**  
-A: Not in GUI. Advanced users can edit `macros.txt` (pipe-delimited format).
+**Q: Edit macros?**  
+A: Advanced users edit `macros.txt` (pipe-delimited).
 
-**Q: How do I save a macro to a button?**  
-A: After recording, CLICK the GUI button with mouse (not the hotkey). Hotkeys execute, clicks save.
+**Q: Save to button?**  
+A: CLICK GUI button with mouse (not hotkey). Hotkeys execute, clicks save.
 
-**Q: What's the difference between executions and boxes?**  
-A: Execution = one macro replay. Boxes = individual boxes in that macro. 1 execution of 5-box macro = 1 execution, 5 boxes.
+**Q: Executions vs boxes?**  
+A: Execution = one replay. Boxes = individual boxes. 1 execution with 5 boxes = 1 execution, 5 boxes.
 
-**Q: Can I have different timing per macro?**  
-A: No. Timing is global. But auto mode intervals are per-button.
+**Q: Different timing per macro?**  
+A: No. Timing global. Auto intervals per-button.
 
-**Q: Why is the first box slower?**  
-A: `firstBoxDelay` provides UI stabilization to prevent race conditions.
+**Q: First box slower?**  
+A: `firstBoxDelay` for stability (180ms vs 120ms).
 
-**Q: Can I run multiple instances?**  
-A: Not recommended. Mouse hook conflicts.
+**Q: Multiple instances?**  
+A: Not recommended (hook conflicts).
 
-**Q: How many auto loops can run simultaneously?**  
-A: Unlimited technically. Practical limit 5-10 before system lag.
+**Q: Auto loop limit?**  
+A: 5-10 practical before lag.
 
-**Q: Can auto mode interval be faster than 0.5 seconds?**  
-A: No. 500ms minimum for stability. Need faster? Put multiple boxes in one macro.
+**Q: Faster than 0.5s?**  
+A: No. 500ms minimum. Need faster? Multiple boxes in one macro.
 
-**Q: What happens when auto count reaches zero?**  
-A: Loop stops automatically. Button stays in auto mode. Press to restart.
+**Q: Auto count zero?**  
+A: Loop stops. Button stays enabled. Press to restart.
 
-**Q: How do I backup my configuration?**  
-A: Copy: `MacroMono.ahk`, `config.ini`, `macros.txt`, `stats_log.json`
+**Q: Backup?**  
+A: Copy `MacroMono.ahk`, `config.ini`, `macros.txt`, `stats_log.json`.
 
 ---
 
 ## License
 
-Standalone script provided as-is.
-
 **Permissions:**
-- ✅ Personal or commercial use for data labeling
+- ✅ Personal/commercial data labeling use
 - ✅ Modify for own use
-- ✅ Share original script
+- ✅ Share original
 
 **Restrictions:**
-- ❌ No warranty provided
+- ❌ No warranty
 - ❌ Use at own risk
-- ❌ Author not responsible for platform bans or issues
+- ❌ Author not responsible for bans/issues
 
 ---
 
 ## Contributing
 
-Pull requests welcome for:
-- Bug fixes
-- Performance improvements
-- Documentation corrections
+Pull requests welcome: bug fixes, performance, documentation.
 
-**Code Standards:**
-- AutoHotkey V2 syntax only
-- Self-contained functions
-- Comment complex logic
-- Maintain backward compatibility with config.ini
+**Standards:** AHK V2 only, self-contained functions, comment logic, backward compatible config.
 
 ---
 
-**Built for the global data labeling community powering AI development.**
+**Version 1.0.0** | **8,923 Lines** | **AutoHotkey V2**
 
-**Version:** 1.0.0 | **Lines:** 8,923 | **License:** As-is
-
-© 2024 MacroBox
+© 2025 MacroBox
