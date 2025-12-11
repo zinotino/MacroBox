@@ -3351,9 +3351,15 @@ HandleDayChange(newDay) {
 }
 
 GetCurrentSessionActiveTime() {
-    global totalActiveTime, lastActiveTime, breakMode
-    ; Return just totalActiveTime - UpdateActiveTime() handles accumulation
-    ; Don't add extra time here to avoid double-counting
+    global totalActiveTime, lastActiveTime, breakMode, currentDay
+
+    ; Ensure day-change is handled even if no macros ran at midnight
+    today := FormatTime(A_Now, "yyyy-MM-dd")
+    if (today != currentDay) {
+        HandleDayChange(today)
+    }
+
+    ; Return just totalActiveTime - UpdateActiveTime()/HandleDayChange handle accumulation
     if (breakMode) {
         return totalActiveTime
     } else {
@@ -3804,6 +3810,7 @@ ResetAllStats() {
     global macroExecutionLog, masterStatsCSV, permanentStatsFile, workDir
     global statsTotals, statsSessionActivePersisted
     global manualClickCount, manualClicksSinceLastFlush
+    global totalActiveTime, lastActiveTime, applicationStartTime, currentDay, sessionId
 
     try {
         macroExecutionLog := []
@@ -3825,54 +3832,60 @@ ResetAllStats() {
 
         statsTotals := Map()
         statsSessionActivePersisted := Map()
+
+        ; Remove current-session CSV
         if FileExist(masterStatsCSV) {
             FileDelete(masterStatsCSV)
         }
 
-        UpdateStatus("🗑️ Stats reset complete")
+        ; HARD RESET: also remove permanent history CSV so stats do not rebuild
+        if (permanentStatsFile != "" && FileExist(permanentStatsFile)) {
+            FileDelete(permanentStatsFile)
+        }
+
+        ; Reset live session timers so "Today" truly starts from 0
+        totalActiveTime := 0
+        lastActiveTime := A_TickCount
+        applicationStartTime := A_TickCount
+        currentDay := FormatTime(A_Now, "yyyy-MM-dd")
+        sessionId := "session_" . A_TickCount
+
+        UpdateStatus("??? Stats reset complete")
     } catch Error as e {
-        UpdateStatus("⚠️ Failed to reset statistics: " . e.Message)
+        UpdateStatus("?? Failed to reset statistics: " . e.Message)
     }
 }
 
 	
 	ShowCredits(parentGui, *) {
-	    creditsGui := Gui("+Owner" . parentGui.Hwnd, "MacroMono Credits")
-	    creditsGui.SetFont("s9", "Segoe UI")
-	
-		    creditsText := "
-		    (
-	MacroMono - Complete Data Labeling Assistant
-	
-	Designed and developed by:
-	  Alexander Neff
-	
-	Project Annotate - Rivian
-	  April 2025 - December 2025
-	  Developed at the Rivian Training Facility
-	
-	Special thanks:
-	  Stephen da Silva
-	  Ivan Briseno
-	  Adan Arteaga
-	  Aleisha Marie La Roque
-	  Kenny Coppenbarger
-	  Sierra Pelton
-	  Valentino Dore
-	
-	This tool was created to reduce repetitive strain from repeatedly drawing full-canvas blockages and bounding boxes, and to streamline large-scale annotation workflows.
-	
-	Stay in touch:
-	  LinkedIn: https://www.linkedin.com/in/alex-neff13/
-	  Email:    alexneffmgmt@gmail.com
-		    )"
-	
-	    creditsGui.Add("Text", "x15 y15 w520 h360", creditsText)
-	    btnClose := creditsGui.Add("Button", "x240 y385 w80 h26", "Close")
-	    btnClose.OnEvent("Click", (*) => creditsGui.Destroy())
-	
-	    creditsGui.Show("w580 h460")
-	}
+    creditsGui := Gui("+Owner" . parentGui.Hwnd, "MacroBox Credits")
+    creditsGui.SetFont("s9", "Segoe UI")
+
+    creditsText := "
+    (
+MacroBox - Complete Data Labeling Assistant
+
+Written and designed by:
+  Alexander Neff
+
+Special thanks:
+  Failsafe team
+  HBA team
+
+This tool was created to reduce repetitive strain from repeatedly drawing full-canvas blockages and bounding boxes, and to streamline large-scale annotation workflows.
+
+Stay in touch:
+  LinkedIn: https://www.linkedin.com/in/alex-neff13/
+  Email:    alexneffmgmt@gmail.com
+    )"
+
+    creditsGui.Add("Text", "x15 y15 w520 h360", creditsText)
+    btnClose := creditsGui.Add("Button", "x240 y385 w80 h26", "Close")
+    btnClose.OnEvent("Click", (*) => creditsGui.Destroy())
+
+    creditsGui.Show("w580 h460")
+}
+
 	
 ; ===== MAIN INITIALIZATION =====
 Main() {
@@ -4417,13 +4430,20 @@ ExecuteMacroOnce(buttonName) {
         }
     }
 
-    RecordExecutionStatsAsync(buttonName, startTime, events.Length == 1 && events[1].type == "jsonAnnotation" ? "json_profile" : "macro", events, analysisRecord)
+      RecordExecutionStatsAsync(buttonName, startTime, events.Length == 1 && events[1].type == "jsonAnnotation" ? "json_profile" : "macro", events, analysisRecord)
 
     ; PERFORMANCE: MacroExecutionAnalysis() removed - stats are in-memory only now
 
+    ; Safety: ensure modifiers are released after each macro execution
+    try {
+        Send("{Shift Up}{Ctrl Up}{Alt Up}{Win Up}")
+    } catch {
+    }
+
     playback := false
-    UpdateStatus("✅ Completed: " . buttonName)
+    UpdateStatus("? Completed: " . buttonName)
 }
+
 
 ; ===== RECORDING SYSTEM =====
 InstallMouseHook() {
@@ -8883,8 +8903,4 @@ InitializeJsonAnnotationsEx() {
 
 ; ===== START APPLICATION =====
 Main()
-
-
-
-
 
